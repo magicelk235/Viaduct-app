@@ -156,14 +156,19 @@ struct ViaductApp: App {
             // "Convert Anyway" remembers the choice. Every button leaves the
             // flow in a terminal state — a store-page progress card polling us
             // must never be left spinning on an abandoned conversion.
-            .alert("No Apple account in Xcode", isPresented: $vm.showAdhocWarning) {
+            .alert(vm.adhocDespiteAccount ? "Xcode hasn't issued a signing certificate"
+                                          : "No Apple account in Xcode",
+                   isPresented: $vm.showAdhocWarning) {
                 Button("Convert Anyway") {
                     vm.adhocAcknowledged = true
                     vm.userConvert()
                 }
                 Button("Open Xcode") {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app"))
-                    vm.failureSummary = "Sign into Xcode (Settings → Accounts) with any free Apple ID, then try the install again."
+                    vm.needsAppleAccount = true
+                    vm.failureSummary = vm.adhocDespiteAccount
+                        ? "In Xcode, create any macOS app project, open Signing & Capabilities, and pick your name in the Team dropdown. That makes Xcode issue the signing certificate. Then try the install again."
+                        : "Sign into Xcode (Settings → Accounts) with any free Apple ID, then try the install again."
                     vm.phase = .failed
                 }
                 Button("Cancel", role: .cancel) {
@@ -171,14 +176,30 @@ struct ViaductApp: App {
                     vm.phase = .failed
                 }
             } message: {
-                Text("""
+                // Two different failures wear the same symptom. Telling someone who
+                // already signed in to go sign in is the fastest way to lose them.
+                Text(vm.adhocDespiteAccount ? """
+                Your Apple ID is signed into Xcode, but Xcode hasn't issued a \
+                signing certificate for it yet, so this extension would be signed \
+                ad-hoc — Safari turns ad-hoc extensions off every time it quits, \
+                and you'd have to re-enable them in the Develop menu after each \
+                restart.
+
+                Xcode only creates the certificate once a project asks for it. In \
+                Xcode: File → New → Project, pick macOS → App, then open the \
+                Signing & Capabilities tab and choose your name in the Team \
+                dropdown. You can delete that project afterwards. Come back and \
+                convert again.
+                """ : """
                 Viaduct couldn't find an Apple Developer team in Xcode, so this \
                 extension would be signed ad-hoc — Safari turns ad-hoc extensions \
                 off every time it quits, and you'd have to re-enable them in the \
                 Develop menu after each restart.
 
                 For extensions that stay enabled, sign into Xcode with any free \
-                Apple ID (Xcode → Settings → Accounts), then convert again.
+                Apple ID (Xcode → Settings → Accounts), then convert again. Note \
+                that signing in under System Settings → Apple Account is a \
+                different thing and won't work.
                 """)
             }
             // Paywall: shown when an unlicensed user hits the free-quota wall.

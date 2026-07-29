@@ -41,6 +41,19 @@ final class ConverterViewModel: ObservableObject {
     /// silently vanish on the next Safari quit.
     @Published var showAdhocWarning = false
 
+    /// Set when a conversion was parked waiting on an Apple account in Xcode.
+    /// Unlike the Xcode gate this lands in a plain .failed state, so without its
+    /// own flag the focus-regain recheck skips it and the user has to relaunch
+    /// the app before it notices they signed in.
+    @Published var needsAppleAccount = false
+
+    /// True when Xcode knows about an Apple ID but still can't team-sign. The
+    /// account is signed in and the warning would otherwise tell the user to do
+    /// the thing they already did, so the message has to say what's actually
+    /// missing: the signing certificate Xcode only creates once a project
+    /// targets the team.
+    @Published var adhocDespiteAccount = false
+
     /// User saw the ad-hoc warning and chose to convert anyway — don't nag on
     /// every conversion after an informed choice.
     @AppStorage("adhocAcknowledged") var adhocAcknowledged = false
@@ -214,6 +227,7 @@ final class ConverterViewModel: ObservableObject {
         // account — and Safari disables ad-hoc extensions on every quit. Warn
         // up front instead of letting the extension quietly vanish later.
         if !adhocAcknowledged, !Self.xcodeTeamPresent() {
+            adhocDespiteAccount = Self.xcodeAccountPresent()
             // Surface the alert even for headless viaduct:// installs.
             NSApp.activate(ignoringOtherApps: true)
             showAdhocWarning = true
@@ -249,23 +263,62 @@ final class ConverterViewModel: ObservableObject {
         LicenseManager.shared.recordFreeConversion()
     }
 
-    /// True when Xcode has a signed-in Apple account with a team — mirrors the
-    /// CLI's detectXcodeTeam() (packager.js): same defaults key, same pattern,
-    /// so the warning fires exactly when the CLI would fall back to ad-hoc.
+    /// True when the machine can team-sign — mirrors the CLI's detectXcodeTeam()
+    /// (packager.js), which checks the same two sources in the same order, so
+    /// the warning fires exactly when the CLI would fall back to ad-hoc.
+    ///
+    /// Xcode's preference cache is checked first because it's cheap, but it is
+    /// not authoritative: it's written asynchronously and stays empty on setups
+    /// where the account is signed in but no team has been fetched yet. A
+    /// signing certificate in the keychain settles it, since that's what
+    /// codesign actually consumes.
     static func xcodeTeamPresent() -> Bool {
+        if let out = shellOutput("/usr/bin/defaults",
+                                 ["read", "com.apple.dt.Xcode", "IDEProvisioningTeamByIdentifier"]),
+           out.range(of: #"teamID\s*=\s*"?[A-Z0-9]{10}(?![A-Z0-9])"?"#,
+                     options: .regularExpression) != nil {
+            return true
+        }
+        guard let identities = shellOutput("/usr/bin/security",
+                                           ["find-identity", "-v", "-p", "codesigning"]) else {
+            return false
+        }
+        // Lines look like:  1) <sha1> "Apple Development: me@example.com (XXXXXXXXXX)"
+        // Developer ID certs are excluded: they sign for direct distribution and
+        // aren't what Xcode provisions an extension with.
+        return identities.range(
+            of: #""(Apple Development|Mac Developer|Apple Distribution|iPhone Developer):"#,
+            options: .regularExpression) != nil
+    }
+
+    /// True when an Apple ID is registered in Xcode's Accounts pane. Xcode writes
+    /// this list as soon as the account is added, well before it has a team or a
+    /// certificate, so it separates "never signed in" from "signed in but Xcode
+    /// hasn't issued a signing certificate yet" — two states that need opposite
+    /// instructions.
+    static func xcodeAccountPresent() -> Bool {
+        guard let out = shellOutput("/usr/bin/defaults",
+                                    ["read", "com.apple.dt.Xcode",
+                                     "DVTDeveloperAccountManagerAppleIDLists"]) else {
+            return false
+        }
+        return out.range(of: #"identifier\s*="#, options: .regularExpression) != nil
+    }
+
+    /// Run a tool and return stdout, or nil if it fails to launch or exits non-zero.
+    private static func shellOutput(_ path: String, _ args: [String]) -> String? {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        p.arguments = ["read", "com.apple.dt.Xcode", "IDEProvisioningTeamByIdentifier"]
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = Pipe()
-        do { try p.run() } catch { return false }
+        do { try p.run() } catch { return nil }
+        // Read before waiting: a full pipe buffer would deadlock the child.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return false }
-        let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
-                         encoding: .utf8) ?? ""
-        return out.range(of: #"teamID\s*=\s*"?[A-Z0-9]{10}"?"#,
-                         options: .regularExpression) != nil
+        guard p.terminationStatus == 0 else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// Honest, per-state guidance for the Xcode gate. Each case names exactly
@@ -312,6 +365,15 @@ final class ConverterViewModel: ObservableObject {
     /// without the user hunting for a "try again" button. Keeps the picked
     /// extension so the CTA falls back to "Convert & Install".
     func recheckXcode() {
+        // Signing into Xcode and switching back should be enough. Resume the
+        // parked conversion the same way the Xcode gate's one-click fixes do.
+        if needsAppleAccount, Self.xcodeTeamPresent() {
+            needsAppleAccount = false
+            failureSummary = nil
+            phase = .idle
+            if !options.inputPath.isEmpty { userConvert() }
+            return
+        }
         guard needsXcode else { return }
         let status = CLIRunner.xcodeStatus()
         xcodeStatus = status
@@ -365,6 +427,7 @@ final class ConverterViewModel: ObservableObject {
         lastExitCode = nil
         extInfo = nil
         needsXcode = false
+        needsAppleAccount = false
         options.inputPath = ""
         options.appName = ""
     }
