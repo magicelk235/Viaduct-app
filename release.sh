@@ -7,7 +7,13 @@
 # warning). Requires: `xcrun notarytool store-credentials viaduct-notary ...`
 # has been run once (stores Apple ID + team + app-specific password in keychain).
 #
-# Usage: ./release.sh          # build, sign, dmg, notarize, staple
+# It also produces the Sparkle update channel: a zip of the stapled .app plus a
+# signed appcast.xml. Both get attached to the GitHub release alongside the DMG
+# (the app's feed URL is .../releases/latest/download/appcast.xml). Signing the
+# appcast needs the Sparkle EdDSA private key in the login keychain — see
+# `bin/generate_keys` in the resolved Sparkle package.
+#
+# Usage: ./release.sh          # build, sign, dmg, notarize, staple, appcast
 #        ./release.sh --no-notarize   # stop after building the signed dmg
 set -euo pipefail
 
@@ -41,10 +47,23 @@ echo "==> Staging to $WORK for signing"
 rm -rf "$WORK" && mkdir -p "$WORK"
 ditto "$REL/Viaduct.app" "$APP"
 
-# Sign inside-out (extension first, then app). --timestamp (secure, not =none) and
-# --options runtime are MANDATORY for notarization.
+# Sign inside-out (Sparkle's helpers, then the framework, then the extension,
+# then the app). --timestamp (secure, not =none) and --options runtime are
+# MANDATORY for notarization. Nothing deep-signs for us here, so every nested
+# executable inside Sparkle.framework has to be named explicitly — an unsigned
+# one fails notarization for the whole app.
 echo "==> Signing with Developer ID"
 xattr -cr "$APP"
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE" ]; then
+  for item in "$SPARKLE/Versions/B/XPCServices/"*.xpc \
+              "$SPARKLE/Versions/B/Updater.app" \
+              "$SPARKLE/Versions/B/Autoupdate"; do
+    [ -e "$item" ] || continue   # XPC services only ship in the sandboxed variant
+    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$item"
+  done
+  codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$SPARKLE"
+fi
 codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
   --entitlements "$EXT_ENT" "$APPEX"
 codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
@@ -58,14 +77,17 @@ echo "==> Building DMG"
 "$ROOT/dmg/make-dmg.sh" "$APP"
 OUT="$ROOT/Viaduct.dmg"
 
-# Delete both loose app copies (unsigned build product + signed staging copy):
-# duplicate bundles with the installed app's bundle id can steal the Safari
-# extension binding from /Applications and wedge the store-page progress card.
-rm -rf "$REL/Viaduct.app" "$WORK"
+# Delete the loose unsigned build product: a duplicate bundle with the installed
+# app's bundle id can steal the Safari extension binding from /Applications and
+# wedge the store-page progress card. $WORK survives a little longer — the
+# Sparkle zip is cut from it once the app carries its notarization ticket.
+rm -rf "$REL/Viaduct.app"
 
 if [ "$NOTARIZE" = 0 ]; then
+  rm -rf "$WORK"
   echo "==> Done (unnotarized): $OUT"
   echo "    Users WILL hit Gatekeeper warnings. Re-run without --no-notarize to ship."
+  echo "    No update zip or appcast — those only make sense for a shippable build."
   exit 0
 fi
 
@@ -76,5 +98,39 @@ xcrun notarytool submit "$OUT" --keychain-profile "$KEYCHAIN_PROFILE" --wait
 echo "==> Stapling ticket"
 xcrun stapler staple "$OUT"
 xcrun stapler validate "$OUT"
+# The notarization ticket covers every code item in the submission, so the app
+# inside the DMG can be stapled directly from here. Sparkle installs the .app
+# out of a zip with no DMG involved, so it needs its own stapled ticket to
+# launch on a Mac that happens to be offline.
+xcrun stapler staple "$APP"
+
+# --- Sparkle update channel: zip of the stapled app + a signed appcast ---
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+DIST="$ROOT/dist"
+ZIP="$DIST/Viaduct-$VERSION.zip"
+echo "==> Packaging update zip ($VERSION)"
+rm -rf "$DIST" && mkdir -p "$DIST"
+ditto -c -k --keepParent "$APP" "$ZIP"
+rm -rf "$WORK"
+
+# generate_appcast lives in the resolved Sparkle package. It reads the zip,
+# signs it with the EdDSA private key from the login keychain, and writes the
+# feed. Only this release's zip is in $DIST, so the feed carries a single item —
+# all Sparkle needs to offer the update (deltas would need the back catalogue).
+GEN="$ROOT/build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast"
+if [ ! -x "$GEN" ]; then
+  xcodebuild -project "$ROOT/Viaduct.xcodeproj" -scheme Viaduct \
+    -derivedDataPath "$ROOT/build" -resolvePackageDependencies >/dev/null
+fi
+[ -x "$GEN" ] || { echo "FAILED: generate_appcast not found at $GEN"; exit 1; }
+
+echo "==> Generating signed appcast"
+"$GEN" "$DIST" -o "$DIST/appcast.xml" \
+  --download-url-prefix "https://github.com/magicelk235/viaduct-app/releases/download/v$VERSION/"
 
 echo "==> Done: $OUT (signed + notarized + stapled — ships clean on any Mac)"
+echo
+echo "Publish — the tag MUST be v$VERSION or the appcast's download URLs 404:"
+echo "  gh release create v$VERSION \\"
+echo "    \"$OUT\" \"$ZIP\" \"$DIST/appcast.xml\" \\"
+echo "    --title \"Viaduct $VERSION\" --notes \"...\""

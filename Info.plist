@@ -30,12 +30,18 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT</string>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/magicelk235/viaduct-app/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>apcUCBF2JH7SFuH8ohkVJGa+zu9Yzu21IAYbvwI1vbM=</string>
 </dict>
 </plist>

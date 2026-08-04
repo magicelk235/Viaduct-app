@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject private var history: ConversionHistory
     @ObservedObject private var license = LicenseManager.shared
+    @ObservedObject private var updater = Updater.shared
     @State private var showDeactivateConfirm = false
     @State private var licenseKey = ""
 
@@ -28,6 +29,7 @@ struct SettingsView: View {
 
                     interfaceCard
                     licenseCard
+                    appUpdateCard
                     cliCard
                     signingCard
                     historyCard
@@ -178,6 +180,27 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.Colors.accentBlue)
                 }
             }
+        }
+    }
+
+    private var appUpdateCard: some View {
+        SettingsSection(title: "App updates", symbol: "arrow.down.app") {
+            SettingsRow(icon: "shippingbox", title: "Viaduct version") {
+                Text(Bundle.main
+                    .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
+                    .font(Theme.Font.mono())
+                    .foregroundStyle(Theme.Colors.body)
+            }
+            Divider().overlay(Theme.Colors.hairlineSoft)
+            Toggle("Install updates automatically",
+                   isOn: Binding(get: { updater.automaticallyChecksForUpdates },
+                                 set: { updater.automaticallyChecksForUpdates = $0 }))
+                .toggleStyle(.glass)
+            Text("Checks daily and installs new versions in the background. The update takes effect the next time Viaduct starts.")
+                .font(Theme.Font.caption())
+                .foregroundStyle(Theme.Colors.mute)
+            Button("Check for Updates") { updater.checkForUpdates() }
+                .buttonStyle(.raycastTertiary)
         }
     }
 

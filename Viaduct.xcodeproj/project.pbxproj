@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0523B4340A556E2FC8D07245 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC951A109BC2D9F744B5551A /* ContentView.swift */; };
 		06DD26A7C7920C7AF8FDFBC3 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4706037E93DBAA4A3F086E94 /* App.swift */; };
+		08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC67CD1790FCD1A2DBD5B113 /* Updater.swift */; };
 		1EE76700C7DC11A36FAEE4BC /* ConvertAnimations.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD24BC2D7FBDC2959615B2BD /* ConvertAnimations.swift */; };
 		2B029B0B07AA19483E9DA8BB /* AppMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48578BB525C063A21AD9F40D /* AppMode.swift */; };
 		2D188D3EA38AF17BCD41915E /* icon.png in Resources */ = {isa = PBXBuildFile; fileRef = D5DF22DC54CA787439C7D93E /* icon.png */; };
@@ -35,8 +36,8 @@
 		E200E4056A21FDD6CCE1D87F /* CLIUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6E1B55880A88354EC17F8F /* CLIUpdater.swift */; };
 		E827408EA78A95108D5F62D2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2B7969794EF0B93CC897FE /* SettingsView.swift */; };
 		EB7FA085A32BE26506778407 /* bin in Resources */ = {isa = PBXBuildFile; fileRef = 5B3B349223B937D244E01611 /* bin */; };
+		ED4A5BBC553EBEBAFA69D002 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3D4685CB7B7673040D344CE7 /* Sparkle */; };
 		FB447A2CB916C3211D0E4B8D /* ExtensionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */; };
-		FDE2D30699FD90B16A577A18 /* AppUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B4A68C4FECE9AD0EBB3179 /* AppUpdateChecker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,7 +87,6 @@
 		96F1ADB5A0FE75373E14B3EE /* ConversionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionHistory.swift; sourceTree = "<group>"; };
 		A37C3C24384547982754F0EE /* Viaduct.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Viaduct.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A67B80F0FD9B492A25C0D3E9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		A9B4A68C4FECE9AD0EBB3179 /* AppUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateChecker.swift; sourceTree = "<group>"; };
 		B940EB4254E642C973760112 /* ExtensionRenewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionRenewer.swift; sourceTree = "<group>"; };
 		BFBEBF47F3929776DC55B329 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
 		C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionInfo.swift; sourceTree = "<group>"; };
@@ -97,7 +97,19 @@
 		DF2B7969794EF0B93CC897FE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		EC951A109BC2D9F744B5551A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		F87C69746F349EE36E0488A6 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		FC67CD1790FCD1A2DBD5B113 /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B348EB69DD66972884C1D0F9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ED4A5BBC553EBEBAFA69D002 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		085C626C5FF443CD47D69871 = {
@@ -149,7 +161,6 @@
 				72B65E78309624F2ED7F17DB /* ActivationView.swift */,
 				4706037E93DBAA4A3F086E94 /* App.swift */,
 				48578BB525C063A21AD9F40D /* AppMode.swift */,
-				A9B4A68C4FECE9AD0EBB3179 /* AppUpdateChecker.swift */,
 				09BE5C61C57681BCE4413B57 /* CLIRunner.swift */,
 				5A6E1B55880A88354EC17F8F /* CLIUpdater.swift */,
 				EC951A109BC2D9F744B5551A /* ContentView.swift */,
@@ -165,6 +176,7 @@
 				44B8FE947E5A6B0F21B397CE /* RenewalPolicy.swift */,
 				DF2B7969794EF0B93CC897FE /* SettingsView.swift */,
 				614D8805DDE093D020F1D0D7 /* Theme.swift */,
+				FC67CD1790FCD1A2DBD5B113 /* Updater.swift */,
 				D6A5AD59DEEF416F7494A43E /* UserModeView.swift */,
 			);
 			path = Sources;
@@ -207,6 +219,7 @@
 				FC2CE8C82374EA97715A4004 /* Fetch Node */,
 				8447CB9A519BE4019124E3E9 /* Sources */,
 				2734418A22F3D57141CDDA1B /* Resources */,
+				B348EB69DD66972884C1D0F9 /* Frameworks */,
 				5C39C90F02F571EFDCD3B162 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -216,6 +229,7 @@
 			);
 			name = Viaduct;
 			packageProductDependencies = (
+				3D4685CB7B7673040D344CE7 /* Sparkle */,
 			);
 			productName = Viaduct;
 			productReference = A37C3C24384547982754F0EE /* Viaduct.app */;
@@ -249,6 +263,9 @@
 			);
 			mainGroup = 085C626C5FF443CD47D69871;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F6BDD733FDD0211B2581026E /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7C0E8ABABEAAC589DEB809EA /* Products */;
 			projectDirPath = "";
@@ -315,7 +332,6 @@
 				544A439C6481249E7C287FE7 /* ActivationView.swift in Sources */,
 				06DD26A7C7920C7AF8FDFBC3 /* App.swift in Sources */,
 				2B029B0B07AA19483E9DA8BB /* AppMode.swift in Sources */,
-				FDE2D30699FD90B16A577A18 /* AppUpdateChecker.swift in Sources */,
 				380DF86B2C777A78CFE2122E /* CLIRunner.swift in Sources */,
 				E200E4056A21FDD6CCE1D87F /* CLIUpdater.swift in Sources */,
 				0523B4340A556E2FC8D07245 /* ContentView.swift in Sources */,
@@ -331,6 +347,7 @@
 				D18DDDAA1015F048BF31B754 /* RenewalPolicy.swift in Sources */,
 				E827408EA78A95108D5F62D2 /* SettingsView.swift in Sources */,
 				D498F700B216CEF067756D6A /* Theme.swift in Sources */,
+				08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */,
 				64A64A03445710FDDC87DF8C /* UserModeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -389,7 +406,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(MARKETING_VERSION)";
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -472,7 +489,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = "$(MARKETING_VERSION)";
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -594,6 +611,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F6BDD733FDD0211B2581026E /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.5;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3D4685CB7B7673040D344CE7 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F6BDD733FDD0211B2581026E /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 09E4D0EEC295AD42EF85A3EE /* Project object */;
 }
