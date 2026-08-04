@@ -9,6 +9,12 @@ struct SettingsView: View {
     @ObservedObject private var updater = Updater.shared
     @State private var showDeactivateConfirm = false
     @State private var licenseKey = ""
+    /// "Up to date" confirmation after a manual CLI check, cleared on a timer so
+    /// it doesn't linger as permanent chrome.
+    @State private var cliUpToDate = false
+    /// True only between a click on the version number and that check finishing,
+    /// so background checks never trigger the inline confirmation.
+    @State private var cliCheckRequested = false
 
     init(mode: Binding<AppMode>, vm: ConverterViewModel) {
         _mode = mode
@@ -32,8 +38,8 @@ struct SettingsView: View {
                     appUpdateCard
                     cliCard
                     signingCard
-                    historyCard
                     supportCard
+                    historyCard
                 }
                 .padding(Theme.Space.xl)
             }
@@ -43,18 +49,8 @@ struct SettingsView: View {
 
     // MARK: - Cards
 
-    private var supportCard: some View {
-        SettingsSection(title: "Support", symbol: "ladybug") {
-            Text("Something broken? Opens a GitHub issue pre-filled with your app version and the last error so it can be reproduced.")
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
-            Button("Report a Bug") { NSWorkspace.shared.open(bugReportURL) }
-                .buttonStyle(.raycastTertiary)
-        }
-    }
-
-    /// GitHub new-issue URL with environment details pre-filled — one click
-    /// from "it broke" to a reproducible report.
+    /// GitHub new-issue URL with the app version, CLI version, macOS version and
+    /// last error filled in, so a report arrives with enough to reproduce it.
     private var bugReportURL: URL {
         let app = Bundle.main
             .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -79,7 +75,7 @@ struct SettingsView: View {
     }
 
     private var interfaceCard: some View {
-        SettingsSection(title: "Interface", symbol: "macwindow") {
+        SettingsSection(title: "Mode", symbol: "macwindow") {
             PillTabPicker(options: AppMode.allCases, label: \.label, selection: $mode)
             Text(mode.blurb)
                 .font(Theme.Font.caption())
@@ -89,36 +85,45 @@ struct SettingsView: View {
 
     private var cliCard: some View {
         SettingsSection(title: "Command-line tool", symbol: "terminal") {
-            SettingsRow(icon: "shippingbox", title: "Installed version") {
-                Text(vm.installedVersion)
-                    .font(Theme.Font.mono())
-                    .foregroundStyle(Theme.Colors.body)
-            }
-            Divider().overlay(Theme.Colors.hairlineSoft)
-            HStack {
-                Button("Check for Updates") { vm.checkForUpdates() }
-                    .buttonStyle(.raycastTertiary)
-                    .disabled(vm.updateChecking || vm.isRunning)
+            VersionRow(version: vm.installedVersion,
+                       status: cliStatus,
+                       check: checkCLI) {
                 if vm.updateAvailable {
                     Button("Update Now") { vm.updateCLI() }
                         .buttonStyle(.raycastPrimary)
                         .disabled(vm.isRunning)
                 }
-                Spacer()
-                if vm.updateChecking {
-                    HStack(spacing: Theme.Space.xs) {
-                        ProgressView().controlSize(.small)
-                        Text("Checking…")
-                            .font(Theme.Font.caption())
-                            .foregroundStyle(Theme.Colors.mute)
-                    }
-                } else if vm.updateAvailable {
-                    Label("Update available", systemImage: "arrow.down.circle.fill")
-                        .font(Theme.Font.caption())
-                        .foregroundStyle(Theme.Colors.accentBlue)
-                }
+            }
+            .onChange(of: vm.updateChecking) { checking in
+                if !checking { cliCheckFinished() }
             }
         }
+    }
+
+    private var cliStatus: String? {
+        if vm.updateChecking { return "Checking…" }
+        if vm.updateAvailable { return "Update available" }
+        return cliUpToDate ? "Up to date" : nil
+    }
+
+    /// Manual CLI check. `vm.checkForUpdates()` installs a newer version on its
+    /// own, so "up to date" is confirmed when the check finishes with nothing
+    /// available. Driven by the checking flag flipping back (see .onChange
+    /// below) rather than a fixed delay, which a slow check would outrun.
+    private func checkCLI() {
+        guard !vm.updateChecking, !vm.isRunning else { return }
+        cliUpToDate = false
+        cliCheckRequested = true
+        vm.checkForUpdates()
+    }
+
+    /// Called when a check finishes: show the confirmation briefly, then clear.
+    private func cliCheckFinished() {
+        guard cliCheckRequested else { return }
+        cliCheckRequested = false
+        guard !vm.updateAvailable else { return }
+        cliUpToDate = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { cliUpToDate = false }
     }
 
     private var licenseCard: some View {
@@ -128,22 +133,19 @@ struct SettingsView: View {
             }
         } content: {
             if license.isLicensed {
-                Text("Your license is active — unlimited conversions and auto-renew.")
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.mute)
                 Button("Deactivate on this Mac") { showDeactivateConfirm = true }
                     .buttonStyle(.raycastTertiary)
-                    .confirmationDialog("Deactivate the license on this Mac?",
+                    .confirmationDialog("Viaduct will go back to the free tier on this Mac",
                                         isPresented: $showDeactivateConfirm) {
                         Button("Deactivate", role: .destructive) {
                             license.deactivateAndClear()
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("You'll need to re-enter your key to reactivate. Use this when moving to another Mac.")
+                        Text("Frees up the seat for another Mac. You'll need your key to activate again.")
                     }
             } else {
-                Text("Running on the free tier (\(license.freeConversionsRemaining) of \(license.freeQuota) conversions left). Activate a license for unlimited conversions and auto-renew.")
+                Text("\(license.freeConversionsRemaining) of \(license.freeQuota) free conversions left. A license removes the limit and turns on auto-renew, so Safari stops dropping your extensions after a week.")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
 
@@ -185,57 +187,44 @@ struct SettingsView: View {
 
     private var appUpdateCard: some View {
         SettingsSection(title: "App updates", symbol: "arrow.down.app") {
-            SettingsRow(icon: "shippingbox", title: "Viaduct version") {
-                Text(Bundle.main
-                    .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
-                    .font(Theme.Font.mono())
-                    .foregroundStyle(Theme.Colors.body)
-            }
+            // Sparkle presents its own progress and "you're up to date" window,
+            // so this row only needs to start the check.
+            VersionRow(version: Bundle.main
+                .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
+                       check: updater.checkForUpdates)
             Divider().overlay(Theme.Colors.hairlineSoft)
             Toggle("Install updates automatically",
                    isOn: Binding(get: { updater.automaticallyChecksForUpdates },
                                  set: { updater.automaticallyChecksForUpdates = $0 }))
                 .toggleStyle(.glass)
-            Text("Checks daily and installs new versions in the background. The update takes effect the next time Viaduct starts.")
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
-            Button("Check for Updates") { updater.checkForUpdates() }
-                .buttonStyle(.raycastTertiary)
         }
     }
 
     private var signingCard: some View {
         let licensed = license.isLicensed
-        return SettingsSection(title: "Signing", symbol: "signature") {
+        return SettingsSection(title: "Keeping extensions working", symbol: "signature") {
             if !licensed {
                 ProBadge(color: Theme.Colors.accentBlue)
             }
         } content: {
             // Free users always see (and get) OFF: the binding reads false and
             // ignores writes. Licensed users get the real stored toggle.
-            Toggle("Auto-renew extensions before they expire",
+            Toggle("Re-sign extensions before they expire",
                    isOn: licensed
                        ? $vm.autoRenew
                        : .constant(false))
                 .toggleStyle(.glass)
                 .disabled(!licensed)
                 .onChange(of: vm.autoRenew) { _ in vm.startAutoRenew() }
-            Text("Free Apple accounts sign extensions for ~7 days. This rebuilds and re-signs your installed extensions before that lapses, so Safari never drops them. Uses the Apple identity from Xcode automatically.")
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
-
             Divider().overlay(Theme.Colors.hairlineSoft)
 
-            Toggle("Auto-update extensions from the Chrome Web Store",
+            Toggle("Update Chrome Web Store extensions weekly",
                    isOn: licensed
                        ? $vm.autoUpdate
                        : .constant(false))
                 .toggleStyle(.glass)
                 .disabled(!licensed)
                 .onChange(of: vm.autoUpdate) { _ in vm.startAutoRenew() }
-            Text("When an extension you installed from the Chrome Web Store ships a new version, Viaduct rebuilds and reinstalls it automatically (checked weekly). Off by default; store-page installs only.")
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
             if !licensed {
                 // Settings is its own window; the activation sheet lives on the
                 // main window. Just send them to buy — converting again surfaces
@@ -256,7 +245,7 @@ struct SettingsView: View {
             }
         } content: {
             if history.records.isEmpty {
-                Text("Extensions you convert will be listed here.")
+                Text("Nothing converted yet. Drop an extension on the main window to start.")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
             } else {
@@ -270,19 +259,26 @@ struct SettingsView: View {
         }
     }
 
+    private var supportCard: some View {
+        SettingsSection(title: "Support", symbol: "ladybug") {
+            Button("Report a Bug") { NSWorkspace.shared.open(bugReportURL) }
+                .buttonStyle(.raycastTertiary)
+        }
+    }
+
     /// Auto-renew state for a row: failure is loud (red), otherwise show next renew.
     /// Only shown to licensed users — free tier doesn't auto-renew.
     @ViewBuilder
     private func renewStatus(_ rec: ConversionRecord) -> some View {
         if license.isLicensed && vm.autoRenew {
             if rec.lastRenewFailed == true {
-                Label("Renew failed — reconvert before \(rec.expiresAt.formatted(date: .abbreviated, time: .omitted))",
+                Label("Couldn't re-sign. Convert it again before \(rec.expiresAt.formatted(date: .abbreviated, time: .omitted))",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.accentRed)
                     .lineLimit(1)
             } else {
-                Text("Renews \(rec.expiresAt.formatted(.relative(presentation: .named)))")
+                Text("Re-signs \(rec.expiresAt.formatted(.relative(presentation: .named)))")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.ash)
             }
@@ -321,7 +317,7 @@ struct SettingsView: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.raycastGhost)
-            .help("Delete and stop auto-renewing")
+            .help("Forget this extension and stop renewing it")
         }
         .padding(.vertical, Theme.Space.xs)
         .padding(.horizontal, Theme.Space.sm)
@@ -385,23 +381,56 @@ private struct SettingsSection<Accessory: View, Content: View>: View {
     }
 }
 
-/// A labeled row: leading icon, title, trailing value.
-private struct SettingsRow<Value: View>: View {
-    let icon: String
-    let title: String
-    @ViewBuilder var value: () -> Value
+/// A version row that doubles as the update control: the number underlines on
+/// hover and runs `check` on click, so the card needs no permanent button.
+/// `status` carries the inline result ("Checking…", "Up to date"), and any
+/// trailing action (an Update Now button) is supplied by the caller.
+private struct VersionRow<Trailing: View>: View {
+    let version: String
+    var status: String?
+    let check: () -> Void
+    @ViewBuilder var trailing: () -> Trailing
+
+    @State private var hovering = false
+
+    init(version: String, status: String? = nil, check: @escaping () -> Void,
+         @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
+        self.version = version
+        self.status = status
+        self.check = check
+        self.trailing = trailing
+    }
 
     var body: some View {
         HStack(spacing: Theme.Space.sm) {
-            Image(systemName: icon)
+            Image(systemName: "shippingbox")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.Colors.primary)
                 .frame(width: 18)
-            Text(title)
+            Text("Version")
                 .font(Theme.Font.body())
                 .foregroundStyle(Theme.Colors.body)
             Spacer()
-            value()
+            if let status {
+                Text(status)
+                    .font(Theme.Font.caption())
+                    .foregroundStyle(Theme.Colors.mute)
+                    .transition(.opacity)
+            }
+            Text(version)
+                .font(Theme.Font.mono())
+                .foregroundStyle(Theme.Colors.body)
+                .underline(hovering)
+                .onHover { inside in
+                    hovering = inside
+                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+                .onTapGesture(perform: check)
+                .help("Check for updates")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Check for updates")
+            trailing()
         }
+        .animation(.easeInOut(duration: 0.15), value: status)
     }
 }

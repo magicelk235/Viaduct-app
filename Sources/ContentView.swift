@@ -153,7 +153,7 @@ struct ContentView: View {
             Image(systemName: "terminal")
                 .font(.system(size: 28, weight: .regular))
                 .foregroundStyle(Theme.Colors.primary)
-            Text("Output appears here")
+            Text("No output yet")
                 .font(Theme.Font.body())
                 .foregroundStyle(Theme.Colors.mute)
             Text("Run Convert, Analyze, or Doctor to see live progress.")

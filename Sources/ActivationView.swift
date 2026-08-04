@@ -43,7 +43,7 @@ struct ActivationView: View {
                     .foregroundStyle(Theme.Colors.ink)
                     .multilineTextAlignment(.center)
 
-                Text("Paste the license key from your purchase email to unlock unlimited conversions.")
+                Text("Paste the key from your purchase email. One payment, no subscription, and it also turns on auto-renew.")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
                     .multilineTextAlignment(.center)

@@ -405,7 +405,7 @@ final class ConverterViewModel: ObservableObject {
     /// Skips silently if the source file is gone (e.g. moved/deleted since).
     func reconvert(_ record: ConversionRecord) {
         guard FileManager.default.fileExists(atPath: record.sourcePath) else {
-            failureSummary = "Original extension no longer exists at \(record.sourcePath)."
+            failureSummary = "The original file has moved or been deleted, so it can't be converted again. It was at \(record.sourcePath)."
             phase = .failed
             return
         }
@@ -494,7 +494,7 @@ final class ConverterViewModel: ObservableObject {
             // .done and opens the freshly-converted extension app.
             phase = .finishing
         } else {
-            failureSummary = "The converter exited with code \(code). Open Developer mode to see why."
+            failureSummary = "The conversion stopped partway through. Copy the log or switch to Developer mode to see what failed."
             phase = .failed
             Feedback.failure()
         }

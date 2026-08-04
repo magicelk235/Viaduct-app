@@ -11,8 +11,8 @@ enum AppMode: String, CaseIterable, Identifiable {
     }
     var blurb: String {
         switch self {
-        case .user: return "Drop an extension, get it in Safari. Nothing else."
-        case .developer: return "Full CLI surface: flags, signing, live log."
+        case .user: return "Drop an extension, get it in Safari."
+        case .developer: return "Every CLI flag, signing options, and the live build log."
         }
     }
 }
@@ -49,13 +49,13 @@ enum ConvertPhase: Int, CaseIterable, Identifiable {
         switch self {
         case .idle:       return ""
         case .extracting: return "Opening the package"
-        case .reading:    return "Checking compatibility"
-        case .staging:    return "Cleaning and shimming"
-        case .packaging:  return "Wiring up the Xcode project"
-        case .building:   return "This is the slow part — hang tight"
+        case .reading:    return "Checking what Safari supports"
+        case .staging:    return "Patching Chrome APIs for Safari"
+        case .packaging:  return "Building the Xcode project"
+        case .building:   return "The slow step. A minute or two is normal"
         case .installing: return "Registering with Safari"
         case .finishing:  return "Almost there"
-        case .done:       return "Enable it in Safari → Settings → Extensions"
+        case .done:       return "Turn it on in Safari → Settings → Extensions"
         case .failed:     return "Switch to Developer mode for the full log"
         }
     }

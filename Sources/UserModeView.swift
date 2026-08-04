@@ -51,7 +51,7 @@ struct UserModeView: View {
     // MARK: - Header
 
     private var header: some View {
-        BrandLockup(subtitle: "Convert a Chrome extension and install it in Safari.")
+        BrandLockup(subtitle: "Run Chrome extensions in Safari.")
     }
 
     // MARK: - Free-uses badge
@@ -64,7 +64,7 @@ struct UserModeView: View {
             let left = license.freeConversionsRemaining
             Text(left > 0
                  ? "\(left) free conversion\(left == 1 ? "" : "s") left"
-                 : "Free conversions used — activate a license to continue")
+                 : "No free conversions left. Activate a license to keep going.")
                 .font(Theme.Font.caption())
                 .foregroundStyle(left > 0 ? Theme.Colors.mute : Theme.Colors.accentBlue)
                 .transition(.opacity)
@@ -151,8 +151,8 @@ struct UserModeView: View {
                     .lineLimit(1).truncationMode(.middle)
                 if vm.phase == .done {
                     DoneBadge()
-                } else {
-                    Text("Ready to convert")
+                } else if let version = info.version, !version.isEmpty {
+                    Text("Version \(version)")
                         .font(Theme.Font.caption())
                         .foregroundStyle(Theme.Colors.mute)
                 }
@@ -228,9 +228,9 @@ struct UserModeView: View {
     private var failedHeadline: String {
         if vm.needsXcode {
             switch vm.xcodeStatus {
-            case .notSelected:     return "Almost there: point macOS at Xcode"
-            case .setupIncomplete: return "Almost there: finish Xcode setup"
-            default:               return "One more thing: install Xcode"
+            case .notSelected:     return "macOS isn't pointed at Xcode yet"
+            case .setupIncomplete: return "Xcode setup isn't finished"
+            default:               return "Xcode is required to sign extensions"
             }
         }
         if let last = vm.lastReachedTrackPhase {
@@ -498,7 +498,7 @@ struct HistoryDetailSheet: View {
                 }
                 .buttonStyle(.raycastTertiary)
                 .disabled(!sourceExists)
-                .help(sourceExists ? "" : "Original extension file is missing")
+                .help(sourceExists ? "" : "The original file has moved or been deleted")
 
                 HStack {
                     Button("Remove") {

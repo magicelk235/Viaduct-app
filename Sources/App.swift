@@ -113,7 +113,10 @@ struct ViaductApp: App {
             }
             .onAppear {
                 license.bootstrap(); vm.onLaunch()
-                _ = Updater.shared           // starts Sparkle's background checks
+                // Starts Sparkle's background checks. It also needs to know when
+                // a conversion is running so an update never relaunches us
+                // mid-xcodebuild.
+                Updater.shared.isBusy = { [weak vm] in vm?.isRunning ?? false }
                 InstallProgressBridge.shared.start()
                 InstallProgressBridge.shared.snapshot = { [weak vm] queryId in
                     ViaductApp.progressSnapshot(vm, queryId: queryId)
@@ -143,8 +146,8 @@ struct ViaductApp: App {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app"))
                     vm.needsAppleAccount = true
                     vm.failureSummary = vm.adhocDespiteAccount
-                        ? "In Xcode, create any macOS app project, open Signing & Capabilities, and pick your name in the Team dropdown. That makes Xcode issue the signing certificate. Then try the install again."
-                        : "Sign into Xcode (Settings → Accounts) with any free Apple ID, then try the install again."
+                        ? "In Xcode, create any macOS app project, open Signing & Capabilities, and pick your name in the Team dropdown. That makes Xcode issue the certificate. Then install again."
+                        : "Sign into Xcode (Settings → Accounts) with any free Apple ID, then install again."
                     vm.phase = .failed
                 }
                 Button("Cancel", role: .cancel) {
@@ -155,27 +158,23 @@ struct ViaductApp: App {
                 // Two different failures wear the same symptom. Telling someone who
                 // already signed in to go sign in is the fastest way to lose them.
                 Text(vm.adhocDespiteAccount ? """
-                Your Apple ID is signed into Xcode, but Xcode hasn't issued a \
-                signing certificate for it yet, so this extension would be signed \
-                ad-hoc — Safari turns ad-hoc extensions off every time it quits, \
-                and you'd have to re-enable them in the Develop menu after each \
-                restart.
+                Your Apple ID is in Xcode, but Xcode hasn't issued a signing \
+                certificate yet. Without one, Safari turns this extension off \
+                every time it quits and you have to re-enable it from the \
+                Develop menu.
 
-                Xcode only creates the certificate once a project asks for it. In \
-                Xcode: File → New → Project, pick macOS → App, then open the \
-                Signing & Capabilities tab and choose your name in the Team \
-                dropdown. You can delete that project afterwards. Come back and \
-                convert again.
+                Xcode only creates the certificate when a project asks for it. \
+                In Xcode: File → New → Project, pick macOS → App, open the \
+                Signing & Capabilities tab, and choose your name in the Team \
+                dropdown. Delete the project afterwards, then convert again.
                 """ : """
-                Viaduct couldn't find an Apple Developer team in Xcode, so this \
-                extension would be signed ad-hoc — Safari turns ad-hoc extensions \
-                off every time it quits, and you'd have to re-enable them in the \
-                Develop menu after each restart.
+                Viaduct couldn't find an Apple account in Xcode. Without one, \
+                Safari turns this extension off every time it quits and you have \
+                to re-enable it from the Develop menu.
 
-                For extensions that stay enabled, sign into Xcode with any free \
-                Apple ID (Xcode → Settings → Accounts), then convert again. Note \
-                that signing in under System Settings → Apple Account is a \
-                different thing and won't work.
+                Sign into Xcode with any free Apple ID (Xcode → Settings → \
+                Accounts), then convert again. Signing in under System Settings \
+                → Apple Account is a different thing and won't work.
                 """)
             }
             // Paywall: shown when an unlicensed user hits the free-quota wall.
@@ -272,8 +271,8 @@ struct ViaductApp: App {
         }
         if vm.showAdhocWarning {
             return ["state": "active", "fraction": 0.04,
-                    "title": "Waiting for you",
-                    "subtitle": "Decide in the Viaduct window"]
+                    "title": "Needs your answer",
+                    "subtitle": "Open Viaduct to continue"]
         }
         switch vm.phase {
         case .failed:
@@ -290,7 +289,7 @@ struct ViaductApp: App {
             if InstallProgressBridge.shared.downloading {
                 return ["state": "active", "fraction": 0.06,
                         "title": "Downloading from Chrome Web Store",
-                        "subtitle": "Fetching the extension package"]
+                        "subtitle": "This usually takes a few seconds"]
             }
             return ["state": "idle"]
         default:
@@ -360,8 +359,8 @@ struct RenewMenu: View {
         // Expiry tracking + renewal is a Pro feature. Free users see an upsell,
         // not extension expiry rows or a Renew action they can't use.
         if !license.isLicensed {
-            Text("Renewal is a Pro feature")
-            Button("Go Pro to auto-renew") {
+            Text("Auto-renew keeps Safari from dropping extensions")
+            Button("Unlock with Pro") {
                 NSApp.setActivationPolicy(.regular)
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
