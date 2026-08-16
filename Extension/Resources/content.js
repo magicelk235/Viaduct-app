@@ -36,6 +36,23 @@ function desiredPaint() {
     : { bg: '#4A9DAD', fg: '#0A1A1E' };
 }
 
+// The Chrome Web Store localizes its install button ("Add to Chrome",
+// "Toev. aan Chrome", "In Chrome installieren"…) but always leaves the product
+// name "Chrome" untranslated, so key on that rather than fixed English copy.
+// Exclude the "Chrome Web Store" logo and footer links, which carry the word
+// but aren't install actions.
+function isChromeInstall(text) {
+  const t = (text || '').toLowerCase().trim();
+  if (t.length >= 40 || !t.includes('chrome')) return false;
+  return !(t.includes('web store') || t.includes('webstore'));
+}
+
+// Buttons we've already relabelled or injected, so a state flip repaints them.
+function isOurLabel(text) {
+  const t = (text || '').toLowerCase().trim();
+  return t.includes('add to safari') || t.includes('remove from safari');
+}
+
 // Style our own injected button (not a repurposed store button) for the
 // current add/remove state.
 function paintInjected(btn) {
@@ -114,33 +131,37 @@ function removeViaduct(id, btn) {
 }
 
 function removeChromePromos() {
-  // Two nags, both text-only (no stable id/class):
+  // Two locale-independent nags, keyed on the product names Google leaves
+  // untranslated ("Chrome"/"Google") rather than fixed English copy:
   //   1. The blue "Switch to Chrome to install extensions and themes" banner.
-  //   2. The "Switch to Chrome?" modal ("Google recommends using Chrome when
-  //      using extensions and themes.") with a click-blocking backdrop.
-  // The phrases bubble up through every ancestor to <body>, so matching on
-  // textContent alone would hide the whole page. Guard each case: the banner
-  // is banner-shaped (short row), the modal subtree carries only its own text.
-  let hidModal = false;
-  const all = document.querySelectorAll(
-    'div, section, aside, dialog, [role="dialog"], [role="alertdialog"]'
-  );
-  for (const el of all) {
+  //   2. The "Switch to Chrome?" popover recommending Chrome.
+  // The words bubble up to <body>, so match text alone would hide the page.
+  // Guard each shape: the banner is a short row that carries an "install
+  // Chrome" action but not the extension title; the modal is a small dialog.
+  const h1 = [...document.querySelectorAll('h1')].find(el => el.offsetHeight > 0);
+  for (const el of document.querySelectorAll('div, section, aside')) {
+    const h = el.offsetHeight;
+    if (!(h > 0 && h < 120)) continue;
+    if (h1 && el.contains(h1)) continue; // never touch the extension header
     const text = (el.textContent || '').toLowerCase();
-    if (text.includes('switch to chrome to install')) {
-      const h = el.offsetHeight;
-      // visibility-free: display:none keeps layout out of the way without
-      // collapsing siblings.
-      if (h > 0 && h < 120) { el.style.display = 'none'; }
-      continue;
-    }
-    // Only act on the compact dialog subtree, never the page-level bubble.
-    if (text.includes('google recommends using chrome') && text.length < 300) {
+    if (text.length < 30 || text.length > 200) continue;
+    if (!text.includes('chrome') || text.includes('web store') || text.includes('webstore')) continue;
+    // Only the promo banner pairs that copy with an "install Chrome" action.
+    const isBanner = [...el.querySelectorAll('button, [role="button"], a')]
+      .some(b => isChromeInstall(b.textContent || ''));
+    if (isBanner) el.style.display = 'none';
+  }
+
+  let hidModal = false;
+  for (const el of document.querySelectorAll('[role="dialog"], [role="alertdialog"], dialog')) {
+    if (!el.offsetHeight) continue;
+    const text = (el.textContent || '').toLowerCase();
+    if (text.length < 300 && text.includes('chrome') && text.includes('google')) {
       if (hideChromeModal(el)) hidModal = true;
     }
   }
-  // The modal locks page scroll (inline overflow:hidden); hiding the overlay
-  // leaves that lock in place, so clear it.
+  // A full-screen modal locks page scroll (inline overflow:hidden); hiding the
+  // overlay leaves that lock in place, so clear it.
   if (hidModal) {
     document.documentElement.style.overflow = '';
     document.body.style.overflow = '';
@@ -187,7 +208,6 @@ const VD_BTN_CSS =
 // A surviving store button (relabeled or not) or live progress card, other
 // than `skip` (our own injected button).
 function storeInstallButton(skip) {
-  const phrases = ['add to safari', 'remove from safari', 'available on chrome', 'add to chrome', 'get chrome'];
   for (const btn of document.querySelectorAll('button, [role="button"], a')) {
     if (btn === skip) continue;
     if (btn.dataset.vdProgress) return btn;
@@ -195,7 +215,7 @@ function storeInstallButton(skip) {
     // containers — their leftover buttons don't count as present.
     if (!btn.offsetHeight) continue;
     const text = (btn.textContent || '').toLowerCase().trim();
-    if (text.length < 60 && phrases.some(p => text.includes(p))) return btn;
+    if (isChromeInstall(text) || isOurLabel(text)) return btn;
   }
   return null;
 }
@@ -227,11 +247,6 @@ function ensureInstallButton() {
 
 function enableInstallButton() {
   const buttons = document.querySelectorAll('button, [role="button"], a');
-  const chromePhrases = ['available on chrome', 'add to chrome', 'get chrome'];
-  // Our own labels too, so a state flip (install/remove) repaints a button we
-  // already relabelled — Google won't re-render it back to a Chrome phrase.
-  const ourLabels = ['add to safari', 'remove from safari'];
-  const relabelSources = chromePhrases.concat(ourLabels);
   const label = desiredLabel();
   const paint = desiredPaint();
   for (const btn of buttons) {
@@ -239,10 +254,12 @@ function enableInstallButton() {
     if (btn.dataset.vdProgress) continue;
     // Our injected button is owned by ensureInstallButton().
     if (btn.classList && btn.classList.contains('vd-install')) continue;
+    // Skip buttons hidden in dead SPA views or in the promo banner we just hid.
+    if (!btn.offsetHeight) continue;
 
     // textContent (not innerText) so disabled/greyed buttons still match.
     const text = (btn.textContent || '').toLowerCase().trim();
-    if (!relabelSources.some(phrase => text.includes(phrase))) continue;
+    if (!isChromeInstall(text) && !isOurLabel(text)) continue;
 
     // An install is running for THIS page and the SPA re-rendered the button
     // back to its Chrome label — re-adopt it as the progress card.
@@ -265,13 +282,13 @@ function enableInstallButton() {
 
     // Deep replace text nodes to preserve Google's button structure (spans, svgs).
     // No persistent flag: on SPA navigation Google reuses the same button node and
-    // resets its text to "Add to Chrome", so we must relabel whenever a known
-    // phrase is present, not just the first time we see the node.
+    // resets its text to the localized "Add to Chrome", so we relabel whenever a
+    // Chrome-install label is present, not just the first time we see the node.
     const changeText = (el) => {
       for (const child of el.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
-          const lower = child.nodeValue.toLowerCase().trim();
-          if (relabelSources.some(p => lower.includes(p)) && child.nodeValue.trim() !== label) {
+          const raw = child.nodeValue;
+          if ((isChromeInstall(raw) || isOurLabel(raw)) && raw.trim() !== label) {
             child.nodeValue = label;
           }
         } else if (child.nodeType === Node.ELEMENT_NODE) {
@@ -290,9 +307,9 @@ function enableInstallButton() {
 // and keep a MutationObserver live for the whole session so client-side navigations are
 // handled without a manual reload.
 function apply() {
+  removeChromePromos();
   enableInstallButton();
   ensureInstallButton();
-  removeChromePromos();
   refreshInstalled(currentDetailId());
 }
 
@@ -317,32 +334,28 @@ document.addEventListener('click', (e) => {
   if (!btn || btn.dataset.vdProgress) return;
 
   const text = (btn.textContent || '').toLowerCase().trim();
-  const clickPhrases = ['add to safari', 'remove from safari', 'available on chrome', 'add to chrome', 'get chrome'];
+  if (!isOurLabel(text) && !isChromeInstall(text)) return;
 
-  if (clickPhrases.some(phrase => text.includes(phrase))) {
-    // Store URL is /detail/<slug>/<id>. Capture both: the slug names the app so
-    // it isn't named after the random-looking id. Prefer the page's real <h1>
-    // title; fall back to de-slugifying the URL segment.
-    const match = window.location.pathname.match(/\/detail\/([^/]+)\/([a-z]{32})/);
-    if (match) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (text.includes('remove from safari')) {
-          removeViaduct(match[2], btn);
-          return;
-        }
-        // The store sets <title> to "<Extension Name> - Chrome Web Store" for the
-        // current page — reliable, unlike querySelector('h1') which can grab a
-        // featured/related listing. De-slugged URL segment is the fallback.
-        const fromTitle = document.title
-          .replace(/\s*[-–|]\s*Chrome Web Store\s*$/i, '')
-          .trim();
-        const fromSlug = decodeURIComponent(match[1])
-          .replace(/-/g, ' ')
-          .replace(/\b\w/g, c => c.toUpperCase());
-        installViaduct(match[2], fromTitle || fromSlug, btn);
-    }
+  // Store URL is /detail/<slug>/<id>. Capture both: the slug names the app so
+  // it isn't named after the random-looking id.
+  const match = window.location.pathname.match(/\/detail\/([^/]+)\/([a-z]{32})/);
+  if (!match) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (text.includes('remove from safari')) {
+    removeViaduct(match[2], btn);
+    return;
   }
+  // The store sets <title> to "<Extension Name> - Chrome Web Store" for the
+  // current page — reliable, unlike querySelector('h1') which can grab a
+  // featured/related listing. De-slugged URL segment is the fallback.
+  const fromTitle = document.title
+    .replace(/\s*[-–|]\s*Chrome Web Store\s*$/i, '')
+    .trim();
+  const fromSlug = decodeURIComponent(match[1])
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+  installViaduct(match[2], fromTitle || fromSlug, btn);
 }, true);
 
 // ---- In-place install progress card ---------------------------------------
