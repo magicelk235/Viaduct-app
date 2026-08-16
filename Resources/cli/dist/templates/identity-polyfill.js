@@ -1,13 +1,31 @@
-// identity-polyfill.js — Safari chrome.identity shim for OAuth (DEBUG build).
+// identity-polyfill.js — Safari chrome.identity shim for OAuth.
+// Verbose logging is OFF by default (it can leak OAuth tokens into the console).
+// Set self.__C2S_DEBUG = true before this loads to re-enable diagnostic logs.
 (function () {
   "use strict";
+  var DEBUG = (typeof self !== "undefined" && self.__C2S_DEBUG) ||
+              (typeof globalThis !== "undefined" && globalThis.__C2S_DEBUG) || false;
+  var DBG = function () { if (DEBUG) try { console.log.apply(console, arguments); } catch (e) {} };
+  var DBGW = function () { if (DEBUG) try { console.warn.apply(console, arguments); } catch (e) {} };
+  // Install-once: background.html loads this as a classic script (so the
+  // onMessageExternal capture beats hoisted importScripts chunks) AND the SW
+  // module imports it; the second evaluation must be a no-op or listeners
+  // double-dispatch.
+  var __g = typeof self !== "undefined" ? self : (typeof globalThis !== "undefined" ? globalThis : {});
+  if (__g.__c2sIdentityPolyfill) { return; }
+  __g.__c2sIdentityPolyfill = true;
   var api = typeof self !== "undefined" && self.chrome ? self.chrome
           : (typeof chrome !== "undefined" ? chrome : null);
-  if (!api) { console.warn("[idpoly] no chrome api"); return; }
+  if (!api) { DBGW("[idpoly] no chrome api"); return; }
 
-  var CHROME_EXT_ID = "dihbgbndebgnbjfmelmegjepbnkhlgni";
-  var REDIRECT_BASE = "https://" + CHROME_EXT_ID + ".chromiumapp.org/";
-  console.log("[idpoly] loaded. native identity?", !!api.identity,
+  // Chrome's chrome.identity.getRedirectURL() bases the redirect on the
+  // extension's OWN id. Derive it from the live runtime so this works for ANY
+  // converted extension instead of a single hardcoded id. Fall back to the
+  // build-time placeholder only if runtime.id is somehow unavailable.
+  var EXT_ID = "__C2S_EXTENSION_ID__";
+  if (EXT_ID === "__C2S_" + "EXTENSION_ID__") EXT_ID = (api.runtime && api.runtime.id) || "";
+  var REDIRECT_BASE = "https://" + EXT_ID + ".chromiumapp.org/";
+  DBG("[idpoly] loaded. native identity?", !!api.identity,
               "tabs?", !!api.tabs, "webNavigation?", !!api.webNavigation,
               "REDIRECT_BASE", REDIRECT_BASE);
 
@@ -27,12 +45,12 @@
 
   function getRedirectURL(path) {
     var u = !path ? REDIRECT_BASE : REDIRECT_BASE + String(path).replace(/^\//, "");
-    console.log("[idpoly] getRedirectURL ->", u);
+    DBG("[idpoly] getRedirectURL ->", u);
     return u;
   }
 
   function launchWebAuthFlow(details, callback) {
-    console.log("[idpoly] launchWebAuthFlow", JSON.stringify(details));
+    DBG("[idpoly] launchWebAuthFlow", JSON.stringify(details));
     var p = new Promise(function (resolve, reject) {
       var authUrl = details && details.url;
       if (!authUrl) { reject(new Error("launchWebAuthFlow: missing url")); return; }
@@ -46,8 +64,12 @@
         var ru = new URL(authUrl).searchParams.get("redirect_uri");
         if (ru) redirectTarget = ru;
       } catch (e) { /* keep default */ }
-      console.log("[idpoly] redirectTarget", redirectTarget);
+      DBG("[idpoly] redirectTarget", redirectTarget);
 
+      if (!api.tabs || !api.webNavigation) {
+        reject(new Error("launchWebAuthFlow requires the tabs + webNavigation APIs, which are unavailable"));
+        return;
+      }
       // DEBUG: always visible so you can see the authorize result.
       api.tabs.create({ url: authUrl, active: true }, function (tab) {
         if (api.runtime.lastError || !tab) {
@@ -57,27 +79,43 @@
         }
         var tabId = tab.id;
         var settled = false;
-        console.log("[idpoly] auth tab", tabId, "url", authUrl);
+        DBG("[idpoly] auth tab", tabId, "url", authUrl);
         var timer = setTimeout(function () {
-          console.warn("[idpoly] TIMEOUT (tab left open for inspection)", tabId);
-          if (!settled) { settled = true; cleanup(); reject(new Error("launchWebAuthFlow timeout")); }
+          DBGW("[idpoly] TIMEOUT", tabId);
+          if (!settled) {
+            settled = true;
+            cleanup();
+            try { api.tabs.remove(tabId, function () { void api.runtime.lastError; }); } catch (e) {}
+            reject(new Error("launchWebAuthFlow timeout"));
+          }
         }, 120000);
 
         function captured(url) {
-          return typeof url === "string" && url.indexOf(redirectTarget) === 0;
+          if (typeof url !== "string" || url.indexOf(redirectTarget) !== 0) return false;
+          // Require a clean boundary after the redirect target so a longer host/path
+          // that merely STARTS with it (e.g. ".../cb.html.evil/") is not mistaken for
+          // the trusted callback. Chrome matches the redirect URL, not an arbitrary
+          // prefix. End-of-string, "/", "?" or "#" are the only valid continuations.
+          var next = url.charAt(redirectTarget.length);
+          return next === "" || next === "/" || next === "?" || next === "#";
         }
         function onNav(d) {
-          if (d.tabId !== tabId) return;
-          console.log("[idpoly] nav", d.url);
+          // Only the auth tab's TOP-LEVEL navigation may complete the flow. Chrome's
+          // launchWebAuthFlow watches its dedicated auth window's main frame; without
+          // the frameId===0 check a sub-iframe navigating to a URL that startsWith the
+          // redirect target would resolve the flow with a frame-controlled URL the
+          // caller then parses for the OAuth code/token.
+          if (d.tabId !== tabId || d.frameId !== 0) return;
+          DBG("[idpoly] nav", d.url);
           if (captured(d.url)) finish(resolve, d.url);
         }
         function onErr(d) {
-          if (d.tabId !== tabId) return;
-          console.log("[idpoly] navERR", d.url, d.error);
+          if (d.tabId !== tabId || d.frameId !== 0) return;
+          DBG("[idpoly] navERR", d.url, d.error);
           if (captured(d.url)) finish(resolve, d.url);
         }
         function onRemoved(id) {
-          if (id === tabId) { console.warn("[idpoly] tab removed"); finish(reject, new Error("auth tab closed")); }
+          if (id === tabId) { DBGW("[idpoly] tab removed"); finish(reject, new Error("auth tab closed")); }
         }
         function cleanup() {
           clearTimeout(timer);
@@ -91,7 +129,13 @@
           if (settled) return;
           settled = true;
           cleanup();
-          console.log("[idpoly] finish ->", (fn === resolve ? "RESOLVE " + arg : "reject " + arg));
+          // Redact the OAuth token/code: the redirect URL carries it in the query/
+          // fragment, so log only origin+path, never the full URL.
+          var redacted = arg;
+          if (fn === resolve && typeof arg === "string") {
+            try { var ru = new URL(arg); redacted = ru.origin + ru.pathname + " (params redacted)"; } catch (e) { redacted = "(redirect url redacted)"; }
+          }
+          DBG("[idpoly] finish ->", (fn === resolve ? "RESOLVE " + redacted : "reject " + arg));
           try { api.tabs.remove(tabId, function () { void api.runtime.lastError; }); } catch (e) {}
           fn(arg);
         }
@@ -105,7 +149,13 @@
     });
 
     if (typeof callback === "function") {
-      p.then(function (u) { callback(u); }, function () { callback(undefined); });
+      p.then(function (u) { callback(u); }, function (err) {
+        // Chrome invokes the callback with undefined AND sets lastError for its
+        // duration; without it callers can't tell failure from empty success
+        // (getAuthToken below already follows this contract).
+        try { if (api.runtime) api.runtime.lastError = { message: (err && err.message) || "launchWebAuthFlow failed" }; } catch (e) {}
+        try { callback(undefined); } finally { try { if (api.runtime) delete api.runtime.lastError; } catch (e) {} }
+      });
       return;
     }
     return p;
@@ -115,13 +165,27 @@
   identity.getRedirectURL = getRedirectURL;
   identity.launchWebAuthFlow = launchWebAuthFlow;
   if (!identity.removeCachedAuthToken) identity.removeCachedAuthToken = function (d, cb) { if (cb) cb(); return Promise.resolve(); };
-  if (!identity.getAuthToken) identity.getAuthToken = function () { return Promise.reject(new Error("getAuthToken unsupported")); };
+  if (!identity.getAuthToken) identity.getAuthToken = function () {
+    // getAuthToken(details, cb) is callback-based in Chrome. Honor a trailing
+    // callback (invoking it with undefined + a lastError-style note) so callers
+    // don't hang on an ignored callback or an unhandled promise rejection.
+    var cb = arguments.length && typeof arguments[arguments.length - 1] === "function"
+           ? arguments[arguments.length - 1] : null;
+    if (cb) {
+      // Chrome scopes runtime.lastError to the callback's duration only. Set it,
+      // invoke cb, then clear it — a persistent lastError misreports every later call.
+      try { if (api.runtime) api.runtime.lastError = { message: "getAuthToken unsupported" }; } catch (e) {}
+      try { cb(undefined); } finally { try { if (api.runtime) delete api.runtime.lastError; } catch (e) {} }
+      return;
+    }
+    return Promise.reject(new Error("getAuthToken unsupported"));
+  };
   api.identity = identity;
-  console.log("[idpoly] identity patched");
+  DBG("[idpoly] identity patched");
 
   // --- page<->extension bridge (SW side) ---------------------------------
   // Safari requires the page to pass the (Safari) extension id to message the
-  // SW, but claude.ai hardcodes the Chrome id, so page->ext messaging fails
+  // SW, but pages typically hardcode the Chrome id, so page->ext messaging fails
   // ("Chrome extension API not available"). A content script relays page
   // messages to the SW as internal messages tagged {__bridge:true}. Here we
   // capture the extension's onMessageExternal listeners and re-dispatch those
@@ -136,36 +200,52 @@
   // progressive fallbacks, so addListener is always captured here.
   (function () {
     var rt = api.runtime;
-    if (!rt) { console.warn("[idpoly] no runtime for onMessageExternal capture"); return; }
+    if (!rt) { DBGW("[idpoly] no runtime for onMessageExternal capture"); return; }
     var nativeExt = rt.onMessageExternal;
     var nativeAdd = (nativeExt && typeof nativeExt.addListener === "function")
                   ? nativeExt.addListener.bind(nativeExt) : null;
-    console.log("[idpoly] native onMessageExternal?", !!nativeExt, "nativeAdd?", !!nativeAdd);
+    DBG("[idpoly] native onMessageExternal?", !!nativeExt, "nativeAdd?", !!nativeAdd);
     // Single capture sink. Whether the SW bundle calls addListener on our
     // defineProperty shadow OR on the original native event object, the listener
     // must land here — else extListeners stays empty and bridged page messages
     // have nowhere to go ("no external listener captured"). Also forward to the
     // native event so genuine external messages still work.
+    var forwarded = [];
     function capture(l) {
       if (typeof l !== "function") return;
       if (extListeners.indexOf(l) < 0) {
         extListeners.push(l);
-        console.log("[idpoly] captured onMessageExternal listener; total", extListeners.length);
+        DBG("[idpoly] captured onMessageExternal listener; total", extListeners.length);
       }
-      if (nativeAdd) { try { nativeAdd(l); } catch (e) { /* native may reject */ } }
+      // capture can be reached via both the defineProperty shadow and the native
+      // in-place wrap for the same listener; dedupe the native forward too, or the
+      // native event fires the listener twice for genuine external messages.
+      if (nativeAdd && forwarded.indexOf(l) < 0) {
+        forwarded.push(l);
+        try { nativeAdd(l); } catch (e) { /* native may reject */ }
+      }
     }
     var controlled = {
       addListener: capture,
-      removeListener: function (l) { var i = extListeners.indexOf(l); if (i >= 0) extListeners.splice(i, 1); },
+      removeListener: function (l) {
+        var i = extListeners.indexOf(l); if (i >= 0) extListeners.splice(i, 1);
+        // capture() also forwarded the listener to the native event; detach it
+        // there too or genuine external messages keep firing a "removed" listener.
+        var f = forwarded.indexOf(l);
+        if (f >= 0) {
+          forwarded.splice(f, 1);
+          try { if (nativeExt && typeof nativeExt.removeListener === "function") nativeExt.removeListener(l); } catch (e) {}
+        }
+      },
       hasListener: function (l) { return extListeners.indexOf(l) >= 0; }
     };
     // (1) Replace the event object so `rt.onMessageExternal.addListener` hits us.
     try {
       Object.defineProperty(rt, "onMessageExternal", { value: controlled, configurable: true, writable: true });
-      console.log("[idpoly] onMessageExternal replaced via defineProperty");
+      DBG("[idpoly] onMessageExternal replaced via defineProperty");
     } catch (e1) {
-      try { rt.onMessageExternal = controlled; console.log("[idpoly] onMessageExternal replaced via assignment"); }
-      catch (e2) { console.warn("[idpoly] could not replace onMessageExternal object", e2); }
+      try { rt.onMessageExternal = controlled; DBG("[idpoly] onMessageExternal replaced via assignment"); }
+      catch (e2) { DBGW("[idpoly] could not replace onMessageExternal object", e2); }
     }
     // (2) ALSO patch addListener on the ORIGINAL native object in place, in case
     // the bundle reaches the native event reference directly (Safari may hand out
@@ -173,10 +253,10 @@
     if (nativeExt && nativeExt !== controlled) {
       try {
         Object.defineProperty(nativeExt, "addListener", { value: capture, configurable: true, writable: true });
-        console.log("[idpoly] native onMessageExternal.addListener wrapped");
+        DBG("[idpoly] native onMessageExternal.addListener wrapped");
       } catch (e3) {
-        try { nativeExt.addListener = capture; console.log("[idpoly] native onMessageExternal.addListener wrapped (assign)"); }
-        catch (e4) { console.warn("[idpoly] could not wrap native onMessageExternal.addListener", e4); }
+        try { nativeExt.addListener = capture; DBG("[idpoly] native onMessageExternal.addListener wrapped (assign)"); }
+        catch (e4) { DBGW("[idpoly] could not wrap native onMessageExternal.addListener", e4); }
       }
     }
   })();
@@ -186,7 +266,7 @@
       var origin = sender.origin || safeOrigin(sender.url) ||
                    (sender.tab && sender.tab.url ? safeOrigin(sender.tab.url) : undefined);
       var fixed = Object.assign({}, sender, { origin: origin });
-      console.log("[idpoly] bridge msg", JSON.stringify(msg.payload), "origin", origin,
+      DBG("[idpoly] bridge msg", JSON.stringify(msg.payload), "origin", origin,
                   "listeners", extListeners.length);
       // Return a Promise so Safari/Firefox deliver the async response. Safari
       // IGNORES `return true`, so a `return true` + async sendResponse drops the
@@ -196,7 +276,7 @@
         var settled = false;
         var resp = function (r) {
           if (settled) return; settled = true;
-          console.log("[idpoly] bridge resp ->", JSON.stringify(r));
+          DBG("[idpoly] bridge resp ->", (r && r.success === false) ? JSON.stringify(r) : "(ok, payload redacted)");
           try { sendResponse(r); } catch (e) {}
           resolve(r);
         };
@@ -205,9 +285,18 @@
           resp({ success: false, error: "bridge: no external listener captured" });
           return;
         }
+        // Chrome's channel contract: a listener keeps the channel open only by
+        // returning true (or a Promise). If none does, close it now — otherwise a
+        // fire-and-forget message leaves the page waiting out its 30s timeout.
+        var willRespond = false;
         for (var i = 0; i < extListeners.length; i++) {
-          try { extListeners[i](msg.payload, fixed, resp); } catch (e) { console.error("[idpoly] extListener err", e); }
+          try {
+            var ret = extListeners[i](msg.payload, fixed, resp);
+            if (ret === true) willRespond = true;
+            else if (ret && typeof ret.then === "function") { willRespond = true; ret.then(resp, function () { resp(undefined); }); }
+          } catch (e) { console.error("[idpoly] extListener err", e); }
         }
+        if (!willRespond && !settled) resp(undefined);
       });
     });
   }

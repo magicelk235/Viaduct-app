@@ -20,16 +20,34 @@ DEST="/Applications/Viaduct.app"
 SIGN_ID="$(security find-identity -v -p codesigning | grep 'Apple Development' | head -1 | grep -oE '[A-F0-9]{40}')"
 [ -n "$SIGN_ID" ] || { echo "FAILED: no Apple Development identity found"; exit 1; }
 
-echo "==> Building (unsigned)"
+"$ROOT/sync-cli.sh"
+
+echo "==> Building (unsigned, universal)"
 rm -rf "$REL"
+# See release.sh: without the generic destination xcodebuild builds only this
+# Mac's arch, so a local install would never exercise the Intel slice.
 xcodebuild -project "$ROOT/Viaduct.xcodeproj" -scheme Viaduct \
   -configuration Release -derivedDataPath "$ROOT/build" \
+  -destination 'generic/platform=macOS' \
   CODE_SIGNING_ALLOWED=NO >/dev/null
 
 echo "==> Signing ($SIGN_ID, with detritus retry)"
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
 signed=""
 for i in $(seq 1 8); do
   xattr -cr "$APP"
+  # Xcode's embed phase strips Sparkle's headers, which its shipped signature
+  # still seals — so --verify --deep fails until we re-sign the framework and
+  # every nested helper ourselves, inside-out. Same order as release.sh.
+  if [ -d "$SPARKLE" ]; then
+    for item in "$SPARKLE/Versions/B/XPCServices/"*.xpc \
+                "$SPARKLE/Versions/B/Updater.app" \
+                "$SPARKLE/Versions/B/Autoupdate"; do
+      [ -e "$item" ] || continue
+      codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime "$item" 2>/dev/null || true
+    done
+    codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime "$SPARKLE" 2>/dev/null || true
+  fi
   codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
     --entitlements "$EXT_ENT" "$APPEX" 2>/dev/null || true
   xattr -cr "$APP"

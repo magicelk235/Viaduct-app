@@ -25,15 +25,39 @@ final class CLIRunner {
         Bundle.main.resourceURL?.appendingPathComponent("cli", isDirectory: true)
     }
 
-    /// Resolve cli.js, preferring the updated copy in Application Support.
-    static func resolveCLIScript() -> URL? {
-        let updated = supportCLIDir.appendingPathComponent("dist/cli.js")
-        if FileManager.default.fileExists(atPath: updated.path) { return updated }
-        if let bundled = bundledCLIDir?.appendingPathComponent("dist/cli.js"),
-           FileManager.default.fileExists(atPath: bundled.path) {
-            return bundled
+    /// Version marker written next to a CLI copy by the npm sync / autoupdate.
+    static func cliVersion(at dir: URL) -> String? {
+        guard let s = try? String(contentsOf: dir.appendingPathComponent("version.txt"),
+                                  encoding: .utf8) else { return nil }
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+
+    /// The CLI copy to run: the npm-updated one in Application Support, unless the
+    /// app bundle ships something newer. An app update can carry a CLI newer than
+    /// whatever npm last handed us, and always preferring Application Support
+    /// would keep running the older copy — which is how a machine keeps signing
+    /// ad-hoc long after the fix shipped. A copy with no version marker counts as
+    /// the oldest, so it only wins when nothing else is usable.
+    static func resolveCLIDir() -> URL? {
+        let usable = [supportCLIDir, bundledCLIDir].compactMap { $0 }.filter {
+            FileManager.default.fileExists(atPath: $0.appendingPathComponent("dist/cli.js").path)
         }
-        return nil
+        guard var best = usable.first else { return nil }
+        for candidate in usable.dropFirst() {
+            switch (cliVersion(at: best), cliVersion(at: candidate)) {
+            case (nil, .some): best = candidate
+            case let (.some(have), .some(other)) where CLIUpdater.semverLess(have, other):
+                best = candidate
+            default: break
+            }
+        }
+        return best
+    }
+
+    /// Resolve cli.js inside whichever copy wins.
+    static func resolveCLIScript() -> URL? {
+        resolveCLIDir()?.appendingPathComponent("dist/cli.js")
     }
 
     /// The self-contained node shipped inside the .app (Resources/bin/node).

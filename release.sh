@@ -36,10 +36,18 @@ SIGN_ID="$(security find-identity -v -p codesigning | grep 'Developer ID Applica
 [ -n "$SIGN_ID" ] || { echo "FAILED: no Developer ID Application identity found"; exit 1; }
 echo "==> Signing identity: $SIGN_ID"
 
-echo "==> Building (unsigned)"
+# Never ship a stale bundled CLI — a fresh install runs it before it has ever
+# reached npm, so whatever it can't do, the user's first conversion can't do.
+"$ROOT/sync-cli.sh"
+
+echo "==> Building (unsigned, universal)"
 rm -rf "$REL"
+# generic/platform=macOS is load-bearing: without it xcodebuild resolves the run
+# destination to "My Mac", which pins ARCHS to this machine's arch and quietly
+# ships an arm64-only app. The generic destination honours ARCHS (arm64 x86_64).
 xcodebuild -project "$ROOT/Viaduct.xcodeproj" -scheme Viaduct \
   -configuration Release -derivedDataPath "$ROOT/build" \
+  -destination 'generic/platform=macOS' \
   CODE_SIGNING_ALLOWED=NO >/dev/null
 
 # Copy out of the iCloud-synced repo to /tmp, then sign there (see WORK note above).

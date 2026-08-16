@@ -9,12 +9,28 @@ const COLORS = {
     dim: "\x1b[2m",
     bold: "\x1b[1m",
 };
-const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
+// Diagnostics (info/ok/warn/fail) all write to stderr, so gate color on stderr's
+// TTY-ness, not stdout's — otherwise `cmd 2>/dev/null` piping leaves color codes
+// on a redirected stdout, or suppresses them when only stderr is a terminal.
+// Stderr-only gate; split per-stream if stdout output ever needs color.
+const useColor = process.stderr.isTTY && !process.env.NO_COLOR;
 export function color(c, s) {
     return useColor ? `${COLORS[c]}${s}${RESET}` : s;
 }
+let verbose = false;
+/** Enable live echo of every subprocess invocation and its output. */
+export function setVerbose(v) {
+    verbose = v;
+}
+let quiet = false;
+/** Suppress progress chatter (info/ok); warnings and failures still print. */
+export function setQuiet(v) {
+    quiet = v;
+}
 /** Run a command, capturing output. Never throws on non-zero exit. */
 export function run(cmd, args, opts = {}) {
+    if (verbose)
+        console.error(color("dim", `$ ${cmd} ${args.join(" ")}`));
     const res = spawnSync(cmd, args, {
         encoding: "utf-8",
         maxBuffer: 64 * 1024 * 1024,
@@ -23,23 +39,34 @@ export function run(cmd, args, opts = {}) {
     if (res.error && res.error.code === "ENOENT") {
         return { code: 127, stdout: "", stderr: `command not found: ${cmd}` };
     }
-    return {
-        code: res.status ?? 1,
-        stdout: res.stdout ?? "",
-        stderr: res.stderr ?? "",
-    };
+    const stdout = res.stdout ?? "";
+    const stderr = res.stderr ?? "";
+    if (verbose) {
+        if (stdout.trim())
+            process.stdout.write(stdout);
+        if (stderr.trim())
+            process.stderr.write(stderr);
+    }
+    return { code: res.status ?? 1, stdout, stderr };
 }
 export function commandExists(cmd) {
     return run("/usr/bin/which", [cmd]).code === 0;
 }
+// Diagnostics go to stderr so stdout carries only real output (e.g. the
+// --analyze --json payload). A consumer piping stdout must get clean JSON, not
+// interleaved progress lines.
 export function info(msg) {
-    console.log(`${color("blue", "›")} ${msg}`);
+    if (quiet)
+        return;
+    console.error(`${color("blue", "›")} ${msg}`);
 }
 export function ok(msg) {
-    console.log(`${color("green", "✓")} ${msg}`);
+    if (quiet)
+        return;
+    console.error(`${color("green", "✓")} ${msg}`);
 }
 export function warn(msg) {
-    console.log(`${color("yellow", "!")} ${msg}`);
+    console.error(`${color("yellow", "!")} ${msg}`);
 }
 export function fail(msg) {
     console.error(`${color("red", "✗")} ${msg}`);
@@ -55,9 +82,10 @@ export function moveBundle(src, dest) {
     try {
         renameSync(src, dest);
     }
-    catch (e) {
-        if (e.code !== "EXDEV")
-            throw e;
+    catch {
+        // Any rename failure (EXDEV, EPERM, ENOTEMPTY, ...) falls back to copy+delete.
+        // Rethrowing would bypass the callers' keep-the-built-app fallback and let
+        // their finally-cleanup delete the only copy of the built app.
         if (run("/usr/bin/ditto", [src, dest]).code !== 0)
             return false;
         rmSync(src, { recursive: true, force: true });

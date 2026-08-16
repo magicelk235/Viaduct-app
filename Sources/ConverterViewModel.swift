@@ -87,6 +87,14 @@ final class ConverterViewModel: ObservableObject {
     private let updater = CLIUpdater.shared
     private lazy var renewer = ExtensionRenewer(history: history)
     private var renewTimer: Timer?
+    /// An update found while a conversion was in flight, applied as soon as the
+    /// run finishes. Dropping it meant anyone who only installs from the store
+    /// URL scheme never updated at all: the app cold-launches, the conversion
+    /// starts before the npm check comes back, and the check then finds itself
+    /// "busy" every single time.
+    private var updatePendingAfterRun = false
+    /// Last `✗` line the CLI printed this run, used as the failure reason.
+    private var lastCLIError: String?
 
     init() {
         installedVersion = updater.installedVersion ?? "unknown"
@@ -263,9 +271,12 @@ final class ConverterViewModel: ObservableObject {
         LicenseManager.shared.recordFreeConversion()
     }
 
-    /// True when the machine can team-sign — mirrors the CLI's detectXcodeTeam()
-    /// (packager.js), which checks the same two sources in the same order, so
-    /// the warning fires exactly when the CLI would fall back to ad-hoc.
+    /// True when the machine can team-sign. This has to agree with the CLI's own
+    /// detectXcodeTeam() (`src/build/packager.ts`): the app only decides whether
+    /// to warn, the CLI decides how it actually signs, and when they disagree the
+    /// user gets a silently ad-hoc build with no warning at all. They did drift
+    /// once — the bundled CLI sat at 1.0.0, which had no keychain fallback — so
+    /// the bundle is now synced from npm at build time (`sync-cli.sh`).
     ///
     /// Xcode's preference cache is checked first because it's cheap, but it is
     /// not authoritative: it's written asynchronously and stays empty on setups
@@ -451,12 +462,18 @@ final class ConverterViewModel: ObservableObject {
         }
         isRunning = true
         lastExitCode = nil
+        lastCLIError = nil
         statusMessage = "\(label) running…"
         appendLog("$ viaduct \(args.joined(separator: " "))")
         do {
             try runner.run(args: args, onLine: { [weak self] line in
                 guard let self else { return }
                 let clean = self.appendLog(line)
+                // Keep the CLI's own reason for failing. User mode hides the log, so
+                // without this every failure reads as the same generic sentence — which
+                // is how a specific, actionable message like "the extension is ad-hoc"
+                // ends up invisible to the person who needs it.
+                if let reason = Self.errorReason(in: clean) { self.lastCLIError = reason }
                 if userMode { self.advancePhase(from: clean) }
             }, onExit: { [weak self] code in
                 guard let self else { return }
@@ -468,6 +485,12 @@ final class ConverterViewModel: ObservableObject {
                 self.appendLog(code == 0 ? "✓ Done." : "✗ Exit \(code).")
                 if code == 0, label == "Conversion" { self.recordConversion() }
                 if userMode { self.finishUserPhase(code: code) }
+                // Pick up an update the check had to skip while this run held
+                // the CLI. Swapping now is safe: nothing is executing it.
+                if self.updatePendingAfterRun {
+                    self.updatePendingAfterRun = false
+                    Task { await self.applyUpdate() }
+                }
             })
         } catch {
             isRunning = false
@@ -487,6 +510,16 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
+    /// The CLI's own failure text, recognised by the `✗` it prefixes errors with.
+    /// Returns nil for anything else, so ordinary progress lines never masquerade
+    /// as a reason.
+    static func errorReason(in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("✗") else { return nil }
+        let text = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
+    }
+
     private func finishUserPhase(code: Int32) {
         if code == 0 {
             // CLI is done, but let the bar race the last stretch to 100% first.
@@ -494,7 +527,8 @@ final class ConverterViewModel: ObservableObject {
             // .done and opens the freshly-converted extension app.
             phase = .finishing
         } else {
-            failureSummary = "The conversion stopped partway through. Copy the log or switch to Developer mode to see what failed."
+            failureSummary = lastCLIError
+                ?? "The conversion stopped partway through. Copy the log or switch to Developer mode to see what failed."
             phase = .failed
             Feedback.failure()
         }
@@ -567,7 +601,11 @@ final class ConverterViewModel: ObservableObject {
                 let available = try await updater.updateAvailable()
                 updateAvailable = available
                 guard available else { statusMessage = "CLI is up to date."; return }
-                guard !isRunning else { statusMessage = "CLI update queued (busy)."; return }
+                guard !isRunning else {
+                    updatePendingAfterRun = true
+                    statusMessage = "CLI update queued (runs after this conversion)."
+                    return
+                }
                 await applyUpdate()
             } catch {
                 statusMessage = "Update check failed: \(error.localizedDescription)"

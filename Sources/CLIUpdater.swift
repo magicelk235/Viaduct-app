@@ -22,17 +22,11 @@ final class CLIUpdater {
         }
     }
 
-    /// Version the bundled/installed CLI was built from (best-effort).
+    /// Version of the CLI copy that will actually run, so the update check
+    /// compares against the copy `CLIRunner` resolves rather than assuming
+    /// Application Support always wins.
     var installedVersion: String? {
-        let updated = CLIRunner.supportCLIDir.appendingPathComponent("version.txt")
-        let bundled = CLIRunner.bundledCLIDir?.appendingPathComponent("version.txt")
-        for url in [updated, bundled].compactMap({ $0 }) {
-            if let s = try? String(contentsOf: url, encoding: .utf8) {
-                let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !t.isEmpty { return t }
-            }
-        }
-        return nil
+        CLIRunner.resolveCLIDir().flatMap { CLIRunner.cliVersion(at: $0) }
     }
 
     private struct DistTags: Decodable { let latest: String }
