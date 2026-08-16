@@ -6,13 +6,17 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "1.0.9"
+    MARKETING_VERSION: "1.1.0"
     # Sparkle compares CFBundleVersion, so it has to move every release.
     # Keeping it equal to the marketing version means one number to bump.
     CURRENT_PROJECT_VERSION: "$(MARKETING_VERSION)"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
+    # Universal, spelled out rather than left to ARCHS_STANDARD: Intel Macs are a
+    # supported target and a silent Xcode default change must not drop them. The
+    # appex has to match the app, so this lives at project level.
+    ARCHS: arm64 x86_64
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
@@ -73,8 +77,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     preBuildScripts:
       - name: Fetch Node
-        # Download a self-contained node into Resources/bin/node so the shipped .app
-        # carries its own runtime — the user never installs Node. Idempotent.
+        # Download a self-contained universal node into Resources/bin/node so the
+        # shipped .app carries its own runtime on either chip — the user never
+        # installs Node. Idempotent.
         script: "\"$SRCROOT/Resources/bin/fetch-node.sh\""
         basedOnDependencyAnalysis: false
 

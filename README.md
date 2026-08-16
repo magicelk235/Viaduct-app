@@ -32,7 +32,8 @@ brew install --cask magicelk235/magicelklabs/viaduct
 
 ## Requirements
 
-- macOS 13+
+- macOS 13+, Apple Silicon or Intel (the app ships as a universal binary, and the
+  bundled `node` is universal too, so neither chip needs Rosetta)
 - A full Xcode install (for `safari-web-extension-packager` and `xcodebuild`).
   Apple ships the Safari packager only with Xcode, not the Command Line Tools, so
   this can't be bundled away. The app detects a missing Xcode on first convert and

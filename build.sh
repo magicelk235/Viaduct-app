@@ -1,16 +1,17 @@
 #!/bin/bash
-# Build, ad-hoc sign, and install Viaduct.app to /Applications.
+# Build, sign, and install a universal Viaduct.app to /Applications for local testing.
 #
-# Why the retry loop: this project lives in an iCloud/fileprovider-synced folder.
-# Sync restamps com.apple.FinderInfo onto the bundle root between `xattr -cr` and
-# `codesign`, which makes codesign reject the bundle ("detritus not allowed").
-# We strip + sign in a loop until we win the race.
+# Signing happens in /tmp, not in the repo: this project lives in a fileprovider-synced
+# folder and sync restamps com.apple.FinderInfo onto the bundle root mid-sign, which
+# codesign rejects ("detritus not allowed"). /tmp isn't synced, so it's a clean one-shot.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 REL="$ROOT/build/Build/Products/Release"
-APP="$REL/Viaduct.app"
+WORK="/private/tmp/viaduct-dev"
+APP="$WORK/Viaduct.app"
 APPEX="$APP/Contents/PlugIns/ViaductExtension.appex"
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
 EXT_ENT="$ROOT/Extension/ViaductExtension.entitlements"
 APP_ENT="$ROOT/Viaduct.entitlements"
 DEST="/Applications/Viaduct.app"
@@ -24,41 +25,37 @@ SIGN_ID="$(security find-identity -v -p codesigning | grep 'Apple Development' |
 
 echo "==> Building (unsigned, universal)"
 rm -rf "$REL"
-# See release.sh: without the generic destination xcodebuild builds only this
-# Mac's arch, so a local install would never exercise the Intel slice.
+# generic/platform=macOS is load-bearing: without it xcodebuild resolves the run
+# destination to "My Mac", pins ARCHS to this machine's arch, and quietly drops
+# the Intel slice — so a local install would never exercise it.
 xcodebuild -project "$ROOT/Viaduct.xcodeproj" -scheme Viaduct \
   -configuration Release -derivedDataPath "$ROOT/build" \
   -destination 'generic/platform=macOS' \
   CODE_SIGNING_ALLOWED=NO >/dev/null
 
-echo "==> Signing ($SIGN_ID, with detritus retry)"
-SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
-signed=""
-for i in $(seq 1 8); do
-  xattr -cr "$APP"
-  # Xcode's embed phase strips Sparkle's headers, which its shipped signature
-  # still seals — so --verify --deep fails until we re-sign the framework and
-  # every nested helper ourselves, inside-out. Same order as release.sh.
-  if [ -d "$SPARKLE" ]; then
-    for item in "$SPARKLE/Versions/B/XPCServices/"*.xpc \
-                "$SPARKLE/Versions/B/Updater.app" \
-                "$SPARKLE/Versions/B/Autoupdate"; do
-      [ -e "$item" ] || continue
-      codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime "$item" 2>/dev/null || true
-    done
-    codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime "$SPARKLE" 2>/dev/null || true
-  fi
-  codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
-    --entitlements "$EXT_ENT" "$APPEX" 2>/dev/null || true
-  xattr -cr "$APP"
-  if codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
-       --entitlements "$APP_ENT" "$APP" 2>/dev/null \
-     && codesign --verify --deep "$APP" 2>/dev/null; then
-    signed="$i"; break
-  fi
-done
-[ -n "$signed" ] || { echo "FAILED: could not sign after 8 tries (detritus race)"; exit 1; }
-echo "    signed on try $signed"
+echo "==> Staging to $WORK for signing"
+rm -rf "$WORK" && mkdir -p "$WORK"
+ditto "$REL/Viaduct.app" "$APP"
+
+# Sign inside-out. Xcode's embed phase strips Sparkle's headers, which the
+# framework's shipped signature still seals, so --verify --deep fails until we
+# re-sign the framework and each nested helper ourselves. Same order as release.sh.
+echo "==> Signing ($SIGN_ID)"
+xattr -cr "$APP"
+if [ -d "$SPARKLE" ]; then
+  for item in "$SPARKLE/Versions/B/XPCServices/"*.xpc \
+              "$SPARKLE/Versions/B/Updater.app" \
+              "$SPARKLE/Versions/B/Autoupdate"; do
+    [ -e "$item" ] || continue   # XPC services only ship in the sandboxed variant
+    codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime "$item"
+  done
+  codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime "$SPARKLE"
+fi
+codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
+  --entitlements "$EXT_ENT" "$APPEX"
+codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
+  --entitlements "$APP_ENT" "$APP"
+codesign --verify --deep "$APP"
 
 echo "==> Installing to $DEST"
 killall Viaduct 2>/dev/null || true
@@ -66,11 +63,11 @@ rm -rf "$DEST"
 ditto "$APP" "$DEST"
 codesign --verify --deep "$DEST"
 
-# Delete the build-dir copy: it's a second signed bundle with the same bundle
-# id, and Safari/pluginkit can bind the extension to IT instead of $DEST —
-# then the next rebuild rm-rf's it and the store-page progress bridge dies
-# with a wedged appex. One bundle id, one bundle on disk.
-rm -rf "$APP"
+# Delete both loose copies: a second signed bundle with the same bundle id lets
+# Safari/pluginkit bind the extension to IT instead of $DEST — then the next
+# rebuild rm-rf's it and the store-page progress bridge dies with a wedged appex.
+# One bundle id, one bundle on disk.
+rm -rf "$REL/Viaduct.app" "$WORK"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
   -f "$DEST" >/dev/null 2>&1 || true
-echo "==> Done: $DEST"
+echo "==> Done: $DEST ($(lipo -archs "$DEST/Contents/MacOS/Viaduct"))"
