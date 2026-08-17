@@ -36,16 +36,13 @@ function desiredPaint() {
     : { bg: '#4A9DAD', fg: '#0A1A1E' };
 }
 
-// The Chrome Web Store localizes its install button ("Add to Chrome",
-// "Toev. aan Chrome", "In Chrome installieren"…) but always leaves the product
-// name "Chrome" untranslated, so key on that rather than fixed English copy.
-// Exclude the "Chrome Web Store" logo and footer links, which carry the word
-// but aren't install actions.
-function isChromeInstall(text) {
-  const t = (text || '').toLowerCase().trim();
-  if (t.length >= 40 || !t.includes('chrome')) return false;
-  return !(t.includes('web store') || t.includes('webstore'));
-}
+// The Chrome Web Store localizes and even declines its button labels ("Add to
+// Chrome", "Hinzufügen", "Přidat do Chromu", "Добавяне"), and translates the
+// "Chrome Web Store" brand in its logo/footer links — so matching on text is
+// unreliable and mislabels the logo. Google's internal jsname ids are stable
+// across every locale, so key on those instead.
+const CTA_SEL = 'button[jsname="wQO0od"]';        // the detail-page install button
+const BANNER_BTN_SEL = 'button[jsname="oGfC5c"]'; // the "install Chrome" promo button
 
 // Buttons we've already relabelled or injected, so a state flip repaints them.
 function isOurLabel(text) {
@@ -131,34 +128,31 @@ function removeViaduct(id, btn) {
 }
 
 function removeChromePromos() {
-  // Two locale-independent nags, keyed on the product names Google leaves
-  // untranslated ("Chrome"/"Google") rather than fixed English copy:
-  //   1. The blue "Switch to Chrome to install extensions and themes" banner.
-  //   2. The "Switch to Chrome?" popover recommending Chrome.
-  // The words bubble up to <body>, so match text alone would hide the page.
-  // Guard each shape: the banner is a short row that carries an "install
-  // Chrome" action but not the extension title; the modal is a small dialog.
-  const h1 = [...document.querySelectorAll('h1')].find(el => el.offsetHeight > 0);
-  for (const el of document.querySelectorAll('div, section, aside')) {
-    const h = el.offsetHeight;
-    if (!(h > 0 && h < 120)) continue;
-    if (h1 && el.contains(h1)) continue; // never touch the extension header
-    const text = (el.textContent || '').toLowerCase();
-    if (text.length < 30 || text.length > 200) continue;
-    if (!text.includes('chrome') || text.includes('web store') || text.includes('webstore')) continue;
-    // Only the promo banner pairs that copy with an "install Chrome" action.
-    const isBanner = [...el.querySelectorAll('button, [role="button"], a')]
-      .some(b => isChromeInstall(b.textContent || ''));
-    if (isBanner) el.style.display = 'none';
+  // Two locale-independent nags:
+  //   1. The blue "Switch to Chrome to install extensions and themes" banner,
+  //      located via the stable jsname of its "install Chrome" button.
+  //   2. The "Switch to Chrome?" promo modal, identified by its stable
+  //      aria-labelledby="promo-header" (the visible copy is localized, and in
+  //      some locales, e.g. Japanese, omits the word "Google" entirely).
+  const bannerBtn = document.querySelector(BANNER_BTN_SEL);
+  if (bannerBtn && bannerBtn.offsetHeight) {
+    // Hide the short banner row that wraps the button, not just the button:
+    // climb to the tallest ancestor still under a banner's height, stopping
+    // before the (tall) page content.
+    let el = bannerBtn, row = null;
+    for (let i = 0; i < 6 && el && el !== document.body; i++) {
+      const h = el.offsetHeight;
+      if (!(h > 0 && h < 120)) break;
+      row = el;
+      el = el.parentElement;
+    }
+    if (row) row.style.display = 'none';
   }
 
   let hidModal = false;
-  for (const el of document.querySelectorAll('[role="dialog"], [role="alertdialog"], dialog')) {
+  for (const el of document.querySelectorAll('[aria-labelledby="promo-header"]')) {
     if (!el.offsetHeight) continue;
-    const text = (el.textContent || '').toLowerCase();
-    if (text.length < 300 && text.includes('chrome') && text.includes('google')) {
-      if (hideChromeModal(el)) hidModal = true;
-    }
+    if (hideChromeModal(el)) hidModal = true;
   }
   // A full-screen modal locks page scroll (inline overflow:hidden); hiding the
   // overlay leaves that lock in place, so clear it.
@@ -214,8 +208,7 @@ function storeInstallButton(skip) {
     // Google keeps previous SPA views in the DOM inside display:none
     // containers — their leftover buttons don't count as present.
     if (!btn.offsetHeight) continue;
-    const text = (btn.textContent || '').toLowerCase().trim();
-    if (isChromeInstall(text) || isOurLabel(text)) return btn;
+    if (btn.matches(CTA_SEL)) return btn;
   }
   return null;
 }
@@ -246,29 +239,25 @@ function ensureInstallButton() {
 }
 
 function enableInstallButton() {
-  const buttons = document.querySelectorAll('button, [role="button"], a');
   const label = desiredLabel();
   const paint = desiredPaint();
-  for (const btn of buttons) {
+  // Match the store's install button by jsname, not text — its label is
+  // localized and sometimes lacks the word "Chrome" entirely (e.g. German
+  // "Hinzufügen"), and text matching wrongly caught the "Chrome Web Store" logo.
+  for (const btn of document.querySelectorAll(CTA_SEL)) {
     // Already showing install/remove progress — leave it alone.
     if (btn.dataset.vdProgress) continue;
-    // Our injected button is owned by ensureInstallButton().
-    if (btn.classList && btn.classList.contains('vd-install')) continue;
-    // Skip buttons hidden in dead SPA views or in the promo banner we just hid.
+    // Skip a button hidden in a dead SPA view.
     if (!btn.offsetHeight) continue;
 
-    // textContent (not innerText) so disabled/greyed buttons still match.
-    const text = (btn.textContent || '').toLowerCase().trim();
-    if (!isChromeInstall(text) && !isOurLabel(text)) continue;
-
     // An install is running for THIS page and the SPA re-rendered the button
-    // back to its Chrome label — re-adopt it as the progress card.
+    // back to its store label — re-adopt it as the progress card.
     if (installState && window.location.pathname === installState.path) {
       renderProgress(btn);
       continue;
     }
 
-    // Re-enable disabled buttons
+    // The store disables the button on non-Chrome browsers; re-enable it.
     if (btn.hasAttribute('disabled')) {
       btn.removeAttribute('disabled');
     }
@@ -280,15 +269,13 @@ function enableInstallButton() {
     btn.style.setProperty('color', paint.fg, 'important');
     btn.style.setProperty('border-color', paint.bg, 'important');
 
-    // Deep replace text nodes to preserve Google's button structure (spans, svgs).
-    // No persistent flag: on SPA navigation Google reuses the same button node and
-    // resets its text to the localized "Add to Chrome", so we relabel whenever a
-    // Chrome-install label is present, not just the first time we see the node.
+    // The button carries a single label text node (verified across locales);
+    // rewrite it in place, preserving Google's font-bearing spans. Google resets
+    // the label to its store text on SPA navigation, so relabel on every pass.
     const changeText = (el) => {
       for (const child of el.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
-          const raw = child.nodeValue;
-          if ((isChromeInstall(raw) || isOurLabel(raw)) && raw.trim() !== label) {
+          if (child.nodeValue.trim() && child.nodeValue.trim() !== label) {
             child.nodeValue = label;
           }
         } else if (child.nodeType === Node.ELEMENT_NODE) {
@@ -334,7 +321,9 @@ document.addEventListener('click', (e) => {
   if (!btn || btn.dataset.vdProgress) return;
 
   const text = (btn.textContent || '').toLowerCase().trim();
-  if (!isOurLabel(text) && !isChromeInstall(text)) return;
+  // Act on our own button (injected or relabelled) or the store's install
+  // button, matched by jsname since its label is localized.
+  if (!btn.matches(CTA_SEL) && !btn.classList.contains('vd-install') && !isOurLabel(text)) return;
 
   // Store URL is /detail/<slug>/<id>. Capture both: the slug names the app so
   // it isn't named after the random-looking id.
@@ -346,11 +335,11 @@ document.addEventListener('click', (e) => {
     removeViaduct(match[2], btn);
     return;
   }
-  // The store sets <title> to "<Extension Name> - Chrome Web Store" for the
-  // current page — reliable, unlike querySelector('h1') which can grab a
-  // featured/related listing. De-slugged URL segment is the fallback.
+  // The store title is "<Extension Name> - <Chrome Web Store>", the suffix
+  // localized but always keeping the Latin word "Chrome"; drop that trailing
+  // segment. De-slugged URL segment is the fallback.
   const fromTitle = document.title
-    .replace(/\s*[-–|]\s*Chrome Web Store\s*$/i, '')
+    .replace(/\s*[-–|]\s*[^-–|]*chrome[^-–|]*\s*$/i, '')
     .trim();
   const fromSlug = decodeURIComponent(match[1])
     .replace(/-/g, ' ')
