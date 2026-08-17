@@ -37,17 +37,30 @@ function desiredPaint() {
 }
 
 // The Chrome Web Store localizes and even declines its button labels ("Add to
-// Chrome", "Hinzufügen", "Přidat do Chromu", "Добавяне"), and translates the
-// "Chrome Web Store" brand in its logo/footer links — so matching on text is
-// unreliable and mislabels the logo. Google's internal jsname ids are stable
-// across every locale, so key on those instead.
-const CTA_SEL = 'button[jsname="wQO0od"]';        // the detail-page install button
-const BANNER_BTN_SEL = 'button[jsname="oGfC5c"]'; // the "install Chrome" promo button
+// Chrome", "Hinzufügen", "Přidat do Chromu", "Добавяне") and translates the
+// "Chrome Web Store" brand in its logo/footer links, so matching on text is
+// unreliable and mislabels the logo. Match by structure instead.
+const BANNER_BTN_SEL = 'button[jsname="oGfC5c"]'; // the "install Chrome" promo banner button
+// The install button carries jsname="wQO0od" once the page is hydrated (and in
+// a Chromium engine); real Safari drops that binding and instead renders the
+// button disabled — you can't install to Chrome from Safari. Either signal, or
+// our own relabel, identifies it without reading its localized text.
+const CTA_JSNAME_SEL = 'button[jsname="wQO0od"]';
 
 // Buttons we've already relabelled or injected, so a state flip repaints them.
 function isOurLabel(text) {
   const t = (text || '').toLowerCase().trim();
   return t.includes('add to safari') || t.includes('remove from safari');
+}
+
+function isStoreCta(btn) {
+  if (!btn || btn.tagName !== 'BUTTON') return false;
+  if (btn.classList.contains('vd-install') || btn.dataset.vdProgress) return false;
+  if (btn.matches(CTA_JSNAME_SEL)) return true;
+  if (isOurLabel(btn.textContent || '')) return true; // our relabelled store button
+  // The disabled install pill in real Safari; width guard skips 40px icon buttons.
+  const disabled = btn.hasAttribute('disabled') || btn.getAttribute('aria-disabled') === 'true';
+  return disabled && btn.offsetWidth > 60;
 }
 
 // Style our own injected button (not a repurposed store button) for the
@@ -208,7 +221,7 @@ function storeInstallButton(skip) {
     // Google keeps previous SPA views in the DOM inside display:none
     // containers — their leftover buttons don't count as present.
     if (!btn.offsetHeight) continue;
-    if (btn.matches(CTA_SEL)) return btn;
+    if (isStoreCta(btn)) return btn;
   }
   return null;
 }
@@ -239,15 +252,15 @@ function ensureInstallButton() {
 }
 
 function enableInstallButton() {
+  if (!/\/detail\/[^/]+\/[a-z]{32}/.test(window.location.pathname)) return;
   const label = desiredLabel();
   const paint = desiredPaint();
-  // Match the store's install button by jsname, not text — its label is
-  // localized and sometimes lacks the word "Chrome" entirely (e.g. German
-  // "Hinzufügen"), and text matching wrongly caught the "Chrome Web Store" logo.
-  for (const btn of document.querySelectorAll(CTA_SEL)) {
-    // Already showing install/remove progress — leave it alone.
-    if (btn.dataset.vdProgress) continue;
-    // Skip a button hidden in a dead SPA view.
+  // Match the store's install button structurally via isStoreCta (jsname, or
+  // the disabled install pill Safari renders) — never by its localized and
+  // sometimes Chrome-less label, which also mislabeled the store logo.
+  for (const btn of document.querySelectorAll('button')) {
+    if (!isStoreCta(btn)) continue;
+    // isStoreCta already skips progress cards; drop buttons in dead SPA views.
     if (!btn.offsetHeight) continue;
 
     // An install is running for THIS page and the SPA re-rendered the button
@@ -258,9 +271,8 @@ function enableInstallButton() {
     }
 
     // The store disables the button on non-Chrome browsers; re-enable it.
-    if (btn.hasAttribute('disabled')) {
-      btn.removeAttribute('disabled');
-    }
+    if (btn.hasAttribute('disabled')) btn.removeAttribute('disabled');
+    btn.removeAttribute('aria-disabled');
     btn.style.pointerEvents = 'auto';
 
     // Paint it the app's brand color so the repurposed button reads as "ours",
@@ -322,8 +334,8 @@ document.addEventListener('click', (e) => {
 
   const text = (btn.textContent || '').toLowerCase().trim();
   // Act on our own button (injected or relabelled) or the store's install
-  // button, matched by jsname since its label is localized.
-  if (!btn.matches(CTA_SEL) && !btn.classList.contains('vd-install') && !isOurLabel(text)) return;
+  // button, identified structurally by isStoreCta.
+  if (!isStoreCta(btn) && !btn.classList.contains('vd-install')) return;
 
   // Store URL is /detail/<slug>/<id>. Capture both: the slug names the app so
   // it isn't named after the random-looking id.
