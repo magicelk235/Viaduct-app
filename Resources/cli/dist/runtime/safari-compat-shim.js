@@ -425,31 +425,51 @@ var __C2S_DEBUG__ = false;
   // compare getURL's output against both of those:
   //   uBlock: sender.origin === getURL("").slice(0, -1)   // lowercase on the left
   //   Honey:  location.href.includes(getURL("/"))         // UPPERCASE on the left
-  // getURL can only return one case. This used to lowercase the host for the empty/root
-  // arg and keep Safari's real case for resource paths, which satisfied uBlock and broke
-  // Honey: inPopover() went false, so its popup treated its own href as the current page
-  // URL, sent every message without a tabId, and the background rejected all of them →
-  // blank popup. Resource paths can't be lowercased either — Safari's resource server is
-  // CASE-SENSITIVE on the UUID host (live-proven on Grammarly), so a lowercased
-  // fetch(getURL("manifest.json")) 404s with "TypeError: Load failed" and the bg init
-  // stalls.
+  // getURL can only return one case per arg, and the two idioms want opposite cases: the
+  // origin comparison (getURL("")) wants lowercase to match Safari's lowercase origins, the
+  // href comparison (getURL("/…")) wants Safari's real UPPERCASE. An earlier fix lowercased
+  // the empty AND the root arg, which broke Honey: getURL("/") went lowercase, inPopover()
+  // went false, and its popup sent every message without a tabId → blank popup. Resource
+  // paths can't be lowercased either — Safari's resource server is CASE-SENSITIVE on the
+  // UUID host (live-proven on Grammarly), so a lowercased fetch(getURL("manifest.json"))
+  // 404s with "TypeError: Load failed" and bg init stalls.
   //
-  // So getURL returns Safari's real case for EVERY arg, and the odd one out —
-  // sender.origin — is aligned to it in senderWithFixedUrl, which hands the listener a
-  // clone. The live sender is an exotic getter whose mutation doesn't stick; a clone's
-  // does.
+  // The split in patchGetURL below resolves it: lowercase the host ONLY for the exactly-
+  // empty arg (the one every origin comparison uses), and keep Safari's real case for "/"
+  // and every resource path. sender.origin is then already lowercase and equal on both
+  // sides, so the senderWithFixedUrl alignment becomes a Safari no-op (it still helps
+  // browsers where the sender is mutable).
   function patchGetURL(rt) {
     if (!rt || typeof rt.getURL !== "function" || rt.__c2sGetURL) return;
     var orig = rt.getURL.bind(rt);
     var base = "";
     try { base = orig("/") || orig("manifest.json").replace(/manifest\.json[^/]*$/, "") || ""; } catch (e) {}
     if (!base) { try { base = (location && location.origin ? location.origin + "/" : ""); } catch (e) {} }
+    // Safari serves getURL()'s UUID host in UPPERCASE, but every origin — sender.origin,
+    // location.origin, and new URL(url).origin — is lowercase (the URL parser lowercases
+    // the host, and Safari reports sender.origin lowercase too). Bundles gate their own
+    // pages on that origin against getURL(""): uBlock does
+    // `sender.origin === getURL("").slice(0,-1)`, and LastPass's background accepts a
+    // message only when `new URL(sender.url).origin === sender.origin`. With getURL("")
+    // uppercase, uBlock's port sender (which Safari won't let us rewrite) never matches,
+    // and the message-sender clone we DO rewrite gets pushed up to uppercase, breaking
+    // LastPass. So lowercase the host for the EMPTY arg only — the one every origin
+    // comparison uses — and keep Safari's real case for "/" and resource paths: Honey
+    // matches location.href against getURL("/…"), and the resource server is case-sensitive
+    // on the host, so a lowercased fetch 404s. Tradeoff: a bundle doing
+    // sender.url.startsWith(getURL("")) now compares upper against lower, but that idiom is
+    // rare and the origin-equality one fixed here is the common gate.
+    function lowerHost(u) {
+      return String(u).replace(/^[^/]*\/\/[^/]+/, function (m) { return m.toLowerCase(); });
+    }
     function wrapped(p) {
+      var empty = (p == null || p === "");
       var r = null;
-      try { r = orig(p == null ? "" : p); } catch (e) {}
-      if (r) return r;
+      try { r = orig(empty ? "" : p); } catch (e) {}
+      if (r) return empty ? lowerHost(r) : r;
       // Safari gave us nothing usable (only the empty/root arg does that): build from base.
-      return base + (p == null ? "" : String(p)).replace(/^\.?\//, "");
+      var built = base + (empty ? "" : String(p).replace(/^\.?\//, ""));
+      return empty ? lowerHost(built) : built;
     }
     try { rt.getURL = wrapped; rt.__c2sGetURL = true; } catch (e) {
       try { Object.defineProperty(rt, "getURL", { value: wrapped, writable: true, configurable: true }); rt.__c2sGetURL = true; } catch (e2) {}
@@ -465,8 +485,8 @@ var __C2S_DEBUG__ = false;
   // the popup port is judged "unknown", never stored, and the bg posts no reply → the
   // popup's getPageConfig RPC never resolves → "Grammarly is starting…" hangs forever.
   // Restore Chrome's invariant: override runtime.id to the UUID taken from getURL("")'s
-  // host (lowercased — patchGetURL already lowercases the root-arg host, and the companion
-  // wrapOnConnect fix lowercases sender.url's host, so both sides of the regex agree).
+  // host (lowercased — patchGetURL lowercases the empty-arg host, so the UUID derived here
+  // matches the lowercase host that new URL() and sender.origin expose).
   // No-op if the host can't be derived; never throws.
   // A FROZEN Safari chrome.runtime blocks the getURL wrap (assignment + defineProperty
   // both fail on a frozen object), so getURL("") keeps returning ""/undefined and
@@ -740,11 +760,11 @@ var __C2S_DEBUG__ = false;
     // Compare case-insensitively: Safari hands out the UUID host in different cases per
     // API, which is the very thing being normalized here.
     if (bare.toLowerCase().indexOf(canon.toLowerCase()) !== 0) return sender;
-    // Safari reports sender.origin with a LOWERCASE UUID host while getURL() uses the
-    // real (upper) case, so a bundle gating its own pages with
+    // Safari reports sender.origin with a LOWERCASE UUID host, and getURL("") is lowercased
+    // for the empty arg above, so a bundle gating its own pages with
     //   sender.origin === getURL("").slice(0, -1)          // uBlock, verbatim
-    // never matches and the popup is judged unprivileged → getPopupData goes unanswered
-    // → blank popup. Align it to getURL's case.
+    // already matches on Safari with no rewrite. This alignment is for browsers where the
+    // sender is mutable and the cases still differ; on Safari it's a no-op.
     var origin;
     try { origin = sender.origin; } catch (e) {}
     var fixOrigin = typeof origin === "string" && origin !== canon &&
@@ -2758,6 +2778,176 @@ var __C2S_DEBUG__ = false;
     } catch (e) {}
   }
 
+  // ── navigator.serviceWorker in an extension page → the converted background ──
+  // Chrome registers an MV3 background service worker against the extension origin,
+  // so an extension PAGE reaches the background through navigator.serviceWorker.
+  // The documented way to open a binary channel between a web page and a background
+  // SW is to embed an extension-origin iframe, hand it a MessagePort with
+  // window.postMessage, and forward that port on with
+  //   (await navigator.serviceWorker.ready).active.postMessage(msg, [port])
+  // Kondo's web app (app.trykondo.com ↔ ext.html) is exactly this shape, and it is
+  // the extension's ONLY channel: every request the app makes rides that port.
+  //
+  // viaduct turns the SW into a background PAGE, so the extension origin has no
+  // service-worker registration at all. Measured in a converted extension page:
+  // getRegistrations() → [], controller null, and `ready` stays pending forever — so
+  // the await never returns, nothing throws, and the bridge is silently dead.
+  //
+  // Emulate the surface here and tunnel the traffic over a runtime.connect port.
+  // That is the only transport available: an extension page embedded in a web page
+  // runs in the web content process, where extension.getBackgroundPage() is null
+  // (measured: still null after 11s with a port held open), so the port object
+  // cannot simply be handed to the background realm the way the offscreen emulation
+  // above does it. A MessagePort can't cross a runtime port either, so each
+  // transferred port is bridged: its messages travel as ordinary port messages, and
+  // the background side re-materializes a REAL MessagePort from a MessageChannel it
+  // owns, so `event.ports[0]` behaves like the port Chrome would have delivered.
+  // Payloads therefore cross as runtime-message JSON rather than a structured clone —
+  // no Blob/ArrayBuffer/Date fidelity.
+  (function () {
+    var proto = "";
+    try { proto = (typeof location !== "undefined" && location.protocol) || ""; } catch (e) {}
+    // Extension pages only. A content script's navigator.serviceWorker belongs to the
+    // web page and must keep its real registration.
+    if (!/^(safari-web-extension|chrome-extension|moz-extension):$/.test(proto)) return;
+    var rt = null;
+    try { rt = (typeof chrome !== "undefined" && chrome.runtime) || (typeof browser !== "undefined" && browser.runtime) || null; } catch (e) {}
+    if (!rt) return;
+    var CHANNEL = "__c2sSwBridge";
+    var isBgPage = /background\.html$/.test((typeof location !== "undefined" && location.pathname) || "");
+
+    if (isBgPage) {
+      // Background side: replay each tunneled postMessage as a `message` event on
+      // self, the shape a real service worker receives.
+      if (!rt.onConnect || typeof rt.onConnect.addListener !== "function") return;
+      rt.onConnect.addListener(function (port) {
+        if (!port || port.name !== CHANNEL) return;
+        var bridged = {};   // pid → our end of the re-materialized MessagePort pair
+        var lastSeq = 0;    // the connect proxy can replay a queued send; ports are ordered
+        var client = {
+          // A real ExtendableMessageEvent carries the sending client and SW code
+          // answers on it (event.source.postMessage). Route that back to the page,
+          // which dispatches it on its navigator.serviceWorker.
+          postMessage: function (data) { try { port.postMessage({ t: "client", data: data }); } catch (e) {} },
+        };
+        port.onMessage.addListener(function (m) {
+          if (!m) return;
+          if (m.t === "port") {
+            var b = bridged[m.pid];
+            if (b) { try { b.postMessage(m.data); } catch (e) {} }
+            return;
+          }
+          if (m.t !== "msg" || !(m.seq > lastSeq)) return;
+          lastSeq = m.seq;
+          var pids = m.pids || [];
+          var ports = [];
+          for (var i = 0; i < pids.length; i++) {
+            var ch;
+            try { ch = new MessageChannel(); } catch (e) { continue; }
+            bridged[pids[i]] = ch.port1;
+            ch.port1.onmessage = (function (id) {
+              return function (ev) { try { port.postMessage({ t: "port", pid: id, data: ev.data }); } catch (e) {} };
+            })(pids[i]);
+            ports.push(ch.port2);
+          }
+          var ev;
+          try { ev = new MessageEvent("message", { data: m.data, origin: m.origin || "", ports: ports }); } catch (e) { return; }
+          // `source` and `waitUntil` are not MessageEvent members, so they go on as own
+          // properties; a handler that reads either must not throw.
+          try { Object.defineProperty(ev, "source", { value: client, configurable: true }); } catch (e) {}
+          try { ev.waitUntil = function () {}; } catch (e) {}
+          try { self.dispatchEvent(ev); } catch (e) {}
+        });
+        port.onDisconnect.addListener(function () {
+          for (var pid in bridged) { try { bridged[pid].close(); } catch (e) {} }
+          bridged = {};
+        });
+      });
+      return;
+    }
+
+    var container = null;
+    try { container = (typeof navigator !== "undefined") && navigator.serviceWorker; } catch (e) {}
+    if (!container) return;
+    // A live controller means this origin really does run a worker — leave it alone.
+    try { if (container.controller) return; } catch (e) {}
+
+    var tunnel = null, seq = 0, pidN = 0;
+    var mine = {};  // pid → the page-side MessagePort the caller transferred
+    function chan() {
+      if (tunnel) return tunnel;
+      var t = rt.connect({ name: CHANNEL });
+      tunnel = t;
+      t.onMessage.addListener(function (m) {
+        if (!m) return;
+        if (m.t === "port") {
+          var p = mine[m.pid];
+          if (p) { try { p.postMessage(m.data); } catch (e) {} }
+        } else if (m.t === "client") {
+          try { container.dispatchEvent(new MessageEvent("message", { data: m.data })); } catch (e) {}
+        }
+      });
+      // Reconnect on the next send: the wrapped connect() wakes a suspended
+      // background, so a dropped tunnel is recoverable rather than fatal.
+      t.onDisconnect.addListener(function () { if (tunnel === t) tunnel = null; });
+      return t;
+    }
+    var worker = {
+      state: "activated",
+      scriptURL: (function () { try { return rt.getURL ? rt.getURL("/background.html") : ""; } catch (e) { return ""; } })(),
+      onstatechange: null,
+      addEventListener: function () {}, removeEventListener: function () {},
+      postMessage: function (data, transfer) {
+        var list = [];
+        if (transfer && transfer.length) list = transfer;
+        else if (transfer && transfer.transfer && transfer.transfer.length) list = transfer.transfer; // postMessage(data, {transfer})
+        var pids = [];
+        for (var i = 0; i < list.length; i++) {
+          var p = list[i];
+          // Only MessagePorts need bridging; anything else rides along inside `data`.
+          if (!p || typeof p.postMessage !== "function" || typeof p.close !== "function") continue;
+          var pid = "p" + (++pidN);
+          mine[pid] = p;
+          p.onmessage = (function (id) {
+            return function (ev) {
+              try { chan().postMessage({ t: "port", pid: id, data: ev.data }); } catch (e) {}
+            };
+          })(pid);
+          pids.push(pid);
+        }
+        var o = "";
+        try { o = (typeof location !== "undefined" && location.origin) || ""; } catch (e) {}
+        try { chan().postMessage({ t: "msg", seq: ++seq, data: data, pids: pids, origin: o }); } catch (e) {}
+      },
+    };
+    var reg = {
+      scope: (function () { try { return rt.getURL ? rt.getURL("/") : "/"; } catch (e) { return "/"; } })(),
+      active: worker, installing: null, waiting: null, updateViaCache: "imports",
+      addEventListener: function () {}, removeEventListener: function () {},
+      update: function () { return Promise.resolve(reg); },
+      unregister: function () { return Promise.resolve(true); },
+      showNotification: function () { return Promise.resolve(); },
+      getNotifications: function () { return Promise.resolve([]); },
+    };
+    // Chrome resolves `ready` as soon as the worker is active, which for a converted
+    // background page is always: a postMessage buffers behind connect() while the page
+    // wakes, so resolving now can't lose a send.
+    var patch = {
+      ready: Promise.resolve(reg), controller: worker,
+      register: function () { return Promise.resolve(reg); },
+      getRegistration: function () { return Promise.resolve(reg); },
+      getRegistrations: function () { return Promise.resolve([reg]); },
+      startMessages: function () {},
+    };
+    // Patch the native container in place so object identity survives (the offscreen
+    // emulation above dispatches on w.navigator.serviceWorker) and addEventListener /
+    // onmessage stay the platform's. Per property, so one frozen slot can't cost the
+    // rest — `ready` is the one that matters.
+    for (var k in patch) {
+      try { Object.defineProperty(container, k, { value: patch[k], writable: true, configurable: true }); } catch (e) {}
+    }
+  })();
+
   // Namespaces with NO Safari equivalent that Chrome extensions still reference at
   // module-eval (reading <ns>.<event>.addListener or an enum) throw a TypeError that
   // aborts SW/page evaluation and blanks the surface — same failure class as
@@ -4357,6 +4547,74 @@ var __C2S_DEBUG__ = false;
           });
         });
         if (__coTook) { try { __co.__c2sGuarded = true; } catch (e) {} }
+      }
+    } catch (e) {}
+
+    // cookies.get must return the cookie the REQUEST will carry. When two cookies
+    // share a name on nested domains, Safari answers with the wrong one: LinkedIn's
+    // real JSESSIONID lives on `.www.linkedin.com`, Kondo mints a fallback one on
+    // `.linkedin.com` whenever it can't find a session, and from then on
+    // cookies.get({name:"JSESSIONID", url:"https://www.linkedin.com/"}) hands back the
+    // APEX cookie while the network stack sends the host one first. Every request then
+    // carries a Csrf-Token that contradicts its own Cookie header, LinkedIn answers 403
+    // "CSRF check failed", and it never recovers on its own — the junk cookie outlives
+    // the session that caused it.
+    //
+    // Chrome breaks the tie by longest path, then earliest creation, which returns the
+    // site's own cookie. Safari exposes no creation time, so order candidates the way
+    // the server sees them (RFC 6265: longest path first, then the most specific
+    // domain), which keeps a read agreeing with the request that follows it. Only
+    // engaged when getAll reports MORE THAN ONE candidate — a single match, or a
+    // getAll that can't answer, falls straight through to the native get.
+    try {
+      var __ckGet = chrome.cookies.get, __ckGetAll = chrome.cookies.getAll;
+      if (typeof __ckGet === "function" && typeof __ckGetAll === "function" && !chrome.cookies.__c2sGetOrder) {
+        // [path length, exact-host match, domain length] — compared left to right.
+        var __ckRank = function (c, host) {
+          var d = String((c && c.domain) || "").replace(/^\./, "").toLowerCase();
+          return [String((c && c.path) || "").length, d && d === host ? 1 : 0, d.length];
+        };
+        var __ckBetter = function (a, b) {
+          for (var i = 0; i < a.length; i++) { if (a[i] !== b[i]) return a[i] > b[i]; }
+          return false;
+        };
+        var __ckPick = function (list, url) {
+          var host = "";
+          try { host = new URL(url).hostname.toLowerCase(); } catch (e) {}
+          var best = null, bestRank = null;
+          for (var i = 0; i < list.length; i++) {
+            var r = __ckRank(list[i], host);
+            if (!bestRank || __ckBetter(r, bestRank)) { best = list[i]; bestRank = r; }
+          }
+          return best;
+        };
+        var __ckTook = installOverride(chrome.cookies, "get", function (details, cb) {
+          var ns = this;
+          var native = function () {
+            var r;
+            try { r = __ckGet.call(ns, details, typeof cb === "function" ? cb : undefined); } catch (e) { return dual(null, cb); }
+            if (typeof cb === "function") return undefined;
+            return (r && typeof r.then === "function") ? r : Promise.resolve(r);
+          };
+          var url = details && details.url, name = details && details.name;
+          if (!url || !name) return native();
+          var all;
+          try { all = __ckGetAll.call(ns, { url: url, name: name }); } catch (e) { return native(); }
+          if (!all || typeof all.then !== "function") return native(); // callback-only host → leave it alone
+          var picked = all.then(function (list) {
+            if (!list || list.length < 2) return null;      // nothing to disambiguate
+            return __ckPick(list, url);
+          }, function () { return null; });
+          if (typeof cb === "function") {
+            picked.then(function (c) {
+              if (c) { setLastErr(null); try { cb(c); } catch (e) {} return; }
+              try { __ckGet.call(ns, details, cb); } catch (e) { try { cb(null); } catch (e2) {} }
+            });
+            return undefined;
+          }
+          return picked.then(function (c) { return c || native(); });
+        });
+        if (__ckTook) { try { chrome.cookies.__c2sGetOrder = true; } catch (e) {} }
       }
     } catch (e) {}
 

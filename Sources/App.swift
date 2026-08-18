@@ -146,7 +146,7 @@ struct ViaductApp: App {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app"))
                     vm.needsAppleAccount = true
                     vm.failureSummary = vm.adhocDespiteAccount
-                        ? "In Xcode, create any macOS app project, open Signing & Capabilities, and pick your name in the Team dropdown. That makes Xcode issue the certificate. Then install again."
+                        ? "In Xcode: Settings → Accounts, select your Apple ID, click Manage Certificates, click +, and choose Apple Development. Then install again."
                         : "Sign into Xcode (Settings → Accounts) with any free Apple ID, then install again."
                     vm.phase = .failed
                 }
@@ -163,10 +163,10 @@ struct ViaductApp: App {
                 every time it quits and you have to re-enable it from the \
                 Develop menu.
 
-                Xcode only creates the certificate when a project asks for it. \
-                In Xcode: File → New → Project, pick macOS → App, open the \
-                Signing & Capabilities tab, and choose your name in the Team \
-                dropdown. Delete the project afterwards, then convert again.
+                Xcode only issues the certificate when you ask for it. In Xcode: \
+                Settings → Accounts, select your Apple ID, click Manage \
+                Certificates at the bottom right, click + at the bottom left, \
+                and choose Apple Development. Then convert again.
                 """ : """
                 Viaduct couldn't find an Apple account in Xcode. Without one, \
                 Safari turns this extension off every time it quits and you have \

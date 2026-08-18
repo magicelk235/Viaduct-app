@@ -272,33 +272,94 @@ final class ConverterViewModel: ObservableObject {
     }
 
     /// True when the machine can team-sign. This has to agree with the CLI's own
-    /// detectXcodeTeam() (`src/build/packager.ts`): the app only decides whether
-    /// to warn, the CLI decides how it actually signs, and when they disagree the
-    /// user gets a silently ad-hoc build with no warning at all. They did drift
-    /// once — the bundled CLI sat at 1.0.0, which had no keychain fallback — so
-    /// the bundle is now synced from npm at build time (`sync-cli.sh`).
+    /// detectXcodeTeam() (`src/build/packager.ts`, as of 1.10.3): the app only
+    /// decides whether to warn, the CLI decides how it actually signs, and when
+    /// they disagree the user gets a silently ad-hoc build with no warning at
+    /// all — or, the way it drifted this time, a warning on a machine the CLI
+    /// would have team-signed on. They did drift once before too: the bundled
+    /// CLI sat at 1.0.0, which had no keychain fallback, so the bundle is now
+    /// synced from npm at build time (`sync-cli.sh`).
     ///
-    /// Xcode's preference cache is checked first because it's cheap, but it is
-    /// not authoritative: it's written asynchronously and stays empty on setups
-    /// where the account is signed in but no team has been fetched yet. A
-    /// signing certificate in the keychain settles it, since that's what
-    /// codesign actually consumes.
+    /// Three source groups, in the CLI's order, cheapest first: the team ids
+    /// Xcode caches in its preferences, any provisioning profile already on
+    /// disk, then a signing certificate in the keychain. None of the earlier
+    /// ones is authoritative — the preference cache is written asynchronously
+    /// and stays empty on setups where the account is signed in but no team has
+    /// been fetched yet — so a miss has to fall through rather than decide.
     static func xcodeTeamPresent() -> Bool {
-        if let out = shellOutput("/usr/bin/defaults",
-                                 ["read", "com.apple.dt.Xcode", "IDEProvisioningTeamByIdentifier"]),
-           out.range(of: #"teamID\s*=\s*"?[A-Z0-9]{10}(?![A-Z0-9])"?"#,
-                     options: .regularExpression) != nil {
-            return true
+        teamInPreferences() || teamInProvisioningProfiles() || teamInKeychain()
+    }
+
+    /// Team ids Xcode caches once an account is added. Two keys across two
+    /// domains: current Xcode writes IDEProvisioningTeamByIdentifier, older
+    /// versions and xcodebuild itself write IDEProvisioningTeams, and the
+    /// xcodebuild domain is sometimes populated when the Xcode one is not.
+    /// Which combination exists varies by Xcode version, and all four are cheap
+    /// `defaults` reads.
+    private static func teamInPreferences() -> Bool {
+        for domain in ["com.apple.dt.Xcode", "com.apple.dt.xcodebuild"] {
+            for key in ["IDEProvisioningTeamByIdentifier", "IDEProvisioningTeams"] {
+                guard let out = shellOutput("/usr/bin/defaults", ["read", domain, key]) else {
+                    continue
+                }
+                // Boundary after the 10 chars so a longer token isn't truncated
+                // into a wrong-but-plausible id; a real team id is exactly 10.
+                if out.range(of: #"teamID\s*=\s*"?[A-Z0-9]{10}(?![A-Z0-9])"?"#,
+                             options: .regularExpression) != nil {
+                    return true
+                }
+            }
         }
+        return false
+    }
+
+    /// Where Xcode downloads provisioning profiles: Xcode 16+ first, then the
+    /// location older versions used.
+    private static let provisioningProfileDirs = [
+        "Library/Developer/Xcode/UserData/Provisioning Profiles",
+        "Library/MobileDevice/Provisioning Profiles",
+    ]
+
+    /// True when a provisioning profile on disk names a team. Profiles are
+    /// CMS-signed, but the payload plist sits in the blob as plain XML, so
+    /// scanning the bytes beats shelling out to `security cms -D` once per file.
+    /// They're decoded as ISO-8859-1 because the CMS wrapper is binary and a
+    /// UTF-8 decode of it fails outright; the plist itself is ASCII either way.
+    private static func teamInProvisioningProfiles() -> Bool {
+        // TeamIdentifier is the modern key. Profiles cut before Xcode 6 carry
+        // only ApplicationIdentifierPrefix, whose single element is the team id.
+        let pattern = #"<key>(TeamIdentifier|ApplicationIdentifierPrefix|com\.apple\.developer\.team-identifier)</key>\s*(<array>\s*)?<string>[A-Z0-9]{10}(?![A-Z0-9])</string>"#
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        for dir in provisioningProfileDirs {
+            let dirURL = home.appendingPathComponent(dir)
+            guard let names = try? FileManager.default
+                .contentsOfDirectory(atPath: dirURL.path) else { continue }
+            for name in names
+            where name.hasSuffix(".provisionprofile") || name.hasSuffix(".mobileprovision") {
+                guard let bytes = try? Data(contentsOf: dirURL.appendingPathComponent(name)),
+                      let blob = String(data: bytes, encoding: .isoLatin1) else { continue }
+                if blob.range(of: pattern, options: .regularExpression) != nil { return true }
+            }
+        }
+        return false
+    }
+
+    /// True when the keychain holds an Apple certificate that carries a team id.
+    /// Development certs are the ones the build asks for, but Developer ID and
+    /// App Store certs count too: the build runs `xcodebuild
+    /// -allowProvisioningUpdates`, so the team id is the only thing missing and
+    /// Xcode mints the development certificate itself. Apple puts the same team
+    /// id in every cert's subject OU, and a Developer ID cert is the only Apple
+    /// certificate on the machine of anyone who has shipped a notarized app and
+    /// nothing else — those users can team-sign, so don't warn them.
+    private static func teamInKeychain() -> Bool {
         guard let identities = shellOutput("/usr/bin/security",
                                            ["find-identity", "-v", "-p", "codesigning"]) else {
             return false
         }
         // Lines look like:  1) <sha1> "Apple Development: me@example.com (XXXXXXXXXX)"
-        // Developer ID certs are excluded: they sign for direct distribution and
-        // aren't what Xcode provisions an extension with.
         return identities.range(
-            of: #""(Apple Development|Mac Developer|Apple Distribution|iPhone Developer):"#,
+            of: #""(Apple Development|Mac Developer|Apple Distribution|iPhone Developer|Developer ID Application|3rd Party Mac Developer Application):"#,
             options: .regularExpression) != nil
     }
 
