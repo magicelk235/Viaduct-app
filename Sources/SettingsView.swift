@@ -38,6 +38,7 @@ struct SettingsView: View {
                     appUpdateCard
                     cliCard
                     signingCard
+                    warningsCard
                     supportCard
                     historyCard
                 }
@@ -234,6 +235,20 @@ struct SettingsView: View {
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.accentBlue)
             }
+        }
+    }
+
+    /// Shows and clears the pre-convert signing warning's opt-out. "Convert
+    /// Anyway" on that alert stores the choice for good, so this is where a user
+    /// sees that the warning is off and turns it back on. Without it, one click
+    /// leaves every later conversion signing ad-hoc with nothing said.
+    private var warningsCard: some View {
+        SettingsSection(title: "Warnings", symbol: "exclamationmark.triangle") {
+            Toggle("Ignore the signing warning", isOn: $vm.adhocAcknowledged)
+                .toggleStyle(.glass)
+            Text("On: Viaduct converts without asking, even when this Mac can't sign with your Apple team. Safari turns those extensions off every time it quits.")
+                .font(Theme.Font.caption())
+                .foregroundStyle(Theme.Colors.mute)
         }
     }
 

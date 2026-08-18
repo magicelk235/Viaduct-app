@@ -54,9 +54,16 @@ final class ConverterViewModel: ObservableObject {
     /// targets the team.
     @Published var adhocDespiteAccount = false
 
-    /// User saw the ad-hoc warning and chose to convert anyway — don't nag on
-    /// every conversion after an informed choice.
+    /// Silences the pre-convert signing warning for good. Off unless the user
+    /// turns it on under Settings → Warnings. "Convert Anyway" on the alert
+    /// deliberately doesn't set this: one click shouldn't leave every later
+    /// conversion signing ad-hoc with nothing said.
     @AppStorage("adhocAcknowledged") var adhocAcknowledged = false
+
+    /// One-time pass from "Convert Anyway", consumed by the gate that raised the
+    /// alert. In memory only, so the warning is back on the next conversion and
+    /// on the next launch.
+    private var adhocBypassOnce = false
 
     /// Chrome Web Store id of the install in flight (store flow only). Stamped
     /// onto the history record so auto-renew can re-download the source by id.
@@ -234,19 +241,29 @@ final class ConverterViewModel: ObservableObject {
         // The CLI silently falls back to ad-hoc signing when Xcode has no Apple
         // account — and Safari disables ad-hoc extensions on every quit. Warn
         // up front instead of letting the extension quietly vanish later.
-        if !adhocAcknowledged, !Self.xcodeTeamPresent() {
+        if !adhocAcknowledged, !adhocBypassOnce, !Self.xcodeTeamPresent() {
             adhocDespiteAccount = Self.xcodeAccountPresent()
             // Surface the alert even for headless viaduct:// installs.
             NSApp.activate(ignoringOtherApps: true)
             showAdhocWarning = true
             return
         }
+        // Past the gate, so the pass has done its job.
+        adhocBypassOnce = false
 
         installedAppPath = nil
         failureSummary = nil
         lastReachedTrackPhase = nil
         phase = .extracting
         runCLI(args: options.conversionArgs(), label: "Conversion", userMode: true)
+    }
+
+    /// "Convert Anyway" on the signing warning: run this one conversion without
+    /// the gate. The next one asks again unless the user silences the warning in
+    /// Settings.
+    func convertIgnoringSigning() {
+        adhocBypassOnce = true
+        userConvert()
     }
 
     /// Save the just-finished conversion to history.

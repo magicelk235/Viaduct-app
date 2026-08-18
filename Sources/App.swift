@@ -131,17 +131,15 @@ struct ViaductApp: App {
                 vm.recheckXcode()
             }
             // Pre-convert warning: no Apple account in Xcode means ad-hoc
-            // signing, which Safari disables on every quit. Asked once;
-            // "Convert Anyway" remembers the choice. Every button leaves the
-            // flow in a terminal state — a store-page progress card polling us
-            // must never be left spinning on an abandoned conversion.
+            // signing, which Safari disables on every quit. "Convert Anyway" is
+            // a one-time pass, so the next conversion asks again; silencing it
+            // for good is a deliberate trip to Settings → Warnings. Every button
+            // leaves the flow in a terminal state — a store-page progress card
+            // polling us must never be left spinning on an abandoned conversion.
             .alert(vm.adhocDespiteAccount ? "Xcode hasn't issued a signing certificate"
                                           : "No Apple account in Xcode",
                    isPresented: $vm.showAdhocWarning) {
-                Button("Convert Anyway") {
-                    vm.adhocAcknowledged = true
-                    vm.userConvert()
-                }
+                Button("Convert Anyway") { vm.convertIgnoringSigning() }
                 Button("Open Xcode") {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app"))
                     vm.needsAppleAccount = true
