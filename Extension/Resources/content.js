@@ -338,22 +338,21 @@ function start() {
   // navigating into an extension without a reload is handled. popstate covers back/forward.
   // The attribute filter is what catches the store disabling its install button on a hard
   // load; childList alone leaves the button reading "Add to Chrome" until something else
-  // happens to swap a node.
+  // happens to swap a node. characterData matters just as much: the store's renderer
+  // rewrites the button's text node in place — same node, same attributes — which put our
+  // label back to "Add to Chrome" until an unrelated mutation happened to fire, so the
+  // button flickered between the two labels. Our own relabel only writes when the text
+  // actually differs, so watching it can't feed itself.
   new MutationObserver(queueApply).observe(document.documentElement, {
     childList: true,
     subtree: true,
+    characterData: true,
     attributes: true,
     attributeFilter: ['disabled', 'aria-disabled', 'jsname'],
   });
   window.addEventListener('popstate', apply);
   if (document.readyState === 'complete') settle();
   else window.addEventListener('load', settle, { once: true });
-}
-
-if (document.body) {
-  start();
-} else {
-  document.addEventListener('DOMContentLoaded', start, { once: true });
 }
 
 document.addEventListener('click', (e) => {
@@ -556,4 +555,16 @@ function startProgressPolling(btn, id) {
     setTimeout(tick, 800);
   };
   tick();
+}
+
+// Start last: enableInstallButton()/ensureInstallButton() read `installState`,
+// declared above with `let`, so kicking off while the script is still evaluating
+// throws a ReferenceError and takes the whole content script down — no observer,
+// no click handler, nothing. That happens whenever body already exists when we
+// run, e.g. Safari injecting into a tab that was open before the extension was
+// enabled or updated.
+if (document.body) {
+  start();
+} else {
+  document.addEventListener('DOMContentLoaded', start, { once: true });
 }
