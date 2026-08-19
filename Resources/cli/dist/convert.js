@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve, basename, sep } from "node:path";
 import { extractExtension } from "./input/extract.js";
-import { loadManifest, analyzeManifest, transformManifest, writeManifest, resolveI18nString, collectReferencedPaths } from "./manifest/manifest.js";
+import { loadManifest, analyzeManifest, transformManifest, writeManifest, resolveI18nString, collectReferencedPaths, raiseMinVersionForMainWorld, MAIN_WORLD_MIN_SAFARI_VERSION } from "./manifest/manifest.js";
 import { scanExtension } from "./analyze/analyze.js";
 import { stageExtension, stripDanglingSourcemaps, inlineImmutableEnums, rewriteRuntimeIdUrlMatchers, rewriteChromeSchemeLiterals, rewriteExtensionIdPlaceholderUrls, guardAncestorOriginsAccess, rewriteSelfPageExtensionUrls, rewriteBackgroundContextChecks, idempotentContentScriptGlobals, guardLocaleTailMessage } from "./input/stage.js";
 import { writeShim, writePolyfill, injectShimIntoHtmlPages, injectPopupSizing, convertServiceWorkerToBackgroundPage, wireActionClickBridge, wireActionHotkey, wirePageWorldMainInjection, wireUserScriptsContentScript, wireCdpKeepalive, deriveProxyHosts } from "./runtime/shim.js";
@@ -252,6 +252,20 @@ export function convert(opts) {
         const strippedMaps = stripDanglingSourcemaps(stageDir);
         if (strippedMaps > 0)
             ok(`Stripped dangling sourcemap refs from ${strippedMaps} script(s)`);
+        // The world:"MAIN" entries wirePageWorldMainInjection added above need a Safari floor
+        // that can run them: below 18.4 Safari ignores the entry silently. Only OUR
+        // injections are considered — an entry the extension itself declared is the author's
+        // compatibility claim (the analyzer warns and tells them to degrade), and the OAuth
+        // page bridge recovers on its own by re-injecting from the isolated world. Last step
+        // before the manifest is written.
+        const raisedFrom = raiseMinVersionForMainWorld(transformed, mainWorld);
+        if (raisedFrom) {
+            const line = `Safari strict_min_version ${raisedFrom} → ${MAIN_WORLD_MIN_SAFARI_VERSION} (required by the world:"MAIN" content script(s) this conversion injected: ${mainWorld.join(", ")})`;
+            if (opts.minSafariVersion)
+                warn(line + ` — overrides --min-safari ${opts.minSafariVersion}`);
+            else
+                ok(line);
+        }
         writeManifest(stageDir, transformed);
         const popupFile = (transformed.action ?? transformed.browser_action)?.default_popup;
         if (popupFile && popupFile !== "__viaduct-action.html") {
