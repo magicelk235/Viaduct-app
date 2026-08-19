@@ -200,6 +200,7 @@
 			buildPhases = (
 				88B1872F4B7F5DB4F5BEF861 /* Sources */,
 				EDE19498C23975B9925655F3 /* Resources */,
+				E3B03C0BC0F74DAB629BDB2C /* Stamp manifest version */,
 			);
 			buildRules = (
 			);
@@ -303,6 +304,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		E3B03C0BC0F74DAB629BDB2C /* Stamp manifest version */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stamp manifest version";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "manifest=\"$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/manifest.json\"\n/usr/bin/sed -i '' -E \"s/(\\\"version\\\"[[:space:]]*:[[:space:]]*\\\")[^\\\"]*\\\"/\\1$MARKETING_VERSION\\\"/\" \"$manifest\"\ngrep -q \"\\\"version\\\": \\\"$MARKETING_VERSION\\\"\" \"$manifest\" \\\n  || { echo \"error: manifest version not stamped in $manifest\"; exit 1; }\n";
+		};
 		FC2CE8C82374EA97715A4004 /* Fetch Node */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

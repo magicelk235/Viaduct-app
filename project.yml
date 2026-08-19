@@ -109,3 +109,16 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.magicelk235.viaduct.Extension
         ENABLE_HARDENED_RUNTIME: false
         OTHER_LDFLAGS: ["-Xlinker", "-u", "-Xlinker", "_OBJC_CLASS_$_SafariWebExtensionHandler"]
+    postBuildScripts:
+      # Safari caches a web extension by the version in its manifest, so a
+      # manifest stuck at one number lets an updated app keep serving the old
+      # content script until the user toggles the extension off and on. Stamp
+      # the built copy from MARKETING_VERSION; the checked-in manifest.json
+      # keeps its placeholder, since JSON has nowhere to put $(MARKETING_VERSION).
+      - name: Stamp manifest version
+        script: |
+          manifest="$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources/manifest.json"
+          /usr/bin/sed -i '' -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[^\"]*\"/\1$MARKETING_VERSION\"/" "$manifest"
+          grep -q "\"version\": \"$MARKETING_VERSION\"" "$manifest" \
+            || { echo "error: manifest version not stamped in $manifest"; exit 1; }
+        basedOnDependencyAnalysis: false
