@@ -312,14 +312,42 @@ function apply() {
   refreshInstalled(currentDetailId());
 }
 
+// Bursts are cheap to coalesce and apply() walks every button on the page, so
+// collapse a hydration storm into one pass per frame.
+let applyQueued = false;
+function queueApply() {
+  if (applyQueued) return;
+  applyQueued = true;
+  requestAnimationFrame(() => { applyQueued = false; apply(); });
+}
+
+// A full page load finishes differently from an SPA navigation: the server-rendered
+// install button is already in the DOM, and the store's client code only flips it to
+// disabled (Safari can't install to Chrome) — an attribute change with no node churn.
+// So re-run for a few seconds after load instead of trusting the observer to fire.
+function settle() {
+  apply();
+  for (const ms of [250, 750, 1500, 3000]) setTimeout(apply, ms);
+}
+
 function start() {
   apply();
   // Content scripts run in an isolated world, so we can't hook the page's history.pushState
   // to catch SPA navigations. The MutationObserver is the reliable signal: every client-side
   // route change swaps DOM nodes, which fires this. It stays live for the whole session, so
   // navigating into an extension without a reload is handled. popstate covers back/forward.
-  new MutationObserver(apply).observe(document.documentElement, { childList: true, subtree: true });
+  // The attribute filter is what catches the store disabling its install button on a hard
+  // load; childList alone leaves the button reading "Add to Chrome" until something else
+  // happens to swap a node.
+  new MutationObserver(queueApply).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['disabled', 'aria-disabled', 'jsname'],
+  });
   window.addEventListener('popstate', apply);
+  if (document.readyState === 'complete') settle();
+  else window.addEventListener('load', settle, { once: true });
 }
 
 if (document.body) {
