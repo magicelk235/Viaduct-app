@@ -43,15 +43,47 @@ enum SigningAccount: String {
         }
     }
 
-    static let teamEntry = try? NSRegularExpression(
-        pattern: #"isFreeProvisioningTeam\s*=\s*([01])\s*;\s*teamID\s*=\s*"?[A-Z0-9]{10}(?![A-Z0-9])"?"#)
+    struct Team: Equatable {
+        let id: String
+        let account: SigningAccount?
+    }
 
-    static func classify(teamDump dump: String) -> SigningAccount? {
-        guard let regex = teamEntry,
-              let match = regex.firstMatch(in: dump,
-                                           range: NSRange(dump.startIndex..., in: dump)),
-              let flag = Range(match.range(at: 1), in: dump) else { return nil }
-        return dump[flag] == "0" ? .paid : .free
+    static let teamCacheField = try? NSRegularExpression(
+        pattern: #"isFreeProvisioningTeam\s*=\s*([01])|teamID\s*=\s*"?([A-Z0-9]{10})(?![A-Z0-9])"?"#)
+
+    static func teams(inTeamDump dump: String) -> [Team] {
+        guard let regex = teamCacheField else { return [] }
+        var found: [Team] = []
+        var pending: SigningAccount?
+        regex.enumerateMatches(in: dump, range: NSRange(dump.startIndex..., in: dump)) { m, _, _ in
+            guard let m else { return }
+            if let flag = Range(m.range(at: 1), in: dump) {
+                pending = dump[flag] == "0" ? .paid : .free
+                return
+            }
+            guard let id = Range(m.range(at: 2), in: dump) else { return }
+            let team = Team(id: String(dump[id]), account: pending)
+            pending = nil
+            if !found.contains(where: { $0.id == team.id }) { found.append(team) }
+        }
+        return found
+    }
+
+    static func pick(cached: [Team],
+                     certs: @autoclosure () -> [Team],
+                     provisioned: @autoclosure () -> [Team]) -> Team? {
+        if let cached = cached.first { return cached }
+        let certs = certs()
+        guard !certs.isEmpty else { return nil }
+        if let profiled = provisioned().first(where: { p in certs.contains { $0.id == p.id } }) {
+            return Team(id: profiled.id,
+                        account: profiled.account ?? certs.first { $0.id == profiled.id }?.account)
+        }
+        return certs[0]
+    }
+
+    static func account(profileSpan span: TimeInterval) -> SigningAccount {
+        span >= 30 * 24 * 3600 ? .paid : .free
     }
 }
 
@@ -83,12 +115,14 @@ assert(RenewalPolicy.dueForRenewal(expiresAt: now.addingTimeInterval(1 * day),
                                    lastBuild: now.addingTimeInterval(-2 * day), now: now) == false,
        "rebuilt 2 days ago → once-a-week cap skips it")
 
-// classify (Xcode's team cache: isFreeProvisioningTeam is Apple's own verdict)
+// teams(inTeamDump:) — Xcode's team cache, where isFreeProvisioningTeam is
+// Apple's own verdict and the first team listed is the one the CLI signs with.
 let paidDump = """
 {
     "702A3917-2C31-4D48-A04D-B35ACA593376" =     (
                 {
             isFreeProvisioningTeam = 0;
+            isMemberOfProgram = 1;
             teamID = V8K8L3ZSD5;
             teamName = "Some Developer";
             teamType = Individual;
@@ -96,19 +130,71 @@ let paidDump = """
     );
 }
 """
-let freeDump = paidDump.replacingOccurrences(of: "isFreeProvisioningTeam = 0",
-                                             with: "isFreeProvisioningTeam = 1")
-assert(SigningAccount.classify(teamDump: paidDump) == .paid,
-       "isFreeProvisioningTeam = 0 → paid membership")
-assert(SigningAccount.classify(teamDump: freeDump) == .free,
+let freeDump = paidDump
+    .replacingOccurrences(of: "isFreeProvisioningTeam = 0", with: "isFreeProvisioningTeam = 1")
+    .replacingOccurrences(of: "V8K8L3ZSD5", with: "AB12CD34EF")
+assert(SigningAccount.teams(inTeamDump: paidDump)
+        == [.init(id: "V8K8L3ZSD5", account: .paid)],
+       "isFreeProvisioningTeam = 0 → paid membership, whatever keys sit between the flag and the id")
+assert(SigningAccount.teams(inTeamDump: freeDump)
+        == [.init(id: "AB12CD34EF", account: .free)],
        "isFreeProvisioningTeam = 1 → free Apple ID")
-assert(SigningAccount.classify(teamDump: "{\n}") == nil,
-       "no team in the cache → unknown, caller assumes free")
-// A Mac holding both teams is classified by the one that signs, which is the
-// first entry in the dump (what the CLI's detectXcodeTeam() picks).
-let bothDump = freeDump + paidDump
-assert(SigningAccount.classify(teamDump: bothDump) == .free,
-       "free team listed first → classified free, not by the paid team further down")
+assert(SigningAccount.teams(inTeamDump: "{\n}").isEmpty,
+       "no team in the cache → nothing to sign with, the CLI falls back to ad-hoc")
+assert(SigningAccount.teams(inTeamDump: "{\n    teamID = V8K8L3ZSD5;\n}")
+        == [.init(id: "V8K8L3ZSD5", account: nil)],
+       "an Xcode too old to record the flag names a team with no verdict → assume free")
+// A Mac holding both teams signs with the first one listed, and each keeps its
+// own verdict: one flag must not smear across every id after it.
+assert(SigningAccount.teams(inTeamDump: freeDump + paidDump)
+        == [.init(id: "AB12CD34EF", account: .free),
+            .init(id: "V8K8L3ZSD5", account: .paid)],
+       "free team listed first → signs free, and the paid team below keeps its own verdict")
+
+// account(profileSpan:) — a provisioning profile dates itself, and Apple gives a
+// personal team a week where a membership gets a year.
+assert(SigningAccount.account(profileSpan: 7 * day) == .free,
+       "seven-day profile → free personal team")
+assert(SigningAccount.account(profileSpan: 365 * day) == .paid,
+       "year-long profile → paid membership")
+assert(SigningAccount.account(profileSpan: 18 * 365 * day) == .paid,
+       "long-lived Mac Team profile → paid membership")
+
+// pick(cached:certs:provisioned:) — which team the CLI signs with. Mirrors
+// viaduct's detectXcodeTeam() (src/build/packager.ts, 1.11.4): Xcode's accounts
+// and the keychain nominate a team, provisioning profiles only choose between
+// them. Get this wrong and the app either warns a Mac that signs perfectly well
+// or stays quiet while every build comes out ad-hoc.
+let cachedFree = SigningAccount.Team(id: "AB12CD34EF", account: .free)
+let certDev = SigningAccount.Team(id: "CD34EF56GH", account: nil)
+let certPaid = SigningAccount.Team(id: "EF56GH78IJ", account: .paid)
+let vendorProfile = SigningAccount.Team(id: "ZZ99YY88XX", account: .paid)
+var laterSourcesRead = 0
+func counted(_ teams: [SigningAccount.Team]) -> [SigningAccount.Team] {
+    laterSourcesRead += 1
+    return teams
+}
+assert(SigningAccount.pick(cached: [cachedFree, certPaid],
+                           certs: counted([certPaid]),
+                           provisioned: counted([vendorProfile])) == cachedFree,
+       "Xcode's account cache decides, and its first team is the one that signs")
+assert(laterSourcesRead == 0,
+       "cache answered → no keychain scan and no profiles parsed")
+assert(SigningAccount.pick(cached: [], certs: [], provisioned: [vendorProfile]) == nil,
+       "profiles alone never nominate a team (issue #15: a vendor's profile, no account) → ad-hoc")
+assert(SigningAccount.pick(cached: [], certs: [certDev, certPaid], provisioned: []) == certDev,
+       "no profile to choose with → the best certificate class wins")
+assert(SigningAccount.pick(cached: [], certs: [certDev, certPaid],
+                           provisioned: [certPaid]) == certPaid,
+       "the newest profile picks among the teams a certificate can sign for")
+assert(SigningAccount.pick(cached: [], certs: [certDev, certPaid],
+                           provisioned: [vendorProfile, certDev])
+        == SigningAccount.Team(id: certDev.id, account: nil),
+       "an unsignable profile is skipped, and an undated one leaves the class to the certificate")
+assert(SigningAccount.pick(cached: [], certs: [certDev],
+                           provisioned: [SigningAccount.Team(id: certDev.id, account: .paid)])
+        == SigningAccount.Team(id: certDev.id, account: .paid),
+       "an Apple Development cert says nothing about the tier; the profile's own span does")
 
 // A paid signature outlives the renew window by a year, so nothing is due; the
 // same build on a free account is due two days before its week is up.

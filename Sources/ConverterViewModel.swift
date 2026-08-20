@@ -33,6 +33,13 @@ final class ConverterViewModel: ObservableObject {
     /// so the failure card can name the step that broke.
     @Published var lastReachedTrackPhase: ConvertPhase? = nil
 
+    /// True when the conversion that just finished came out ad-hoc signed. The
+    /// CLI rebuilds ad-hoc when the team it detected can't sign, so a run the
+    /// app expected to be team-signed can still land unsigned — and Safari then
+    /// refuses the extension until the unsigned toggle is on, which the done
+    /// card has to say out loud.
+    @Published var lastBuildAdHoc = false
+
     /// Set when an unlicensed user hits the free-quota wall; drives the paywall sheet.
     @Published var showPaywall = false
 
@@ -338,6 +345,7 @@ final class ConverterViewModel: ObservableObject {
         installedAppPath = nil
         failureSummary = nil
         lastReachedTrackPhase = nil
+        lastBuildAdHoc = false
         phase = .extracting
         runCLI(args: options.conversionArgs(), label: "Conversion", userMode: true)
     }
@@ -366,14 +374,17 @@ final class ConverterViewModel: ObservableObject {
         // Classify the signing account now rather than trusting a launch-time
         // answer: someone who joined the Developer Program (or signed into a
         // different Apple ID) mid-session gets the year they paid for, not a
-        // week of pointless weekly rebuilds.
+        // week of pointless weekly rebuilds. Then read the artifact, because a
+        // run can succeed and still have come out ad-hoc.
         let account = SigningAccount.detect()
         signingAccount = account
+        let build = SigningAccount.inspectBuild(installedAppPath: installedAppPath,
+                                                signedAt: Date(), account: account)
+        lastBuildAdHoc = build.adHoc
         history.add(name: name, sourcePath: archived ?? options.inputPath,
                     appName: options.appName,
                     installedPath: installedAppPath,
-                    signatureExpiry: SigningAccount.signatureExpiry(
-                        installedAppPath: installedAppPath, signedAt: Date(), account: account),
+                    build: build,
                     iconData: extInfo?.icon?.pngData(),
                     storeId: pendingStoreId, version: extInfo?.version)
         pendingStoreId = nil
@@ -525,6 +536,7 @@ final class ConverterViewModel: ObservableObject {
         extInfo = nil
         needsXcode = false
         needsAppleAccount = false
+        lastBuildAdHoc = false
         options.inputPath = ""
         options.appName = ""
     }

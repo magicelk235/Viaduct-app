@@ -165,7 +165,7 @@ final class ExtensionRenewer {
         if code == 0 {
             history.markUpdated(id: rec.id, version: latest,
                                 installedPath: rec.installedPath,
-                                signatureExpiry: Self.freshExpiry(for: rec))
+                                build: Self.freshBuild(for: rec))
         } else {
             // Build failed: stamp the poll so we don't hammer it, and surface it.
             history.stampUpdateCheck(id: rec.id)
@@ -192,21 +192,22 @@ final class ExtensionRenewer {
         let code = await rebuild(sourcePath: sourcePath, appName: rec.resolvedAppName)
         if code == 0 {
             history.markRenewed(id: rec.id, installedPath: rec.installedPath,
-                                signatureExpiry: Self.freshExpiry(for: rec))
+                                build: Self.freshBuild(for: rec))
         } else {
             history.markRenewFailed(id: rec.id)
             notifyFailure(rec)
         }
     }
 
-    /// When the signature a rebuild just applied lapses. Classified per rebuild
+    /// What the rebuild that just ran actually produced. Inspected per rebuild
     /// rather than copied from the old record: a user who joined the Developer
-    /// Program since the last build now signs for a year, and one whose
-    /// membership lapsed is back to a week.
-    private static func freshExpiry(for rec: ConversionRecord) -> Date {
-        SigningAccount.signatureExpiry(installedAppPath: rec.installedPath,
-                                       signedAt: Date(),
-                                       account: SigningAccount.detect())
+    /// Program since the last build now signs for a year, one whose membership
+    /// lapsed is back to a week, and a rebuild whose team can no longer sign
+    /// comes out ad-hoc — which the CLI does instead of failing the run.
+    private static func freshBuild(for rec: ConversionRecord) -> SigningAccount.Build {
+        SigningAccount.inspectBuild(installedAppPath: rec.installedPath,
+                                    signedAt: Date(),
+                                    account: SigningAccount.detect())
     }
 
     /// Run a full convert+install from source via the CLI, re-signing with the

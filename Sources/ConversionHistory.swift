@@ -20,6 +20,13 @@ struct ConversionRecord: Codable, Identifiable {
     /// still decode — those keep the free-account week they were scheduled on,
     /// and get a real date at their next renew.
     var signatureExpiry: Date?
+
+    /// True when the build that produced this record came out ad-hoc signed —
+    /// the CLI falls back to it when the team it detected can't sign, and Safari
+    /// then disables the extension every time it quits. Optional so records
+    /// written before the fallback existed still decode (nil → not known to be
+    /// ad-hoc, which is what every team-signed record is).
+    var adHoc: Bool?
     /// Last time auto-renew tried this record, and whether it failed. Surfaced in
     /// Settings so the user sees a silent failure before Safari drops the extension.
     var lastRenewAttempt: Date?
@@ -64,13 +71,14 @@ final class ConversionHistory: ObservableObject {
     init() { load() }
 
     func add(name: String, sourcePath: String, appName: String,
-             installedPath: String?, signatureExpiry: Date?, iconData: Data?,
-             storeId: String? = nil, version: String? = nil) {
+             installedPath: String?, build: SigningAccount.Build,
+             iconData: Data?, storeId: String? = nil, version: String? = nil) {
         let now = Date()
         let record = ConversionRecord(name: name, sourcePath: sourcePath,
                                       appName: appName, installedPath: installedPath,
                                       date: now, lastSigned: now,
-                                      signatureExpiry: signatureExpiry, iconData: iconData,
+                                      signatureExpiry: build.expiry, adHoc: build.adHoc,
+                                      iconData: iconData,
                                       storeId: storeId, version: version)
         // Re-converting the same app replaces its record instead of stacking duplicates.
         records.removeAll { $0.resolvedAppName == appName }
@@ -80,14 +88,17 @@ final class ConversionHistory: ObservableObject {
     }
 
     /// Stamp a record as freshly re-signed (called after a successful auto-renew).
-    /// The new expiry comes from the caller because the account can have changed
-    /// since the last build — someone who joined the Developer Program in the
-    /// meantime should stop being renewed weekly.
-    func markRenewed(id: ConversionRecord.ID, installedPath: String?, signatureExpiry: Date?) {
+    /// The build comes from the caller because both halves can have changed since
+    /// the last one — someone who joined the Developer Program in the meantime
+    /// should stop being renewed weekly, and a rebuild that fell back to ad-hoc
+    /// must stop claiming an Apple signature it no longer has.
+    func markRenewed(id: ConversionRecord.ID, installedPath: String?,
+                     build: SigningAccount.Build) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         let now = Date()
         records[i].lastSigned = now
-        records[i].signatureExpiry = signatureExpiry
+        records[i].signatureExpiry = build.expiry
+        records[i].adHoc = build.adHoc
         records[i].lastRenewAttempt = now
         records[i].lastRenewFailed = false
         if let p = installedPath { records[i].installedPath = p }
@@ -99,12 +110,13 @@ final class ConversionHistory: ObservableObject {
     /// (which resets the once-a-week renew cap). Also stamps the update-check
     /// timestamp.
     func markUpdated(id: ConversionRecord.ID, version: String, installedPath: String?,
-                     signatureExpiry: Date?) {
+                     build: SigningAccount.Build) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         let now = Date()
         records[i].version = version
         records[i].lastSigned = now
-        records[i].signatureExpiry = signatureExpiry
+        records[i].signatureExpiry = build.expiry
+        records[i].adHoc = build.adHoc
         records[i].lastUpdateCheck = now
         records[i].lastRenewAttempt = now
         records[i].lastRenewFailed = false

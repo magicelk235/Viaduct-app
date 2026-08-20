@@ -169,6 +169,17 @@ struct UserModeView: View {
                     .lineLimit(1).truncationMode(.middle)
                 if vm.phase == .done {
                     DoneBadge()
+                    // A run can succeed and still come out ad-hoc: the CLI
+                    // rebuilds that way when the team it found can't sign.
+                    // Safari then refuses the extension outright until the
+                    // unsigned toggle is on, so this can't stay in the log.
+                    if vm.lastBuildAdHoc {
+                        Text("This one is signed ad-hoc, so Safari only loads it while Allow Unsigned Extensions is on in the Develop menu. Safari forgets that every time it quits.")
+                            .font(Theme.Font.caption())
+                            .foregroundStyle(Theme.Colors.accentYellow)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } else if let version = info.version, !version.isEmpty {
                     Text("Version \(version)")
                         .font(Theme.Font.caption())

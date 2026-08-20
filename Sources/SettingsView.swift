@@ -290,17 +290,30 @@ struct SettingsView: View {
         }
     }
 
-    /// Auto-renew state for a row: failure is loud (red), otherwise show next renew.
-    /// Only shown to licensed users — free tier doesn't auto-renew.
+    /// Per-row signing state. Ad-hoc comes first and shows for everyone: Safari
+    /// turns those extensions off every time it quits, which no amount of
+    /// re-signing fixes. Otherwise a failed renew is loud (red), and licensed
+    /// users see when the next one lands — the free tier doesn't auto-renew.
     @ViewBuilder
     private func renewStatus(_ rec: ConversionRecord) -> some View {
-        if license.isLicensed && vm.autoRenew {
+        if rec.adHoc == true {
+            Label("Ad-hoc signed: Safari turns it off every time it quits",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(Theme.Font.caption())
+                .foregroundStyle(Theme.Colors.accentYellow)
+                // Two lines: the row is narrow enough that one truncates this to
+                // "Ad-hoc signed: Safari turn…", which says nothing.
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .help("This build has no Apple signature, so Safari only loads it while Allow Unsigned Extensions is on in the Develop menu. Sign in to Xcode under Settings → Accounts, then convert it again to get a signed build.")
+        } else if license.isLicensed && vm.autoRenew {
             if rec.lastRenewFailed == true {
                 Label("Couldn't re-sign. Convert it again before \(rec.expiresAt.formatted(date: .abbreviated, time: .omitted))",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.accentRed)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Re-signs \(rec.expiresAt.formatted(.relative(presentation: .named)))")
                     .font(Theme.Font.caption())
