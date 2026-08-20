@@ -81,9 +81,6 @@ struct SettingsView: View {
     private var interfaceCard: some View {
         SettingsSection(title: "Mode", symbol: "macwindow") {
             PillTabPicker(options: AppMode.allCases, label: \.label, selection: $mode)
-            Text(mode.blurb)
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
         }
     }
 
@@ -265,21 +262,14 @@ struct SettingsView: View {
         SettingsSection(title: "Warnings", symbol: "exclamationmark.triangle") {
             Toggle("Ignore the signing warning", isOn: $vm.adhocAcknowledged)
                 .toggleStyle(.glass)
-            Text("When this is on, Viaduct converts without asking, even when this Mac can't sign with your Apple team. Safari turns those extensions off every time it quits.")
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
         }
     }
 
     private var historyCard: some View {
         SettingsSection(title: "Converted extensions", symbol: "clock.arrow.circlepath") {
-            if !history.records.isEmpty {
-                Button("Clear") { history.clear() }
-                    .buttonStyle(.raycastGhost)
-            }
         } content: {
             if history.records.isEmpty {
-                Text("Nothing converted yet. Drop an extension on the main window to start.")
+                Text("Nothing converted yet.")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
             } else {
@@ -349,6 +339,7 @@ struct SettingsView: View {
                 history.remove(rec)
             } label: {
                 Image(systemName: "trash")
+                    .foregroundStyle(Color.red)
             }
             .buttonStyle(.raycastGhost)
             .help("Forget this extension and stop renewing it")

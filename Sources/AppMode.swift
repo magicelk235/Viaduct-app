@@ -9,12 +9,6 @@ enum AppMode: String, CaseIterable, Identifiable {
         case .developer: return "Developer"
         }
     }
-    var blurb: String {
-        switch self {
-        case .user: return "Drop an extension, get it in Safari."
-        case .developer: return "Every CLI flag, the signing options, and the live build log."
-        }
-    }
 }
 
 /// High-level phases the user-mode UI animates through, derived by parsing CLI output.

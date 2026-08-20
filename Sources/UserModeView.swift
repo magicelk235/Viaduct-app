@@ -147,10 +147,6 @@ struct UserModeView: View {
                 Text(isTargeted ? "Release to add" : "Drop extension here")
                     .font(Theme.Font.headingSM())
                     .foregroundStyle(Theme.Colors.ink)
-                Text("or click to browse  ·  .zip, .crx, or folder")
-                    .tracked()
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.mute)
             }
         }
     }
@@ -452,9 +448,6 @@ struct RecentConversions: View {
                     Text("Recently converted")
                         .font(Theme.Font.caption())
                         .foregroundStyle(Theme.Colors.mute)
-                    Spacer()
-                    Button("Clear") { history.clear() }
-                        .buttonStyle(.raycastGhost)
                 }
 
                 ScrollView {
