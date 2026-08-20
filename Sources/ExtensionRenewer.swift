@@ -7,29 +7,42 @@ enum ChromeStore {
     struct DownloadError: LocalizedError {
         let status: Int
         var errorDescription: String? {
-            "Couldn't download that extension from the Chrome Web Store (status \(status)). It may be unlisted or removed."
+            "Couldn't download that extension from the Chrome Web Store (status \(status)). It may be delisted, region-blocked, or restricted to managed installs."
         }
     }
+
+    /// The endpoint gates on prodversion: an extension whose minimum_chrome_version
+    /// is newer than the version we claim comes back 204 with an empty body rather
+    /// than an error (this is what broke Enhancer for YouTube on the old hardcoded
+    /// 120.0.0.0). Chrome majors move every few weeks, so ask as current-ish stable
+    /// first, then as a version nothing can gate past.
+    private static let prodVersions = ["138.0", "9999.0"]
 
     /// Fetch the .crx for a store extension id into Caches. Verifies the "Cr24"
     /// magic bytes: a failed lookup follows the redirect to a 404 HTML page, so
     /// status alone isn't enough.
     static func downloadCRX(id: String) async throws -> URL {
-        // The old `prod=chromecrx&prodversion=99` endpoint now 404s. This form
-        // (prodversion=120 + installsource=ondemand) still returns a real CRX.
-        let urlStr = "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=120.0.0.0&acceptformat=crx2,crx3&x=id%3D\(id)%26installsource%3Dondemand%26uc"
-        guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
-        let (tempURL, response) = try await URLSession.shared.download(from: url)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 200
-        let isCRX = (try? FileHandle(forReadingFrom: tempURL))
-            .map { fh in defer { try? fh.close() }; return fh.readData(ofLength: 4) == Data("Cr24".utf8) } ?? false
-        guard status == 200, isCRX else { throw DownloadError(status: status) }
         let fm = FileManager.default
-        let dest = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("\(id).crx")
-        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-        try fm.moveItem(at: tempURL, to: dest)
-        return dest
+        var lastStatus = 0
+        for prodVersion in prodVersions {
+            let urlStr = "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=\(prodVersion)&acceptformat=crx2,crx3&x=id%3D\(id)%26installsource%3Dondemand%26uc"
+            guard let url = URL(string: urlStr) else { throw URLError(.badURL) }
+            let (tempURL, response) = try await URLSession.shared.download(from: url)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 200
+            let isCRX = (try? FileHandle(forReadingFrom: tempURL))
+                .map { fh in defer { try? fh.close() }; return fh.readData(ofLength: 4) == Data("Cr24".utf8) } ?? false
+            guard status == 200, isCRX else {
+                lastStatus = status
+                try? fm.removeItem(at: tempURL)
+                continue
+            }
+            let dest = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("\(id).crx")
+            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+            try fm.moveItem(at: tempURL, to: dest)
+            return dest
+        }
+        throw DownloadError(status: lastStatus)
     }
 }
 
