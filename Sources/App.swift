@@ -371,9 +371,9 @@ struct RenewMenu: View {
             Section("Extensions") {
                 ForEach(sortedRecords.prefix(8)) { rec in
                     if rec.lastRenewFailed == true {
-                        Text("⚠︎ \(rec.resolvedAppName) — renew failed")
+                        Text("⚠︎ \(rec.resolvedAppName): renew failed")
                     } else {
-                        Text("\(rec.resolvedAppName) — expires \(rec.expiresAt.formatted(.relative(presentation: .named)))")
+                        Text("\(rec.resolvedAppName) expires \(rec.expiresAt.formatted(.relative(presentation: .named)))")
                     }
                 }
                 if history.records.count > 8 {

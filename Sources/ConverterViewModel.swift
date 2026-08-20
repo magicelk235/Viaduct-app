@@ -36,6 +36,11 @@ final class ConverterViewModel: ObservableObject {
     /// "install Xcode" message that keeps re-failing for users who already did.
     @Published var xcodeStatus: CLIRunner.XcodeStatus = .ready
 
+    /// True while a privileged Xcode fix is running. `-runFirstLaunch` installs
+    /// packages and can take minutes, so the card has to say something is
+    /// happening instead of freezing behind a synchronous call.
+    @Published var xcodeFixing = false
+
     /// Set when converting would fall back to ad-hoc signing (no Apple account
     /// in Xcode). Drives a pre-convert warning instead of letting the extension
     /// silently vanish on the next Safari quit.
@@ -411,18 +416,20 @@ final class ConverterViewModel: ObservableObject {
     }
 
     /// Honest, per-state guidance for the Xcode gate. Each case names exactly
-    /// what's wrong and what the button will do — so a user who already has Xcode
+    /// what's wrong and what the button will do, so a user who already has Xcode
     /// never hits the same dead-end "install Xcode" text again.
     static func xcodeMessage(for status: CLIRunner.XcodeStatus) -> String {
         switch status {
         case .ready:
             return ""
         case .notInstalled:
-            return "Converting to a Safari extension needs Apple\u{2019}s full Xcode, which only Apple can provide \u{2014} the app can\u{2019}t bundle it. Install it free from the App Store (it\u{2019}s a large download), then come back: Viaduct picks up automatically once it\u{2019}s ready."
+            return "Converting to a Safari extension needs Apple's full Xcode, and only Apple can hand that out, so Viaduct can't bundle it. It's free on the App Store, though it's a big download. Once it's there, Viaduct picks it up on its own."
         case .notSelected:
-            return "Xcode is installed, but macOS is still pointed at the Command Line Tools, so the Safari packager can\u{2019}t be found. One click fixes it \u{2014} Viaduct will point macOS at Xcode (you\u{2019}ll be asked for your password)."
+            return "Xcode is installed, but macOS is still pointed at the Command Line Tools, so the Safari packager can't be found. Viaduct can point macOS at Xcode for you; you'll be asked for your password."
         case .setupIncomplete:
-            return "Xcode is installed but hasn\u{2019}t finished its first-launch setup yet. One click fixes it \u{2014} Viaduct will accept the license and install the missing components (you\u{2019}ll be asked for your password)."
+            return "Xcode hasn't finished its first-launch setup, so nothing can build yet. Viaduct can accept the license and install the missing components. You'll be asked for your password, and it takes a few minutes."
+        case .installIncomplete:
+            return "macOS is pointed at Xcode, but this copy doesn't include the Safari extension packager, so the install is incomplete or damaged. Reinstalling Xcode should sort it out."
         }
     }
 
@@ -439,14 +446,46 @@ final class ConverterViewModel: ObservableObject {
     /// conversion the user was trying to run.
     func fixXcodeSelection() {
         guard case let .notSelected(dev) = xcodeStatus else { return }
-        if CLIRunner.selectXcode(developerDir: dev) { clearXcodeGateAndRetry() }
-        else { recheckXcode() }
+        runXcodeFix { CLIRunner.selectXcode(developerDir: dev) }
     }
 
     /// One-click recovery for a fresh Xcode that hasn't finished first-launch.
     func finishXcodeSetup() {
-        if CLIRunner.finishXcodeFirstLaunch() { clearXcodeGateAndRetry() }
-        else { recheckXcode() }
+        runXcodeFix { CLIRunner.finishXcodeFirstLaunch() }
+    }
+
+    /// Run a privileged fix off the main thread, then act on what actually
+    /// happened. Reporting the command's own output matters: a fix that cannot
+    /// work otherwise looks exactly like one the user cancelled, which is how a
+    /// stuck machine ends up clicking the same button forever.
+    private func runXcodeFix(_ fix: @escaping () -> CLIRunner.FixOutcome) {
+        guard !xcodeFixing else { return }
+        xcodeFixing = true
+        Task.detached(priority: .userInitiated) {
+            let outcome = fix()
+            await MainActor.run { self.applyXcodeFix(outcome) }
+        }
+    }
+
+    private func applyXcodeFix(_ outcome: CLIRunner.FixOutcome) {
+        xcodeFixing = false
+        switch outcome {
+        case .fixed:
+            clearXcodeGateAndRetry()
+        case .cancelled:
+            recheckXcode()
+        case let .failed(detail):
+            recheckXcode()
+            let trimmed = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            appendLog("\u{2717} " + trimmed)
+            // The card stays readable; the untruncated text is in the log the
+            // failure view can copy.
+            let short = trimmed.count > 300
+                ? String(trimmed.prefix(300)) + "\u{2026}"
+                : trimmed
+            failureSummary = (failureSummary.map { $0 + "\n\n" } ?? "") + "Xcode said: " + short
+        }
     }
 
     /// Re-diagnose Xcode; drop the gate if it's now clear. Called when the app
@@ -694,7 +733,7 @@ final class ConverterViewModel: ObservableObject {
     /// Download + swap the latest CLI. Shared by auto-update and the manual button.
     private func applyUpdate() async {
         statusMessage = "Updating CLI…"
-        appendLog("— Auto-updating CLI —")
+        appendLog("→ Auto-updating CLI…")
         do {
             try await updater.update(rawLog: { [weak self] line in self?.appendLog(line) })
             installedVersion = updater.installedVersion ?? "unknown"

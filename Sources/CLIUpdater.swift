@@ -152,7 +152,7 @@ final class CLIUpdater {
         let data = try Data(contentsOf: url)   // tarball is a few hundred KB
         let actual = Data(SHA512.hash(data: data))
         guard actual == expectedDigest else {
-            throw UpdateError.download("tarball integrity mismatch — refusing to install")
+            throw UpdateError.download("tarball integrity mismatch, refusing to install")
         }
     }
 

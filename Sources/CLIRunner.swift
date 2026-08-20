@@ -97,43 +97,60 @@ final class CLIRunner {
 
     // MARK: - Xcode availability
 
-    /// Whether the build/sign pipeline can run. The hard requirement is a FULL
-    /// Xcode install: `safari-web-extension-packager` and the `xcodebuild` signing
-    /// of an App-Sandbox .appex ship only with Xcode, not the Command Line Tools.
-    /// Apple gives us no lighter path — so we detect it and tell the user plainly
-    /// rather than letting the conversion die deep inside xcodebuild.
+    /// Whether the build/sign pipeline can run. Two things have to hold, and they
+    /// break in completely different ways:
+    ///   1. a FULL Xcode is selected, so `safari-web-extension-packager` and the
+    ///      xcodebuild signing of an App-Sandbox .appex resolve at all — the
+    ///      Command Line Tools ship neither and Apple offers no lighter path;
+    ///   2. Xcode has finished its own first launch, or the components the build
+    ///      needs were never installed.
     static func xcodeReady() -> Bool {
-        // `xcrun --find` resolves against the active developer dir. With only CLT
-        // selected (or no Xcode at all), the packager is not found → not ready.
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
-        p.arguments = ["--find", "safari-web-extension-packager"]
-        p.standardOutput = Pipe()
-        p.standardError = Pipe()
-        do { try p.run() } catch { return false }
-        p.waitUntilExit()
-        return p.terminationStatus == 0
+        packagerResolvable() && firstLaunchComplete()
+    }
+
+    /// Can `xcrun` resolve the Safari packager against the active developer dir?
+    /// Note this is NOT a pure path lookup: `xcrun` runs `xcodebuild -license
+    /// check` first and passes its status straight through, so an unaccepted
+    /// license fails here (69) with exactly the same silence as a packager that
+    /// genuinely isn't in the bundle (72). Telling those two apart is what
+    /// `xcodeStatus()` is for.
+    static func packagerResolvable() -> Bool {
+        exitStatus("/usr/bin/xcrun", ["--find", "safari-web-extension-packager"]) == 0
+    }
+
+    /// Xcode's own first-launch gate: license agreed AND the bundled packages
+    /// installed. `xcodebuild` answers it directly, and it covers the package
+    /// half that `xcrun`'s license check does not.
+    static func firstLaunchComplete() -> Bool {
+        exitStatus("/usr/bin/xcodebuild", ["-checkFirstLaunchStatus"]) == 0
     }
 
     /// Why the build/sign pipeline can — or can't — run. This splits apart the
-    /// two very different failure modes that `xcodeReady()` alone collapses into
-    /// one: a genuinely missing Xcode, vs. an Xcode that IS installed but macOS
-    /// still isn't pointed at. The second is the notorious "I installed Xcode and
-    /// it STILL says install Xcode" trap — after an App Store install,
-    /// `xcode-select` can stay on the Command Line Tools, so `xcrun --find` fails
-    /// exactly as if Xcode weren't there. We detect that and fix it in one click.
+    /// failure modes `xcodeReady()` collapses into one, so the card we show
+    /// always offers a fix that can actually change the answer: no Xcode at all;
+    /// an Xcode that IS installed but macOS isn't pointed at (the notorious "I
+    /// installed Xcode and it STILL says install Xcode" trap, since an App Store
+    /// install can leave `xcode-select` on the Command Line Tools); an Xcode
+    /// waiting on its first launch; and an Xcode that is set up yet still doesn't
+    /// contain the packager.
     enum XcodeStatus: Equatable {
         case ready
-        case notInstalled                       // no Xcode.app anywhere on disk
-        case notSelected(developerDir: String)  // Xcode on disk, CLT/none active
-        case setupIncomplete                    // selected, first-launch pending
+        case notInstalled                            // no Xcode.app anywhere on disk
+        case notSelected(developerDir: String)       // Xcode on disk, CLT/none active
+        case setupIncomplete(developerDir: String)   // selected, first launch pending
+        case installIncomplete(developerDir: String) // set up, packager still not there
     }
 
     static func xcodeStatus() -> XcodeStatus {
         if xcodeReady() { return .ready }
         guard let dev = installedXcodeDeveloperDir() else { return .notInstalled }
         if activeDeveloperDir() != dev { return .notSelected(developerDir: dev) }
-        return .setupIncomplete
+        // Order matters. A pending first launch makes the packager lookup fail
+        // too, so it has to be ruled out before blaming the install: telling
+        // someone to reinstall Xcode when they only need to accept the license
+        // is the kind of advice that costs them an afternoon.
+        if !firstLaunchComplete() { return .setupIncomplete(developerDir: dev) }
+        return .installIncomplete(developerDir: dev)
     }
 
     /// Active developer dir (`xcode-select -p`), or nil if unset.
@@ -156,37 +173,85 @@ final class CLIRunner {
         return FileManager.default.fileExists(atPath: dev) ? dev : nil
     }
 
+    /// What a one-click privileged fix did. `cancelled` stays apart from `failed`
+    /// so dismissing the password prompt is never reported as a broken Xcode, and
+    /// `failed` carries what the command printed — without it a fix that can't
+    /// work is indistinguishable from one the user backed out of.
+    enum FixOutcome: Equatable {
+        case fixed
+        case cancelled
+        case failed(String)
+    }
+
     /// Point the active developer dir at `developerDir` via `xcode-select -s`,
-    /// shown to the user as the standard macOS admin-auth prompt. Returns true
-    /// once the selection actually resolves the Safari packager.
+    /// shown to the user as the standard macOS admin-auth prompt.
     @discardableResult
-    static func selectXcode(developerDir: String) -> Bool {
-        _ = runAdmin("/usr/bin/xcode-select -s \(shellQuote(developerDir))")
-        return xcodeReady()
+    static func selectXcode(developerDir: String) -> FixOutcome {
+        outcome(of: runAdmin("/usr/bin/xcode-select -s \(shellQuote(developerDir)) 2>&1"))
     }
 
-    /// Accept the Xcode license and run its first-launch component install —
-    /// both need admin rights and otherwise block xcrun/xcodebuild.
+    /// Accept the Xcode license and run its first-launch component install — both
+    /// need admin rights and otherwise block every xcodebuild. On a fresh Xcode
+    /// this installs packages and runs for minutes, so never call it on the main
+    /// thread.
     @discardableResult
-    static func finishXcodeFirstLaunch() -> Bool {
-        _ = runAdmin("/usr/bin/xcodebuild -license accept; /usr/bin/xcodebuild -runFirstLaunch")
-        return xcodeReady()
+    static func finishXcodeFirstLaunch() -> FixOutcome {
+        outcome(of: runAdmin("/usr/bin/xcodebuild -license accept 2>&1; /usr/bin/xcodebuild -runFirstLaunch 2>&1"))
     }
 
-    /// Run a shell command with administrator privileges via the OS auth prompt.
-    @discardableResult
-    private static func runAdmin(_ command: String) -> Bool {
+    /// Judge a fix by the state it left behind, not by the script's exit status —
+    /// a command can complain and still have done the job.
+    private static func outcome(of result: AdminResult) -> FixOutcome {
+        if xcodeReady() { return .fixed }
+        if result.cancelled { return .cancelled }
+        return .failed(result.message)
+    }
+
+    private struct AdminResult {
+        let cancelled: Bool
+        /// Combined output, or the AppleScript error text — whatever there is to
+        /// show the user when the fix didn't take.
+        let message: String
+    }
+
+    /// Run a shell command as root behind the standard macOS auth prompt, keeping
+    /// what it printed. The timeout is raised well past AppleScript's two-minute
+    /// default because `-runFirstLaunch` routinely runs longer than that.
+    private static func runAdmin(_ command: String) -> AdminResult {
         let escaped = command
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = "do shell script \"\(escaped)\" with administrator privileges"
+        let script = """
+        with timeout of 3600 seconds
+            do shell script "\(escaped)" with administrator privileges
+        end timeout
+        """
         var err: NSDictionary?
         let result = NSAppleScript(source: script)?.executeAndReturnError(&err)
-        return result != nil && err == nil
+        if let err {
+            let code = err[NSAppleScript.errorNumber] as? Int ?? 0
+            let text = err[NSAppleScript.errorMessage] as? String ?? "Unknown error \(code)."
+            // -128 is the user dismissing the auth prompt.
+            return AdminResult(cancelled: code == -128, message: text)
+        }
+        return AdminResult(cancelled: false, message: result?.stringValue ?? "")
     }
 
     private static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Run a tool with its output discarded and report the exit status, or nil if
+    /// it couldn't be launched at all.
+    private static func exitStatus(_ path: String, _ args: [String]) -> Int32? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        p.waitUntilExit()
+        return p.terminationStatus
     }
 
     /// Run a tool and capture stdout, or nil if it can't be launched.

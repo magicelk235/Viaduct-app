@@ -208,7 +208,10 @@ struct UserModeView: View {
                 .font(Theme.Font.caption())
                 .foregroundStyle(Theme.Colors.mute)
                 .multilineTextAlignment(.center)
-                .lineLimit(3)
+                // Room for the gate's explanation plus whatever Xcode itself
+                // printed when a one-click fix didn't take; the untruncated text
+                // is still in the log behind "Copy log".
+                .lineLimit(6)
             if !vm.logLines.isEmpty {
                 Button {
                     vm.copyLog()
@@ -228,9 +231,10 @@ struct UserModeView: View {
     private var failedHeadline: String {
         if vm.needsXcode {
             switch vm.xcodeStatus {
-            case .notSelected:     return "macOS isn't pointed at Xcode yet"
-            case .setupIncomplete: return "Xcode setup isn't finished"
-            default:               return "Xcode is required to sign extensions"
+            case .notSelected:       return "macOS isn't pointed at Xcode yet"
+            case .setupIncomplete:   return "Xcode setup isn't finished"
+            case .installIncomplete: return "This Xcode install is incomplete"
+            default:                 return "Xcode is required to sign extensions"
             }
         }
         if let last = vm.lastReachedTrackPhase {
@@ -281,25 +285,38 @@ struct UserModeView: View {
                         Feedback.haptic(.generic)
                         vm.fixXcodeSelection()
                     } label: {
-                        Label("Point macOS at Xcode", systemImage: "wrench.and.screwdriver")
-                            .frame(maxWidth: .infinity)
+                        fixLabel("Point macOS at Xcode", busy: "Pointing macOS at Xcode")
                     }
                     .buttonStyle(.raycastPrimary)
+                    .disabled(vm.xcodeFixing)
                     Button("Install a different Xcode") { vm.openXcodeInstall() }
                         .buttonStyle(.raycastGhost)
-                case .setupIncomplete:
+                        .disabled(vm.xcodeFixing)
+                case let .setupIncomplete(dev):
                     Button {
                         Feedback.haptic(.generic)
                         vm.finishXcodeSetup()
                     } label: {
-                        Label("Finish Xcode setup", systemImage: "wrench.and.screwdriver")
+                        fixLabel("Finish Xcode setup", busy: "Finishing setup, this takes a few minutes")
+                    }
+                    .buttonStyle(.raycastPrimary)
+                    .disabled(vm.xcodeFixing)
+                    Button("Open Xcode") { openXcode(developerDir: dev) }
+                        .buttonStyle(.raycastGhost)
+                        .disabled(vm.xcodeFixing)
+                case .installIncomplete:
+                    // Nothing xcodebuild can do puts a missing packager back, so
+                    // the only action offered here is the one that can.
+                    Button {
+                        Feedback.haptic(.generic)
+                        vm.openXcodeInstall()
+                    } label: {
+                        Label("Reinstall Xcode", systemImage: "arrow.down.app")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.raycastPrimary)
-                    Button("Open Xcode") {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app"))
-                    }
-                    .buttonStyle(.raycastGhost)
+                    Button("Check again") { vm.recheckXcode() }
+                        .buttonStyle(.raycastGhost)
                 default:
                     Button {
                         Feedback.haptic(.generic)
@@ -309,7 +326,7 @@ struct UserModeView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.raycastPrimary)
-                    Button("I installed it — try again") { vm.recheckXcode() }
+                    Button("I installed it, try again") { vm.recheckXcode() }
                         .buttonStyle(.raycastGhost)
                 }
             }
@@ -344,6 +361,35 @@ struct UserModeView: View {
         if vm.isRunning { vm.cancel() }
         vm.resetUserFlow()
         vm.pickInput()
+    }
+
+    /// Label for a one-click Xcode fix. `-runFirstLaunch` installs packages and
+    /// can run for minutes, so the button has to keep saying something while it
+    /// works instead of looking dead.
+    @ViewBuilder
+    private func fixLabel(_ title: String, busy: String) -> some View {
+        HStack(spacing: 6) {
+            if vm.xcodeFixing {
+                ProgressView().controlSize(.small)
+                Text(busy)
+            } else {
+                Image(systemName: "wrench.and.screwdriver")
+                Text(title)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Open the Xcode that macOS is actually pointed at, which is not always the
+    /// one in /Applications.
+    private func openXcode(developerDir: String) {
+        let app = URL(fileURLWithPath: developerDir)      // …/Xcode.app/Contents/Developer
+            .deletingLastPathComponent()                  // …/Xcode.app/Contents
+            .deletingLastPathComponent()                  // …/Xcode.app
+        let target = app.pathExtension == "app"
+            ? app
+            : URL(fileURLWithPath: "/Applications/Xcode.app")
+        NSWorkspace.shared.open(target)
     }
 
     private func displayName(_ info: ExtensionInfo) -> String {

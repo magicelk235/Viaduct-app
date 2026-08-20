@@ -43,7 +43,7 @@ struct ActivationView: View {
                     .foregroundStyle(Theme.Colors.ink)
                     .multilineTextAlignment(.center)
 
-                Text("Paste the key from your purchase email. One payment, no subscription, and it also turns on auto-renew.")
+                Text("Paste the key from your purchase email. You pay once, there's no subscription, and the key also turns on auto-renew.")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
                     .multilineTextAlignment(.center)

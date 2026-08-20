@@ -105,7 +105,7 @@ struct ConvertOptions {
             return "Input path does not exist: \(inputPath)"
         }
         if install && (noBuild || tempLoad) {
-            return "Install requires a build — turn off “No build” and “Temp load”."
+            return "Install requires a build. Turn off “No build” and “Temp load”."
         }
         if signing == .customTeam && customTeamId.isEmpty {
             return "Enter a Team ID or pick a different signing mode."

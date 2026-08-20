@@ -12,7 +12,7 @@ enum AppMode: String, CaseIterable, Identifiable {
     var blurb: String {
         switch self {
         case .user: return "Drop an extension, get it in Safari."
-        case .developer: return "Every CLI flag, signing options, and the live build log."
+        case .developer: return "Every CLI flag, the signing options, and the live build log."
         }
     }
 }

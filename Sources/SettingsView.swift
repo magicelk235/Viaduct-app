@@ -246,7 +246,7 @@ struct SettingsView: View {
         SettingsSection(title: "Warnings", symbol: "exclamationmark.triangle") {
             Toggle("Ignore the signing warning", isOn: $vm.adhocAcknowledged)
                 .toggleStyle(.glass)
-            Text("On: Viaduct converts without asking, even when this Mac can't sign with your Apple team. Safari turns those extensions off every time it quits.")
+            Text("When this is on, Viaduct converts without asking, even when this Mac can't sign with your Apple team. Safari turns those extensions off every time it quits.")
                 .font(Theme.Font.caption())
                 .foregroundStyle(Theme.Colors.mute)
         }

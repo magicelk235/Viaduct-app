@@ -544,12 +544,12 @@ function startProgressPolling(btn, id) {
     } else if (!sawActivity && elapsed > 30000) {
       setState('Install failed',
                lastError ? `Couldn't reach Viaduct: ${lastError}`
-                         : "Couldn't reach Viaduct — open the app to see what happened.",
+                         : "Couldn't reach Viaduct. Open the app to see what happened.",
                1, '#F87171');
       return;
     } else if (elapsed > 20 * 60 * 1000) {
       setState('Still working…',
-               'Taking unusually long — open Viaduct to check on it.', 1, '#FBBF24');
+               'This is taking longer than usual. Open Viaduct to check on it.', 1, '#FBBF24');
       return;
     }
     setTimeout(tick, 800);
