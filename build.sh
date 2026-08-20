@@ -21,8 +21,6 @@ DEST="/Applications/Viaduct.app"
 SIGN_ID="$(security find-identity -v -p codesigning | grep 'Apple Development' | head -1 | grep -oE '[A-F0-9]{40}')"
 [ -n "$SIGN_ID" ] || { echo "FAILED: no Apple Development identity found"; exit 1; }
 
-"$ROOT/sync-cli.sh"
-
 echo "==> Building (unsigned, universal)"
 rm -rf "$REL"
 # generic/platform=macOS is load-bearing: without it xcodebuild resolves the run

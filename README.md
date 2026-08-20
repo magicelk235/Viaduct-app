@@ -24,9 +24,11 @@ open a terminal to do it.
   sign extensions for about a week, and after that Safari quietly stops loading
   them. The app rebuilds and re-signs anything it installed before that week runs
   out, using the Apple identity it finds in your Xcode setup.
-- The bundled CLI keeps itself current. On launch the app asks npm whether a
-  newer `@magicelk235/viaduct` exists and installs it if so. You don't have to
-  update the app, or press anything, for that to happen.
+- The CLI isn't baked into the app. Viaduct downloads
+  `@magicelk235/viaduct` from npm the first time you open it, keeps it in
+  Application Support, and checks on every later launch whether a newer one has
+  shipped. An app build from six months ago still converts with today's engine,
+  and you never press anything to make that happen.
 
 ## Install
 
@@ -48,6 +50,11 @@ instead of failing quietly.
 Node.js is not a requirement. The app carries its own self-contained `node` in
 `Contents/Resources/bin/`, and falls back to a system `node` only if that one has
 somehow gone missing.
+
+The first launch needs a network connection, since that's when the conversion
+engine is fetched from npm. It takes a couple of seconds, and after that the
+only thing Viaduct goes online for is checking whether a newer engine has
+shipped.
 
 One thing worth knowing: the app isn't sandboxed. It shells out to `node`,
 `xcodebuild`, `lsregister`, and `open`, all of which the macOS App Sandbox

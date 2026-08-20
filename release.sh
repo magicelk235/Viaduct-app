@@ -36,10 +36,6 @@ SIGN_ID="$(security find-identity -v -p codesigning | grep 'Developer ID Applica
 [ -n "$SIGN_ID" ] || { echo "FAILED: no Developer ID Application identity found"; exit 1; }
 echo "==> Signing identity: $SIGN_ID"
 
-# Never ship a stale bundled CLI — a fresh install runs it before it has ever
-# reached npm, so whatever it can't do, the user's first conversion can't do.
-"$ROOT/sync-cli.sh"
-
 echo "==> Building (unsigned, universal)"
 rm -rf "$REL"
 # generic/platform=macOS is load-bearing: without it xcodebuild resolves the run

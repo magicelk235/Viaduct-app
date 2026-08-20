@@ -103,15 +103,37 @@ struct UserModeView: View {
 
     @ViewBuilder
     private var cardContent: some View {
-        switch vm.phase {
-        case .idle where vm.options.inputPath.isEmpty:
-            emptyCard
-        case .failed:
-            failedCard
-        case .idle, .done:
-            readyOrDoneCard
-        default:
-            convertingCard
+        if vm.cliInstalling {
+            preparingCard
+        } else {
+            switch vm.phase {
+            case .idle where vm.options.inputPath.isEmpty:
+                emptyCard
+            case .failed:
+                failedCard
+            case .idle, .done:
+                readyOrDoneCard
+            default:
+                convertingCard
+            }
+        }
+    }
+
+    // First launch: the converter engine isn't inside the app, it comes from npm.
+    // One short wait, said out loud instead of hidden behind a button that looks
+    // like it did nothing.
+    private var preparingCard: some View {
+        VStack(spacing: Theme.Space.md) {
+            ProgressView().controlSize(.small)
+            VStack(spacing: Theme.Space.xxs) {
+                Text("Getting Viaduct ready")
+                    .font(Theme.Font.headingSM())
+                    .foregroundStyle(Theme.Colors.ink)
+                Text("Downloading the converter engine. This happens once.")
+                    .font(Theme.Font.caption())
+                    .foregroundStyle(Theme.Colors.mute)
+                    .multilineTextAlignment(.center)
+            }
         }
     }
 
@@ -255,11 +277,11 @@ struct UserModeView: View {
 
         case .idle:
             Button { vm.userConvert() } label: {
-                Text("Convert & Install")
+                Text(vm.cliInstalling ? "Getting ready…" : "Convert & Install")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.raycastPrimary)
-            .disabled(vm.inspecting)
+            .disabled(vm.inspecting || vm.cliInstalling)
 
         case .done:
             VStack(spacing: Theme.Space.sm) {

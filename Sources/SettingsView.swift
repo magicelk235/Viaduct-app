@@ -102,6 +102,7 @@ struct SettingsView: View {
     }
 
     private var cliStatus: String? {
+        if vm.cliInstalling { return "Installing…" }
         if vm.updateChecking { return "Checking…" }
         if vm.updateAvailable { return "Update available" }
         return cliUpToDate ? "Up to date" : nil

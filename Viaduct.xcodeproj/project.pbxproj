@@ -27,7 +27,6 @@
 		B553D1EED34752D8F031C0A5 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = 46A0D6A732F9ADA35FA28A8D /* content.js */; };
 		B878ADE702EB943E794C4965 /* LicenseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57EF2AA67C8160B7269036B6 /* LicenseManager.swift */; };
 		B87D25E00EF821C1EEF60240 /* ConversionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96F1ADB5A0FE75373E14B3EE /* ConversionHistory.swift */; };
-		C1E9EB617221B5E8C3280CE6 /* cli in Resources */ = {isa = PBXBuildFile; fileRef = 5AE5FA1D49555608AC2C665D /* cli */; };
 		C41913DBE7F2011934E416F7 /* InstallProgressBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54450BBE8A7C1AB7A103C71D /* InstallProgressBridge.swift */; };
 		C8166273B730DDD088D8F714 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = BFBEBF47F3929776DC55B329 /* background.js */; };
 		CBA72BAC72BC33E0C7C7B79D /* ConverterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBFE922AB1245ED752C9321 /* ConverterViewModel.swift */; };
@@ -77,7 +76,6 @@
 		57EF2AA67C8160B7269036B6 /* LicenseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseManager.swift; sourceTree = "<group>"; };
 		58D150FB914882216A502FBE /* ViaductExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ViaductExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A6E1B55880A88354EC17F8F /* CLIUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIUpdater.swift; sourceTree = "<group>"; };
-		5AE5FA1D49555608AC2C665D /* cli */ = {isa = PBXFileReference; lastKnownFileType = folder; name = cli; path = Resources/cli; sourceTree = SOURCE_ROOT; };
 		5B3B349223B937D244E01611 /* bin */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bin; path = Resources/bin; sourceTree = SOURCE_ROOT; };
 		614D8805DDE093D020F1D0D7 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		6DA2AA9A7141526C03A24FD3 /* icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = icon.png; sourceTree = "<group>"; };
@@ -186,7 +184,6 @@
 			isa = PBXGroup;
 			children = (
 				5B3B349223B937D244E01611 /* bin */,
-				5AE5FA1D49555608AC2C665D /* cli */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -285,7 +282,6 @@
 			files = (
 				925D294EAE84D135730B82E9 /* AppIcon.icon in Resources */,
 				EB7FA085A32BE26506778407 /* bin in Resources */,
-				C1E9EB617221B5E8C3280CE6 /* cli in Resources */,
 				5CFB2E5454F3B4826AD9EAC2 /* icon.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Locates node + the bundled/updated viaduct CLI and runs it,
+/// Locates node + the installed viaduct CLI and runs it,
 /// streaming combined stdout/stderr line-by-line.
 final class CLIRunner {
     static let shared = CLIRunner()
@@ -11,53 +11,30 @@ final class CLIRunner {
 
     // MARK: - Paths
 
-    /// Where autoupdate writes the freshly-built CLI.
-    static var supportCLIDir: URL {
-        let base = FileManager.default
+    /// Where the CLI lives. Nothing ships inside the .app: the first launch
+    /// downloads the published npm package here and every later launch keeps it
+    /// current, so a fresh install can never run an engine older than the day it
+    /// was fetched (a checked-in copy silently rotted at 1.0.0 once and every
+    /// first conversion signed ad-hoc because of it).
+    static var cliDir: URL {
+        FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Viaduct", isDirectory: true)
             .appendingPathComponent("cli", isDirectory: true)
-        return base
     }
 
-    /// dist shipped inside the .app bundle.
-    static var bundledCLIDir: URL? {
-        Bundle.main.resourceURL?.appendingPathComponent("cli", isDirectory: true)
-    }
-
-    /// Version marker written next to a CLI copy by the npm sync / autoupdate.
-    static func cliVersion(at dir: URL) -> String? {
-        guard let s = try? String(contentsOf: dir.appendingPathComponent("version.txt"),
+    /// Version marker `CLIUpdater` writes next to the installed copy.
+    static var cliVersion: String? {
+        guard let s = try? String(contentsOf: cliDir.appendingPathComponent("version.txt"),
                                   encoding: .utf8) else { return nil }
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
     }
 
-    /// The CLI copy to run: the npm-updated one in Application Support, unless the
-    /// app bundle ships something newer. An app update can carry a CLI newer than
-    /// whatever npm last handed us, and always preferring Application Support
-    /// would keep running the older copy — which is how a machine keeps signing
-    /// ad-hoc long after the fix shipped. A copy with no version marker counts as
-    /// the oldest, so it only wins when nothing else is usable.
-    static func resolveCLIDir() -> URL? {
-        let usable = [supportCLIDir, bundledCLIDir].compactMap { $0 }.filter {
-            FileManager.default.fileExists(atPath: $0.appendingPathComponent("dist/cli.js").path)
-        }
-        guard var best = usable.first else { return nil }
-        for candidate in usable.dropFirst() {
-            switch (cliVersion(at: best), cliVersion(at: candidate)) {
-            case (nil, .some): best = candidate
-            case let (.some(have), .some(other)) where CLIUpdater.semverLess(have, other):
-                best = candidate
-            default: break
-            }
-        }
-        return best
-    }
-
-    /// Resolve cli.js inside whichever copy wins.
+    /// cli.js, or nil while the engine hasn't been installed yet.
     static func resolveCLIScript() -> URL? {
-        resolveCLIDir()?.appendingPathComponent("dist/cli.js")
+        let script = cliDir.appendingPathComponent("dist/cli.js")
+        return FileManager.default.fileExists(atPath: script.path) ? script : nil
     }
 
     /// The self-contained node shipped inside the .app (Resources/bin/node).
@@ -295,7 +272,7 @@ final class CLIRunner {
             case .nodeNotFound:
                 return "Node.js not found. Install Node 18+ (e.g. `brew install node`)."
             case .cliNotFound:
-                return "Bundled CLI not found. Try “Update CLI”."
+                return "The converter engine isn't installed yet. Check your internet connection and try again."
             case .alreadyRunning:
                 return "A task is already running."
             }

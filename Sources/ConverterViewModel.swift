@@ -12,7 +12,16 @@ final class ConverterViewModel: ObservableObject {
 
     @Published var updateChecking = false
     @Published var updateAvailable = false
-    @Published var installedVersion: String = "unknown"
+    @Published var installedVersion: String = "not installed"
+
+    /// True while the CLI is being fetched from npm because none is installed.
+    /// The engine isn't shipped in the .app, so on a first launch (or after
+    /// someone clears Application Support) this is the one wait the user can't
+    /// skip — it has to be visible instead of looking like a dead button.
+    @Published var cliInstalling = false
+
+    /// Why the first install failed, if it did — almost always no network.
+    @Published var cliInstallError: String?
 
     // User-mode flow
     @Published var phase: ConvertPhase = .idle
@@ -107,18 +116,69 @@ final class ConverterViewModel: ObservableObject {
     private var updatePendingAfterRun = false
     /// Last `✗` line the CLI printed this run, used as the failure reason.
     private var lastCLIError: String?
+    /// The first-install download in flight, so concurrent callers share it.
+    private var cliInstallTask: Task<Bool, Never>?
 
     init() {
-        installedVersion = updater.installedVersion ?? "unknown"
+        installedVersion = updater.installedVersion ?? "not installed"
     }
 
-    /// Launch hook: auto-update the CLI and start auto-renew. Idempotent.
+    /// Launch hook: make sure the CLI exists (first launch downloads it), keep it
+    /// current, and start auto-renew. Idempotent.
     func onLaunch() {
-        // Auto-update the CLI on launch (self-installs if a newer version exists).
-        checkForUpdates()
+        if updater.isInstalled {
+            // Auto-update the CLI on launch (self-installs if a newer version exists).
+            checkForUpdates()
+        } else {
+            // Nothing to compare against yet: fetch the published package now so
+            // the engine is there before the user drops anything on the window.
+            Task { await ensureCLIInstalled() }
+        }
         // Forget extensions the user deleted from Finder, regardless of renew state.
         history.pruneDeleted()
         startAutoRenew()
+    }
+
+    /// Install the CLI if it isn't on disk, and report whether it is now. Several
+    /// callers can race here — launch, a conversion started from the store page,
+    /// a click on Convert — so they all join one download instead of each
+    /// starting their own.
+    @discardableResult
+    func ensureCLIInstalled() async -> Bool {
+        if updater.isInstalled { return true }
+        if let inFlight = cliInstallTask { return await inFlight.value }
+        let task = Task { @MainActor () -> Bool in
+            cliInstalling = true
+            cliInstallError = nil
+            statusMessage = "Installing the converter engine…"
+            appendLog("→ Installing the viaduct engine from npm…")
+            do {
+                try await updater.update(rawLog: { [weak self] line in self?.appendLog(line) })
+            } catch {
+                cliInstallError = error.localizedDescription
+                appendLog("✗ \(error.localizedDescription)")
+            }
+            cliInstalling = false
+            cliInstallTask = nil
+            installedVersion = updater.installedVersion ?? "not installed"
+            let ok = updater.isInstalled
+            if ok {
+                updateAvailable = false
+                statusMessage = "Engine installed (\(installedVersion))."
+                // Renew/auto-update were skipped at launch for want of an engine;
+                // now there is one, so give them their pass — unless a conversion
+                // is already queued behind this download, since a renew would
+                // take the single CLI slot out from under it.
+                if !isRunning { startAutoRenew() }
+            } else {
+                let msg = cliInstallError ?? "The converter engine could not be installed."
+                cliInstallError = msg
+                statusMessage = msg
+            }
+            return ok
+        }
+        cliInstallTask = task
+        return await task.value
     }
 
     /// Kick off auto-renew at launch and re-check daily. Idempotent.
@@ -298,9 +358,9 @@ final class ConverterViewModel: ObservableObject {
     /// decides whether to warn, the CLI decides how it actually signs, and when
     /// they disagree the user gets a silently ad-hoc build with no warning at
     /// all — or, the way it drifted this time, a warning on a machine the CLI
-    /// would have team-signed on. They did drift once before too: the bundled
-    /// CLI sat at 1.0.0, which had no keychain fallback, so the bundle is now
-    /// synced from npm at build time (`sync-cli.sh`).
+    /// would have team-signed on. They did drift once before too: a checked-in
+    /// copy of the CLI sat at 1.0.0, which had no keychain fallback, which is
+    /// why the engine is now fetched from npm instead of shipped in the app.
     ///
     /// Three source groups, in the CLI's order, cheapest first: the team ids
     /// Xcode caches in its preferences, any provisioning profile already on
@@ -577,6 +637,29 @@ final class ConverterViewModel: ObservableObject {
             if userMode { phase = .idle }
             return
         }
+        // No engine yet (first launch, or the launch fetch hasn't landed): get it,
+        // then start the run. `isRunning` covers the download too, so a second
+        // click can't queue a second conversion behind the same fetch, and
+        // Sparkle won't relaunch us mid-download.
+        if !updater.isInstalled {
+            isRunning = true
+            statusMessage = "Installing the converter engine…"
+            Task {
+                let ok = await ensureCLIInstalled()
+                // Cancelled while the download ran — `isRunning` going false is
+                // the only signal cancel() leaves behind.
+                guard isRunning else { return }
+                guard ok else {
+                    isRunning = false
+                    let msg = cliInstallError ?? "The converter engine could not be installed."
+                    statusMessage = msg
+                    if userMode { failureSummary = msg; phase = .failed }
+                    return
+                }
+                runCLI(args: args, label: label, userMode: userMode)
+            }
+            return
+        }
         isRunning = true
         lastExitCode = nil
         lastCLIError = nil
@@ -710,6 +793,9 @@ final class ConverterViewModel: ObservableObject {
     /// no "Update Now" click. Skips if a conversion is mid-flight (don't swap the
     /// CLI out from under a running process).
     func checkForUpdates() {
+        // Not installed yet: there is no version to compare against, so this is
+        // an install, not an update check.
+        guard updater.isInstalled else { Task { await ensureCLIInstalled() }; return }
         guard !updateChecking else { return }
         updateChecking = true
         Task {
@@ -732,11 +818,18 @@ final class ConverterViewModel: ObservableObject {
 
     /// Download + swap the latest CLI. Shared by auto-update and the manual button.
     private func applyUpdate() async {
+        // Nothing installed yet, so this is the first install rather than an
+        // update; that path owns the "installing" UI and coalesces racing
+        // callers onto one download.
+        guard updater.isInstalled else {
+            await ensureCLIInstalled()
+            return
+        }
         statusMessage = "Updating CLI…"
         appendLog("→ Auto-updating CLI…")
         do {
             try await updater.update(rawLog: { [weak self] line in self?.appendLog(line) })
-            installedVersion = updater.installedVersion ?? "unknown"
+            installedVersion = updater.installedVersion ?? "not installed"
             updateAvailable = false
             statusMessage = "CLI updated to \(installedVersion)."
         } catch {

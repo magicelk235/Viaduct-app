@@ -1,9 +1,10 @@
 import Foundation
 import CryptoKit
 
-/// Keeps the viaduct CLI current by pulling the published npm package.
-/// npm ships a prebuilt `dist/`, so updating is download + extract + atomic
-/// swap into Application Support (which CLIRunner prefers) — no build step.
+/// Installs and keeps the viaduct CLI current by pulling the published npm
+/// package. npm ships a prebuilt `dist/`, so both the first install and every
+/// later update are download + extract + atomic swap into Application Support
+/// (where `CLIRunner` runs it from) — no build step.
 final class CLIUpdater {
     static let shared = CLIUpdater()
 
@@ -22,12 +23,12 @@ final class CLIUpdater {
         }
     }
 
-    /// Version of the CLI copy that will actually run, so the update check
-    /// compares against the copy `CLIRunner` resolves rather than assuming
-    /// Application Support always wins.
-    var installedVersion: String? {
-        CLIRunner.resolveCLIDir().flatMap { CLIRunner.cliVersion(at: $0) }
-    }
+    /// Version of the installed CLI, or nil when it hasn't been installed yet.
+    var installedVersion: String? { CLIRunner.cliVersion }
+
+    /// Whether the engine is on disk at all. False on a fresh install until the
+    /// first fetch lands.
+    var isInstalled: Bool { CLIRunner.resolveCLIScript() != nil }
 
     private struct DistTags: Decodable { let latest: String }
     private struct VersionDist: Decodable { let tarball: String; let integrity: String }
@@ -66,8 +67,10 @@ final class CLIUpdater {
         return Self.semverLess(have, latest)
     }
 
-    /// Download + extract the latest npm tarball into Application Support. `log` streams progress.
-    /// `log` is always invoked on the main thread so callers can mutate `@Published` state safely.
+    /// Download + extract the latest npm tarball into Application Support, which
+    /// is both the first install and every later update. `log` streams progress
+    /// and is always invoked on the main thread so callers can mutate
+    /// `@Published` state safely.
     func update(rawLog: @escaping (String) -> Void) async throws {
         // Hop every log call to main here so the 6 inline calls below
         // and runProcess's handler share one main-thread guarantee.
@@ -75,7 +78,8 @@ final class CLIUpdater {
         let doc = try await fetchPackageDoc()
         let latest = doc.distTags.latest
         log("Latest published: \(latest)")
-        if let have = installedVersion, !Self.semverLess(have, latest) {
+        let firstInstall = !isInstalled
+        if !firstInstall, let have = installedVersion, !Self.semverLess(have, latest) {
             log("Already up to date (\(have)).")
             return
         }
@@ -118,8 +122,8 @@ final class CLIUpdater {
         }
 
         // 3. Atomically swap into Application Support.
-        log("Installing update…")
-        let target = CLIRunner.supportCLIDir
+        log(firstInstall ? "Installing…" : "Installing update…")
+        let target = CLIRunner.cliDir
         try fm.createDirectory(at: target.deletingLastPathComponent(),
                                withIntermediateDirectories: true)
         let staging = target.deletingLastPathComponent()
@@ -137,7 +141,7 @@ final class CLIUpdater {
         if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
         try fm.moveItem(at: staging, to: target)
 
-        log("Updated to \(latest).")
+        log(firstInstall ? "Installed \(latest)." : "Updated to \(latest).")
     }
 
     // MARK: - Integrity check

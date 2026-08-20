@@ -30,9 +30,6 @@ targets:
       - path: AppIcon.icon
       - path: icon.png
         buildPhase: resources
-      - path: Resources/cli
-        type: folder
-        buildPhase: resources
       - path: Resources/bin
         type: folder
         buildPhase: resources

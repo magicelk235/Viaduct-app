@@ -1,11 +1,10 @@
-# Anchored: the bundled CLI has its own dist/build/ that must stay tracked.
+# Anchored so it only ignores the xcodebuild output at the repo root.
 /build/
 DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 .DS_Store
 .build/
-Resources/cli/Claude_Safari/
 
 # Bundled node runtime — fetched at build by Resources/bin/fetch-node.sh, not committed.
 Resources/bin/node

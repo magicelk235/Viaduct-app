@@ -103,7 +103,10 @@ final class ExtensionRenewer {
     /// Renew everything that's due, one at a time (CLIRunner is single-flight).
     /// Silent: no UI phase, best-effort. Called on launch + daily.
     func renewIfNeeded() {
-        guard !running, !runner.isRunning else { return }
+        // The engine isn't bundled, so on a first launch it may still be
+        // downloading. Skip quietly; the next daily tick (or the next launch)
+        // picks these up once it's there.
+        guard !running, !runner.isRunning, CLIRunner.resolveCLIScript() != nil else { return }
         // If the user deleted the converted .app from Finder, stop renewing it.
         history.pruneDeleted()
         let due = dueForRenewal()
@@ -131,7 +134,7 @@ final class ExtensionRenewer {
     /// no-op most days even though it's called on the daily tick. Auto-update
     /// enablement is checked by the caller (ConverterViewModel).
     func updateIfNeeded() {
-        guard !running, !runner.isRunning else { return }
+        guard !running, !runner.isRunning, CLIRunner.resolveCLIScript() != nil else { return }
         history.pruneDeleted()
         let due = dueForUpdateCheck()
         guard !due.isEmpty else { return }

@@ -42,7 +42,7 @@ Please give a reasonable window to release a fix before any public disclosure.
 
 Viaduct wraps the [`@magicelk235/viaduct`](https://www.npmjs.com/package/@magicelk235/viaduct)
 command-line tool and can download extensions from the Chrome Web Store, sign
-them with your local Apple identity, and self-update the bundled CLI from npm.
+them with your local Apple identity, and download or update that tool from npm.
 Reports touching any of these paths — CLI invocation, code signing, the
 `viaduct://` URL scheme, or the auto-update flow — are in scope. Vulnerabilities
 in the upstream CLI package itself should be reported against that package.

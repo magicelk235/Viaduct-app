@@ -284,6 +284,14 @@ struct ViaductApp: App {
             }
             return ["state": "done"]
         case .idle:
+            // The engine downloads on first launch, and a store-page install can
+            // land in the middle of it. Say so, otherwise the page's bar drops
+            // back to idle and the install looks like it never started.
+            if vm.cliInstalling {
+                return ["state": "active", "fraction": 0.03,
+                        "title": "Getting Viaduct ready",
+                        "subtitle": "Installing the converter engine"]
+            }
             if InstallProgressBridge.shared.downloading {
                 return ["state": "active", "fraction": 0.06,
                         "title": "Downloading from Chrome Web Store",
