@@ -22,7 +22,7 @@ Safari's extension library is thin — half the extensions I use daily (uBlock O
 So I built Viaduct. You drag in a Chrome extension (or paste a Chrome Web Store link) and it converts it into a real native Safari Web Extension, signs it, and installs it. One click, no terminal.
 
 A few things I cared about:
-- The conversion engine is open source (MIT, on npm as @magicelk235/viaduct) — the paid app is just the GUI on top.
+- The conversion engine is source-available (PolyForm Shield, on npm as @magicelk235/viaduct), so the paid app is just the GUI on top.
 - It bundles its own Node runtime, so there's nothing to install for the conversion itself. (Xcode is still required — Apple gives no other way to code-sign a Safari extension.)
 - Free accounts only sign extensions for ~7 days before Safari drops them, so the app quietly re-signs installed extensions before that lapses. They don't silently disappear.
 
@@ -55,7 +55,7 @@ Show HN: Viaduct – run any Chrome extension in Safari
 ```
 I made this because Safari's extension catalog is thin and every extension I wanted was Chrome-only. Apple has a conversion tool (safari-web-extension-packager) but it's Xcode + terminal only, so it's out of reach for most people who'd actually use these extensions.
 
-Viaduct wraps that. The conversion engine is MIT and on npm (@magicelk235/viaduct) — you can convert from the CLI for free forever. The Mac app is a paid GUI ($19 one-time, 2 free conversions) that adds the stuff that's annoying to script: Chrome Web Store install via a URL scheme, auto re-signing before free-account 7-day signatures expire, and self-updating.
+Viaduct wraps that. The conversion engine is source-available under the PolyForm Shield license and on npm (@magicelk235/viaduct), so you can convert from the CLI for free forever. The Mac app is a paid GUI ($19 one-time, 2 free conversions) that adds the stuff that's annoying to script: Chrome Web Store install via a URL scheme, auto re-signing before free-account 7-day signatures expire, and self-updating.
 
 Some technical notes / things I learned:
 - It bundles a self-contained Node so end users install nothing for the runtime. Xcode is still unavoidable — Apple provides no other way to code-sign a .appex, even ad-hoc.
@@ -90,7 +90,7 @@ Run any Chrome extension in Safari
 
 **Description:**
 ```
-Safari's extension library is thin — uBlock Origin, Dark Reader, half your dev tools never shipped for it. Viaduct converts any Chrome extension into a native Safari extension, signs it, and installs it. One click, no terminal. CLI engine is open source (MIT). $19 one-time.
+Safari's extension library is thin, and uBlock Origin, Dark Reader and half your dev tools never shipped for it. Viaduct converts any Chrome extension into a native Safari extension, signs it, and installs it. One click, no terminal. CLI engine is source-available (PolyForm Shield). $19 one-time.
 ```
 
 **Link:** https://magicelklabs.com/viaduct/
@@ -104,7 +104,7 @@ Built Viaduct because Safari's extension catalog is thin and every extension I a
 Viaduct does it in one click: drag in a Chrome extension (or paste a Web Store link), it converts to a real native Safari extension, signs, and installs.
 
 A few things I sweated:
-• Conversion engine is open source, MIT, on npm (@magicelk235/viaduct) — the app is the GUI on top.
+• Conversion engine is source-available under PolyForm Shield, on npm (@magicelk235/viaduct), and the app is the GUI on top.
 • Bundles its own Node, so nothing to install for the runtime.
 • Free Apple accounts sign extensions for only ~7 days before Safari drops them — so the app quietly re-signs before that lapses. They don't vanish.
 

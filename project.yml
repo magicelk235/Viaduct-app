@@ -55,7 +55,7 @@ targets:
         # asks permission once on first launch before it phones home.
         SUAutomaticallyUpdate: true
         LSMinimumSystemVersion: "13.0"
-        NSHumanReadableCopyright: "MIT"
+        NSHumanReadableCopyright: "Copyright © 2026 Yehonatan Cohen. PolyForm Shield License 1.0.0."
         LSApplicationCategoryType: public.app-category.developer-tools
         CFBundleURLTypes:
           - CFBundleURLSchemes:
@@ -96,7 +96,7 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "13.0"
-        NSHumanReadableCopyright: "MIT"
+        NSHumanReadableCopyright: "Copyright © 2026 Yehonatan Cohen. PolyForm Shield License 1.0.0."
         NSExtension:
           NSExtensionPointIdentifier: com.apple.Safari.web-extension
           NSExtensionPrincipalClass: SafariWebExtensionHandler

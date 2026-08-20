@@ -30,6 +30,6 @@
 		<string>SafariWebExtensionHandler</string>
 	</dict>
 	<key>NSHumanReadableCopyright</key>
-	<string>MIT</string>
+	<string>Copyright © 2026 Yehonatan Cohen. PolyForm Shield License 1.0.0.</string>
 </dict>
 </plist>
