@@ -24,6 +24,7 @@
 		7974A26A5768F2BB83B9F07C /* ConvertOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2A0A414CC85860A87063B5 /* ConvertOptions.swift */; };
 		88FF27AFCBE2D89DE8E568D9 /* ViaductExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 58D150FB914882216A502FBE /* ViaductExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		925D294EAE84D135730B82E9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 330566E75A535162514BBFA6 /* AppIcon.icon */; };
+		9592998665FD64231D84ED72 /* SigningAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4CA23E222C7922E7D3DCB0 /* SigningAccount.swift */; };
 		B553D1EED34752D8F031C0A5 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = 46A0D6A732F9ADA35FA28A8D /* content.js */; };
 		B878ADE702EB943E794C4965 /* LicenseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57EF2AA67C8160B7269036B6 /* LicenseManager.swift */; };
 		B87D25E00EF821C1EEF60240 /* ConversionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96F1ADB5A0FE75373E14B3EE /* ConversionHistory.swift */; };
@@ -83,6 +84,7 @@
 		72B65E78309624F2ED7F17DB /* ActivationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationView.swift; sourceTree = "<group>"; };
 		79DF44B127A97253CEBE0C02 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		96F1ADB5A0FE75373E14B3EE /* ConversionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionHistory.swift; sourceTree = "<group>"; };
+		9B4CA23E222C7922E7D3DCB0 /* SigningAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SigningAccount.swift; sourceTree = "<group>"; };
 		A37C3C24384547982754F0EE /* Viaduct.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Viaduct.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A67B80F0FD9B492A25C0D3E9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B940EB4254E642C973760112 /* ExtensionRenewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionRenewer.swift; sourceTree = "<group>"; };
@@ -173,6 +175,7 @@
 				57EF2AA67C8160B7269036B6 /* LicenseManager.swift */,
 				44B8FE947E5A6B0F21B397CE /* RenewalPolicy.swift */,
 				DF2B7969794EF0B93CC897FE /* SettingsView.swift */,
+				9B4CA23E222C7922E7D3DCB0 /* SigningAccount.swift */,
 				614D8805DDE093D020F1D0D7 /* Theme.swift */,
 				FC67CD1790FCD1A2DBD5B113 /* Updater.swift */,
 				D6A5AD59DEEF416F7494A43E /* UserModeView.swift */,
@@ -362,6 +365,7 @@
 				B878ADE702EB943E794C4965 /* LicenseManager.swift in Sources */,
 				D18DDDAA1015F048BF31B754 /* RenewalPolicy.swift in Sources */,
 				E827408EA78A95108D5F62D2 /* SettingsView.swift in Sources */,
+				9592998665FD64231D84ED72 /* SigningAccount.swift in Sources */,
 				D498F700B216CEF067756D6A /* Theme.swift in Sources */,
 				08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */,
 				64A64A03445710FDDC87DF8C /* UserModeView.swift in Sources */,

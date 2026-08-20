@@ -46,18 +46,17 @@ enum ChromeStore {
     }
 }
 
-/// Free Apple accounts sign extensions with a provisioning profile that lapses
-/// after ~7 days, after which Safari drops the extension. This re-runs the
-/// conversion from the archived source for any installed extension nearing that
-/// window, re-signing it fresh — so the user never has to reconvert by hand.
+/// Apple's signing window closes on converted extensions — after about a week on
+/// a free Apple ID, after a year on a paid Developer Program membership — and
+/// once it does Safari drops the extension. This re-runs the conversion from the
+/// archived source for any installed extension nearing its own expiry (see
+/// `SigningAccount`), re-signing it fresh, so the user never has to reconvert by
+/// hand.
 ///
 /// Rebuild-from-source via the same CLI path. No separate re-sign codepath
-/// to maintain; a free-account profile can only be re-minted by an Xcode build anyway.
+/// to maintain; an Apple-issued profile can only be re-minted by an Xcode build anyway.
 @MainActor
 final class ExtensionRenewer {
-    /// Renew when a build is within this much of its 7-day expiry.
-    private static let renewWindow: TimeInterval = 2 * 24 * 3600   // 2 days early
-
     private let history: ConversionHistory
     private let runner = CLIRunner.shared
     private var running = false
@@ -164,7 +163,9 @@ final class ExtensionRenewer {
         history.updateSource(id: rec.id, path: sourcePath)
         let code = await rebuild(sourcePath: sourcePath, appName: rec.resolvedAppName)
         if code == 0 {
-            history.markUpdated(id: rec.id, version: latest, installedPath: rec.installedPath)
+            history.markUpdated(id: rec.id, version: latest,
+                                installedPath: rec.installedPath,
+                                signatureExpiry: Self.freshExpiry(for: rec))
         } else {
             // Build failed: stamp the poll so we don't hammer it, and surface it.
             history.stampUpdateCheck(id: rec.id)
@@ -176,7 +177,7 @@ final class ExtensionRenewer {
     private func renew(_ rec: ConversionRecord) async {
         var sourcePath = rec.sourcePath
         // Archived source vanished (cache purge, failed archive)? Store installs
-        // can be re-pulled by id — that keeps the 7-day renew alive no matter what.
+        // can be re-pulled by id — that keeps renewal alive no matter what.
         if !FileManager.default.fileExists(atPath: sourcePath) {
             guard let sid = rec.storeId,
                   let fresh = try? await ChromeStore.downloadCRX(id: sid) else {
@@ -190,16 +191,28 @@ final class ExtensionRenewer {
 
         let code = await rebuild(sourcePath: sourcePath, appName: rec.resolvedAppName)
         if code == 0 {
-            history.markRenewed(id: rec.id, installedPath: rec.installedPath)
+            history.markRenewed(id: rec.id, installedPath: rec.installedPath,
+                                signatureExpiry: Self.freshExpiry(for: rec))
         } else {
             history.markRenewFailed(id: rec.id)
             notifyFailure(rec)
         }
     }
 
+    /// When the signature a rebuild just applied lapses. Classified per rebuild
+    /// rather than copied from the old record: a user who joined the Developer
+    /// Program since the last build now signs for a year, and one whose
+    /// membership lapsed is back to a week.
+    private static func freshExpiry(for rec: ConversionRecord) -> Date {
+        SigningAccount.signatureExpiry(installedAppPath: rec.installedPath,
+                                       signedAt: Date(),
+                                       account: SigningAccount.detect())
+    }
+
     /// Run a full convert+install from source via the CLI, re-signing with the
-    /// auto-detected Apple team (re-mints the free-account 7-day profile). Shared
-    /// by renew and update — one rebuild codepath. Returns the CLI exit code.
+    /// auto-detected Apple team (re-mints the Apple-issued signature and, on a
+    /// free account, the seven-day profile behind it). Shared by renew and
+    /// update — one rebuild codepath. Returns the CLI exit code.
     private func rebuild(sourcePath: String, appName: String) async -> Int32 {
         var opts = ConvertOptions()
         opts.inputPath = sourcePath

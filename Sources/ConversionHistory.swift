@@ -11,8 +11,15 @@ struct ConversionRecord: Codable, Identifiable {
     var installedPath: String?
     var date: Date
     /// When this build's signature was last refreshed. Used by auto-renew to find
-    /// builds nearing the free-account 7-day expiry. Old records fall back to `date`.
+    /// builds nearing expiry. Old records fall back to `date`.
     var lastSigned: Date?
+    /// When that signature lapses, resolved at signing time from the Apple
+    /// account that signed it (a free Apple ID gets a week, a paid Developer
+    /// Program membership a year) or from a provisioning profile the build
+    /// embedded. Optional so records written before the two were told apart
+    /// still decode — those keep the free-account week they were scheduled on,
+    /// and get a real date at their next renew.
+    var signatureExpiry: Date?
     /// Last time auto-renew tried this record, and whether it failed. Surfaced in
     /// Settings so the user sees a silent failure before Safari drops the extension.
     var lastRenewAttempt: Date?
@@ -36,8 +43,11 @@ struct ConversionRecord: Codable, Identifiable {
 
     /// Effective app name for rebuilds.
     var resolvedAppName: String { appName ?? name }
-    /// When this build's free-account signature is assumed to lapse (7 days).
-    var expiresAt: Date { (lastSigned ?? date).addingTimeInterval(RenewalPolicy.signatureLifetime) }
+    /// When this build's signature is assumed to lapse.
+    var expiresAt: Date {
+        signatureExpiry
+            ?? (lastSigned ?? date).addingTimeInterval(RenewalPolicy.freeSignatureLifetime)
+    }
     /// Last time this build was (re)signed — the once-a-week renew cap keys off this.
     var lastBuild: Date { lastSigned ?? date }
 }
@@ -54,12 +64,13 @@ final class ConversionHistory: ObservableObject {
     init() { load() }
 
     func add(name: String, sourcePath: String, appName: String,
-             installedPath: String?, iconData: Data?, storeId: String? = nil,
-             version: String? = nil) {
+             installedPath: String?, signatureExpiry: Date?, iconData: Data?,
+             storeId: String? = nil, version: String? = nil) {
         let now = Date()
         let record = ConversionRecord(name: name, sourcePath: sourcePath,
                                       appName: appName, installedPath: installedPath,
-                                      date: now, lastSigned: now, iconData: iconData,
+                                      date: now, lastSigned: now,
+                                      signatureExpiry: signatureExpiry, iconData: iconData,
                                       storeId: storeId, version: version)
         // Re-converting the same app replaces its record instead of stacking duplicates.
         records.removeAll { $0.resolvedAppName == appName }
@@ -69,10 +80,14 @@ final class ConversionHistory: ObservableObject {
     }
 
     /// Stamp a record as freshly re-signed (called after a successful auto-renew).
-    func markRenewed(id: ConversionRecord.ID, installedPath: String?) {
+    /// The new expiry comes from the caller because the account can have changed
+    /// since the last build — someone who joined the Developer Program in the
+    /// meantime should stop being renewed weekly.
+    func markRenewed(id: ConversionRecord.ID, installedPath: String?, signatureExpiry: Date?) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         let now = Date()
         records[i].lastSigned = now
+        records[i].signatureExpiry = signatureExpiry
         records[i].lastRenewAttempt = now
         records[i].lastRenewFailed = false
         if let p = installedPath { records[i].installedPath = p }
@@ -80,13 +95,16 @@ final class ConversionHistory: ObservableObject {
     }
 
     /// Stamp a record after a successful auto-update: new upstream version built.
-    /// An update is also a fresh sign, so lastSigned advances too (resets expiry
-    /// and the once-a-week renew cap). Also stamps the update-check timestamp.
-    func markUpdated(id: ConversionRecord.ID, version: String, installedPath: String?) {
+    /// An update is also a fresh sign, so lastSigned and the expiry advance too
+    /// (which resets the once-a-week renew cap). Also stamps the update-check
+    /// timestamp.
+    func markUpdated(id: ConversionRecord.ID, version: String, installedPath: String?,
+                     signatureExpiry: Date?) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         let now = Date()
         records[i].version = version
         records[i].lastSigned = now
+        records[i].signatureExpiry = signatureExpiry
         records[i].lastUpdateCheck = now
         records[i].lastRenewAttempt = now
         records[i].lastRenewFailed = false

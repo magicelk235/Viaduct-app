@@ -85,10 +85,17 @@ final class ConverterViewModel: ObservableObject {
 
     let history = ConversionHistory()
 
-    /// Auto re-sign installed extensions before the free-account 7-day signature
-    /// lapses. On by default — it's the thing that keeps extensions from vanishing.
-    /// Pro-only: unlicensed users can't keep extensions alive past the ~7-day
-    /// Apple free-signing window, which is the upgrade lever.
+    /// Which Apple account this Mac signs with — a free Apple ID's signature
+    /// lapses in a week, a paid Developer Program membership's in a year. Cached
+    /// here because detecting it shells out to `defaults`, which is far too
+    /// costly to run from a SwiftUI body. Nil until the first detection lands
+    /// (or when Xcode holds no team), and read as "assume free" everywhere.
+    @Published var signingAccount: SigningAccount?
+
+    /// Auto re-sign installed extensions before their signature lapses. On by
+    /// default — it's the thing that keeps extensions from vanishing. Pro-only:
+    /// unlicensed users can't keep extensions alive past Apple's signing window,
+    /// which is the upgrade lever.
     @AppStorage("autoRenew") var autoRenew = true
 
     /// Whether auto-renew is actually allowed to run — the stored toggle AND a
@@ -136,7 +143,19 @@ final class ConverterViewModel: ObservableObject {
         }
         // Forget extensions the user deleted from Finder, regardless of renew state.
         history.pruneDeleted()
+        refreshSigningAccount()
         startAutoRenew()
+    }
+
+    /// Work out whether this Mac signs with a free Apple ID or a paid Developer
+    /// Program membership, for the Settings copy and for the expiry stamped on
+    /// the next conversion. Off the main thread: it's four `defaults` reads, and
+    /// nothing on screen is waiting for the answer.
+    func refreshSigningAccount() {
+        Task.detached(priority: .utility) {
+            let detected = SigningAccount.detect()
+            await MainActor.run { self.signingAccount = detected }
+        }
     }
 
     /// Install the CLI if it isn't on disk, and report whether it is now. Several
@@ -184,7 +203,7 @@ final class ConverterViewModel: ObservableObject {
     /// Kick off auto-renew at launch and re-check daily. Idempotent.
     func startAutoRenew() {
         // Relaunch at login so the daily renew timer survives reboots — auto-renew
-        // is worthless if the app isn't running when the 7-day window closes.
+        // is worthless if the app isn't running when the signing window closes.
         syncLoginItem()
         // Auto-update shares the renew timer; its own per-record weekly gate keeps
         // CWS polling to at most once/week regardless of the daily tick.
@@ -306,8 +325,8 @@ final class ConverterViewModel: ObservableObject {
         // The CLI silently falls back to ad-hoc signing when Xcode has no Apple
         // account — and Safari disables ad-hoc extensions on every quit. Warn
         // up front instead of letting the extension quietly vanish later.
-        if !adhocAcknowledged, !adhocBypassOnce, !Self.xcodeTeamPresent() {
-            adhocDespiteAccount = Self.xcodeAccountPresent()
+        if !adhocAcknowledged, !adhocBypassOnce, !SigningAccount.xcodeTeamPresent() {
+            adhocDespiteAccount = SigningAccount.xcodeAccountPresent()
             // Surface the alert even for headless viaduct:// installs.
             NSApp.activate(ignoringOtherApps: true)
             showAdhocWarning = true
@@ -344,135 +363,22 @@ final class ConverterViewModel: ObservableObject {
         // Stash a durable copy of the source so auto-renew can rebuild later even if
         // the user moves/deletes the original (or the cached store .crx is purged).
         let archived = ExtensionRenewer.archiveSource(options.inputPath, appName: options.appName)
+        // Classify the signing account now rather than trusting a launch-time
+        // answer: someone who joined the Developer Program (or signed into a
+        // different Apple ID) mid-session gets the year they paid for, not a
+        // week of pointless weekly rebuilds.
+        let account = SigningAccount.detect()
+        signingAccount = account
         history.add(name: name, sourcePath: archived ?? options.inputPath,
                     appName: options.appName,
-                    installedPath: installedAppPath, iconData: extInfo?.icon?.pngData(),
+                    installedPath: installedAppPath,
+                    signatureExpiry: SigningAccount.signatureExpiry(
+                        installedAppPath: installedAppPath, signedAt: Date(), account: account),
+                    iconData: extInfo?.icon?.pngData(),
                     storeId: pendingStoreId, version: extInfo?.version)
         pendingStoreId = nil
         // Count this against the free quota (no-op once licensed).
         LicenseManager.shared.recordFreeConversion()
-    }
-
-    /// True when the machine can team-sign. This has to agree with the CLI's own
-    /// detectXcodeTeam() (`src/build/packager.ts`, as of 1.10.3): the app only
-    /// decides whether to warn, the CLI decides how it actually signs, and when
-    /// they disagree the user gets a silently ad-hoc build with no warning at
-    /// all — or, the way it drifted this time, a warning on a machine the CLI
-    /// would have team-signed on. They did drift once before too: a checked-in
-    /// copy of the CLI sat at 1.0.0, which had no keychain fallback, which is
-    /// why the engine is now fetched from npm instead of shipped in the app.
-    ///
-    /// Three source groups, in the CLI's order, cheapest first: the team ids
-    /// Xcode caches in its preferences, any provisioning profile already on
-    /// disk, then a signing certificate in the keychain. None of the earlier
-    /// ones is authoritative — the preference cache is written asynchronously
-    /// and stays empty on setups where the account is signed in but no team has
-    /// been fetched yet — so a miss has to fall through rather than decide.
-    static func xcodeTeamPresent() -> Bool {
-        teamInPreferences() || teamInProvisioningProfiles() || teamInKeychain()
-    }
-
-    /// Team ids Xcode caches once an account is added. Two keys across two
-    /// domains: current Xcode writes IDEProvisioningTeamByIdentifier, older
-    /// versions and xcodebuild itself write IDEProvisioningTeams, and the
-    /// xcodebuild domain is sometimes populated when the Xcode one is not.
-    /// Which combination exists varies by Xcode version, and all four are cheap
-    /// `defaults` reads.
-    private static func teamInPreferences() -> Bool {
-        for domain in ["com.apple.dt.Xcode", "com.apple.dt.xcodebuild"] {
-            for key in ["IDEProvisioningTeamByIdentifier", "IDEProvisioningTeams"] {
-                guard let out = shellOutput("/usr/bin/defaults", ["read", domain, key]) else {
-                    continue
-                }
-                // Boundary after the 10 chars so a longer token isn't truncated
-                // into a wrong-but-plausible id; a real team id is exactly 10.
-                if out.range(of: #"teamID\s*=\s*"?[A-Z0-9]{10}(?![A-Z0-9])"?"#,
-                             options: .regularExpression) != nil {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    /// Where Xcode downloads provisioning profiles: Xcode 16+ first, then the
-    /// location older versions used.
-    private static let provisioningProfileDirs = [
-        "Library/Developer/Xcode/UserData/Provisioning Profiles",
-        "Library/MobileDevice/Provisioning Profiles",
-    ]
-
-    /// True when a provisioning profile on disk names a team. Profiles are
-    /// CMS-signed, but the payload plist sits in the blob as plain XML, so
-    /// scanning the bytes beats shelling out to `security cms -D` once per file.
-    /// They're decoded as ISO-8859-1 because the CMS wrapper is binary and a
-    /// UTF-8 decode of it fails outright; the plist itself is ASCII either way.
-    private static func teamInProvisioningProfiles() -> Bool {
-        // TeamIdentifier is the modern key. Profiles cut before Xcode 6 carry
-        // only ApplicationIdentifierPrefix, whose single element is the team id.
-        let pattern = #"<key>(TeamIdentifier|ApplicationIdentifierPrefix|com\.apple\.developer\.team-identifier)</key>\s*(<array>\s*)?<string>[A-Z0-9]{10}(?![A-Z0-9])</string>"#
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        for dir in provisioningProfileDirs {
-            let dirURL = home.appendingPathComponent(dir)
-            guard let names = try? FileManager.default
-                .contentsOfDirectory(atPath: dirURL.path) else { continue }
-            for name in names
-            where name.hasSuffix(".provisionprofile") || name.hasSuffix(".mobileprovision") {
-                guard let bytes = try? Data(contentsOf: dirURL.appendingPathComponent(name)),
-                      let blob = String(data: bytes, encoding: .isoLatin1) else { continue }
-                if blob.range(of: pattern, options: .regularExpression) != nil { return true }
-            }
-        }
-        return false
-    }
-
-    /// True when the keychain holds an Apple certificate that carries a team id.
-    /// Development certs are the ones the build asks for, but Developer ID and
-    /// App Store certs count too: the build runs `xcodebuild
-    /// -allowProvisioningUpdates`, so the team id is the only thing missing and
-    /// Xcode mints the development certificate itself. Apple puts the same team
-    /// id in every cert's subject OU, and a Developer ID cert is the only Apple
-    /// certificate on the machine of anyone who has shipped a notarized app and
-    /// nothing else — those users can team-sign, so don't warn them.
-    private static func teamInKeychain() -> Bool {
-        guard let identities = shellOutput("/usr/bin/security",
-                                           ["find-identity", "-v", "-p", "codesigning"]) else {
-            return false
-        }
-        // Lines look like:  1) <sha1> "Apple Development: me@example.com (XXXXXXXXXX)"
-        return identities.range(
-            of: #""(Apple Development|Mac Developer|Apple Distribution|iPhone Developer|Developer ID Application|3rd Party Mac Developer Application):"#,
-            options: .regularExpression) != nil
-    }
-
-    /// True when an Apple ID is registered in Xcode's Accounts pane. Xcode writes
-    /// this list as soon as the account is added, well before it has a team or a
-    /// certificate, so it separates "never signed in" from "signed in but Xcode
-    /// hasn't issued a signing certificate yet" — two states that need opposite
-    /// instructions.
-    static func xcodeAccountPresent() -> Bool {
-        guard let out = shellOutput("/usr/bin/defaults",
-                                    ["read", "com.apple.dt.Xcode",
-                                     "DVTDeveloperAccountManagerAppleIDLists"]) else {
-            return false
-        }
-        return out.range(of: #"identifier\s*="#, options: .regularExpression) != nil
-    }
-
-    /// Run a tool and return stdout, or nil if it fails to launch or exits non-zero.
-    private static func shellOutput(_ path: String, _ args: [String]) -> String? {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: path)
-        p.arguments = args
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = Pipe()
-        do { try p.run() } catch { return nil }
-        // Read before waiting: a full pipe buffer would deadlock the child.
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else { return nil }
-        return String(data: data, encoding: .utf8)
     }
 
     /// Honest, per-state guidance for the Xcode gate. Each case names exactly
@@ -553,9 +459,12 @@ final class ConverterViewModel: ObservableObject {
     /// without the user hunting for a "try again" button. Keeps the picked
     /// extension so the CTA falls back to "Convert & Install".
     func recheckXcode() {
+        // Someone who joined the Developer Program in another window shouldn't
+        // have to relaunch to see the year they now sign for.
+        refreshSigningAccount()
         // Signing into Xcode and switching back should be enough. Resume the
         // parked conversion the same way the Xcode gate's one-click fixes do.
-        if needsAppleAccount, Self.xcodeTeamPresent() {
+        if needsAppleAccount, SigningAccount.xcodeTeamPresent() {
             needsAppleAccount = false
             failureSummary = nil
             phase = .idle

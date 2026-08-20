@@ -46,6 +46,9 @@ struct SettingsView: View {
             }
         }
         .frame(width: 460, height: 600)
+        // Settings can be the first window a menu-bar-resident launch ever
+        // shows, so the account row can't rely on the launch hook having run.
+        .task { vm.refreshSigningAccount() }
     }
 
     // MARK: - Cards
@@ -128,6 +131,11 @@ struct SettingsView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { cliUpToDate = false }
     }
 
+    /// How long an Apple signature lasts on this Mac, in words. Falls back to the
+    /// free week when the account hasn't been classified yet — the same
+    /// assumption renewal scheduling makes.
+    private var signingLifetimeText: String { (vm.signingAccount ?? .free).lifetimeText }
+
     private var licenseCard: some View {
         SettingsSection(title: "License", symbol: "checkmark.seal") {
             if license.isLicensed {
@@ -147,7 +155,7 @@ struct SettingsView: View {
                         Text("Frees up the seat for another Mac. You'll need your key to activate again.")
                     }
             } else {
-                Text("\(license.freeConversionsRemaining) of \(license.freeQuota) free conversions left. A license removes the limit and turns on auto-renew, so Safari stops dropping your extensions after a week.")
+                Text("\(license.freeConversionsRemaining) of \(license.freeQuota) free conversions left. A license removes the limit and turns on auto-renew, so Safari stops dropping your extensions after \(signingLifetimeText).")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
 
@@ -205,6 +213,16 @@ struct SettingsView: View {
     private var signingCard: some View {
         let licensed = license.isLicensed
         return SettingsSection(title: "Keeping extensions working", symbol: "signature") {
+            // Two binary facts, as capsules rather than card copy: how long Apple
+            // signs for here, and whether renewal is unlocked.
+            if let account = vm.signingAccount {
+                StatusBadge(text: account.lifetimeText.uppercased(),
+                            color: account == .paid
+                                ? Theme.Colors.accentGreen
+                                : Theme.Colors.accentYellow)
+                    .help("Apple signs a converted extension for \(account.lifetimeText) with \(account.article)."
+                          + (licensed && vm.autoRenew ? " Viaduct re-signs it before that runs out." : ""))
+            }
             if !licensed {
                 ProBadge(color: Theme.Colors.accentBlue)
             }
@@ -346,17 +364,24 @@ struct SettingsView: View {
     }
 }
 
-/// A small "PRO" tag. White text on a solid accent fill — a same-hue text on a
+/// A small capsule tag. White text on a solid accent fill — a same-hue text on a
 /// low-alpha same-hue capsule washed out to near-invisible in light mode.
-struct ProBadge: View {
+struct StatusBadge: View {
+    let text: String
     var color: Color
     var body: some View {
-        Text("PRO")
+        Text(text)
             .font(Theme.Font.caption())
             .foregroundStyle(.white)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(color))
     }
+}
+
+/// The "PRO" tag on cards that gate a paid feature.
+struct ProBadge: View {
+    var color: Color
+    var body: some View { StatusBadge(text: "PRO", color: color) }
 }
 
 // MARK: - Settings building blocks

@@ -9,9 +9,14 @@ import Foundation
 /// matching this repo's loose-script convention). It can't live here: a
 /// top-level expression is illegal in a multi-file app-target module.
 enum RenewalPolicy {
-    /// A converted build's free-account signature is assumed to lapse this long
-    /// after it was signed.
-    static let signatureLifetime: TimeInterval = 7 * 24 * 3600
+    /// How long a build signed with a free Apple ID holds before Safari drops
+    /// the extension — Apple's provisioning window for a personal team.
+    static let freeSignatureLifetime: TimeInterval = 7 * 24 * 3600
+    /// The same window for a paid Developer Program membership: a year, which is
+    /// why the account has to be classified instead of assumed (see
+    /// `SigningAccount`). Signing a paid build and then renewing it weekly buys
+    /// nothing and rebuilds every extension fifty times over.
+    static let paidSignatureLifetime: TimeInterval = 365 * 24 * 3600
     /// Renew this long before the signature lapses.
     static let renewWindow: TimeInterval = 2 * 24 * 3600
     /// Never rebuild the same extension more than once in this span — the hard
