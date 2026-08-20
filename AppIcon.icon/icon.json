@@ -1,35 +1,15 @@
 {
-  "fill" : {
-    "linear-gradient" : [
-      "display-p3:0.33594,0.68213,0.63770,1.00000",
-      "display-p3:0.20081,0.38452,0.38989,1.00000"
-    ],
-    "orientation" : {
-      "start" : {
-        "x" : 0.5,
-        "y" : 0
-      },
-      "stop" : {
-        "x" : 0.5,
-        "y" : 0.7
-      }
-    }
-  },
+  "fill" : "system-light",
   "groups" : [
     {
       "layers" : [
         {
-          "image-name-specializations" : [
-            {
-              "value" : "icon.png"
-            },
-            {
-              "appearance" : "light",
-              "value" : "icon_light.png"
-            }
-          ],
-          "name" : "icon_light",
-          "opacity" : 0.9,
+          "blend-mode" : "overlay",
+          "fill" : "automatic",
+          "glass" : true,
+          "image-name" : "icon.png",
+          "name" : "icon",
+          "opacity" : 1,
           "position" : {
             "scale" : 0.95,
             "translation-in-points" : [
