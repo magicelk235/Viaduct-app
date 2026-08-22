@@ -36,6 +36,18 @@ SIGN_ID="$(security find-identity -v -p codesigning | grep 'Developer ID Applica
 [ -n "$SIGN_ID" ] || { echo "FAILED: no Developer ID Application identity found"; exit 1; }
 echo "==> Signing identity: $SIGN_ID"
 
+# Regenerate the Xcode project from project.yml. The pbxproj is generated, not
+# hand-kept, so a bumped MARKETING_VERSION only reaches the build through
+# xcodegen. Skipping this ships the previous version's Info.plist under a new
+# tag, and since Sparkle compares CFBundleVersion, every installed copy then
+# sees no update at all.
+if command -v xcodegen >/dev/null; then
+  echo "==> Generating Xcode project from project.yml"
+  (cd "$ROOT" && xcodegen generate --quiet)
+else
+  echo "WARNING: xcodegen not installed; building whatever version the checked-in project carries"
+fi
+
 echo "==> Building (unsigned, universal)"
 rm -rf "$REL"
 # generic/platform=macOS is load-bearing: without it xcodebuild resolves the run
@@ -110,6 +122,14 @@ xcrun stapler staple "$APP"
 
 # --- Sparkle update channel: zip of the stapled app + a signed appcast ---
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+# The number that actually shipped, against the one project.yml asked for. A
+# mismatch means the build used a stale project and the release would carry the
+# wrong version in its Info.plist, its zip name and its appcast.
+WANT="$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' "$ROOT/project.yml" | head -1)"
+[ "$VERSION" = "$WANT" ] || {
+  echo "FAILED: built $VERSION but project.yml says $WANT — run 'xcodegen generate' and rebuild"
+  exit 1
+}
 DIST="$ROOT/dist"
 ZIP="$DIST/Viaduct-$VERSION.zip"
 echo "==> Packaging update zip ($VERSION)"
