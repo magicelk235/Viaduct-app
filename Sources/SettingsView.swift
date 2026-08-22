@@ -88,13 +88,10 @@ struct SettingsView: View {
         SettingsSection(title: "Command-line tool", symbol: "terminal") {
             VersionRow(version: vm.installedVersion,
                        status: cliStatus,
-                       check: checkCLI) {
-                if vm.updateAvailable {
-                    Button("Update Now") { vm.updateCLI() }
-                        .buttonStyle(.raycastPrimary)
-                        .disabled(vm.isRunning)
-                }
-            }
+                       check: checkCLI,
+                       checkDisabled: vm.updateChecking || vm.cliInstalling || vm.isRunning,
+                       update: vm.updateAvailable ? { vm.updateCLI() } : nil,
+                       updateDisabled: vm.isRunning)
             .onChange(of: vm.updateChecking) { checking in
                 if !checking { cliCheckFinished() }
             }
@@ -426,25 +423,18 @@ private struct SettingsSection<Accessory: View, Content: View>: View {
     }
 }
 
-/// A version row that doubles as the update control: the number underlines on
-/// hover and runs `check` on click, so the card needs no permanent button.
-/// `status` carries the inline result ("Checking…", "Up to date"), and any
-/// trailing action (an Update Now button) is supplied by the caller.
-private struct VersionRow<Trailing: View>: View {
+/// Version line with an explicit update control: the number is plain text and
+/// the action is a real button, so nothing is hidden behind clicking the
+/// version. `status` carries the inline result ("Checking…", "Up to date").
+/// When a newer version is already known, the check button gives way to
+/// "Update Now" — the two never compete for the same row.
+private struct VersionRow: View {
     let version: String
     var status: String?
     let check: () -> Void
-    @ViewBuilder var trailing: () -> Trailing
-
-    @State private var hovering = false
-
-    init(version: String, status: String? = nil, check: @escaping () -> Void,
-         @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
-        self.version = version
-        self.status = status
-        self.check = check
-        self.trailing = trailing
-    }
+    var checkDisabled = false
+    var update: (() -> Void)?
+    var updateDisabled = false
 
     var body: some View {
         HStack(spacing: Theme.Space.sm) {
@@ -452,29 +442,31 @@ private struct VersionRow<Trailing: View>: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.Colors.primary)
                 .frame(width: 18)
-            Text("Version")
-                .font(Theme.Font.body())
+            // No "Version" label: the card title already says what this is, and
+            // the word costs the width the button needs to stay on one line
+            // once a status ("Up to date") shares the row.
+            Text(version)
+                .font(Theme.Font.mono())
                 .foregroundStyle(Theme.Colors.body)
-            Spacer()
+            Spacer(minLength: Theme.Space.sm)
             if let status {
                 Text(status)
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
+                    .fixedSize()
                     .transition(.opacity)
             }
-            Text(version)
-                .font(Theme.Font.mono())
-                .foregroundStyle(Theme.Colors.body)
-                .underline(hovering)
-                .onHover { inside in
-                    hovering = inside
-                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                }
-                .onTapGesture(perform: check)
-                .help("Check for updates")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Check for updates")
-            trailing()
+            if let update {
+                Button("Update Now", action: update)
+                    .buttonStyle(.raycastPrimary)
+                    .fixedSize()
+                    .disabled(updateDisabled)
+            } else {
+                Button("Check for Updates", action: check)
+                    .buttonStyle(.raycastTertiary)
+                    .fixedSize()
+                    .disabled(checkDisabled)
+            }
         }
         .animation(.easeInOut(duration: 0.15), value: status)
     }
