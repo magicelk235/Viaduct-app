@@ -92,12 +92,29 @@ final class ConverterViewModel: ObservableObject {
 
     let history = ConversionHistory()
 
-    /// Which Apple account this Mac signs with — a free Apple ID's signature
-    /// lapses in a week, a paid Developer Program membership's in a year. Cached
-    /// here because detecting it shells out to `defaults`, which is far too
-    /// costly to run from a SwiftUI body. Nil until the first detection lands
-    /// (or when Xcode holds no team), and read as "assume free" everywhere.
-    @Published var signingAccount: SigningAccount?
+    /// Every Apple team this Mac can sign with, best first. Cached here because
+    /// detecting them shells out to `defaults` and scans the keychain, which is
+    /// far too costly to run from a SwiftUI body. Empty until the first
+    /// detection lands, and on a Mac with no Apple account at all.
+    @Published var signingTeams: [SigningAccount.Team] = []
+
+    /// The team the user pinned in the signing picker, or "" for Viaduct's own
+    /// pick. Mirrored into `SigningAccount.pinnedTeamID` so an auto-renew
+    /// rebuild hours later re-signs with the same account.
+    @Published var signingTeamID: String = SigningAccount.pinnedTeamID {
+        didSet { SigningAccount.pinnedTeamID = signingTeamID }
+    }
+
+    /// The team the next conversion signs with.
+    var signingTeam: SigningAccount.Team? {
+        SigningAccount.signingTeam(from: signingTeams, pinned: signingTeamID)
+    }
+
+    /// Which Apple account that is — a free Apple ID's signature lapses in a
+    /// week, a paid Developer Program membership's in a year. Nil until
+    /// detection lands, when Xcode holds no team, and when nothing can tell the
+    /// two apart; read as "assume free" everywhere.
+    var signingAccount: SigningAccount? { signingTeam?.account }
 
     /// Auto re-sign installed extensions before their signature lapses. On by
     /// default — it's the thing that keeps extensions from vanishing. Pro-only:
@@ -150,18 +167,19 @@ final class ConverterViewModel: ObservableObject {
         }
         // Forget extensions the user deleted from Finder, regardless of renew state.
         history.pruneDeleted()
-        refreshSigningAccount()
+        refreshSigningTeams()
         startAutoRenew()
     }
 
-    /// Work out whether this Mac signs with a free Apple ID or a paid Developer
-    /// Program membership, for the Settings copy and for the expiry stamped on
-    /// the next conversion. Off the main thread: it's four `defaults` reads, and
-    /// nothing on screen is waiting for the answer.
-    func refreshSigningAccount() {
+    /// Work out which Apple teams this Mac can sign with — which decides whether
+    /// the next conversion gets Apple's week or its year, and whether the user
+    /// is offered a choice at all. Off the main thread: it's four `defaults`
+    /// reads, a keychain scan and the provisioning profiles on disk, and nothing
+    /// on screen is waiting for the answer.
+    func refreshSigningTeams() {
         Task.detached(priority: .utility) {
-            let detected = SigningAccount.detect()
-            await MainActor.run { self.signingAccount = detected }
+            let teams = SigningAccount.availableTeams()
+            await MainActor.run { self.signingTeams = teams }
         }
     }
 
@@ -307,10 +325,6 @@ final class ConverterViewModel: ObservableObject {
         options.noBuild = false
         options.tempLoad = false
         options.install = true
-        // Auto-detect the Apple identity (free or paid). A team-signed extension
-        // survives Safari quitting, and lets auto-renew re-sign before expiry.
-        // The CLI falls back to ad-hoc on its own if no team is found.
-        options.signing = .autoTeam
         if options.appName.isEmpty {
             options.appName = URL(fileURLWithPath: options.inputPath)
                 .deletingPathExtension().lastPathComponent
@@ -329,10 +343,15 @@ final class ConverterViewModel: ObservableObject {
             return
         }
 
+        // Read the teams here rather than trusting the launch-time answer: the
+        // user may have signed into Xcode since, and the row that lets them pick
+        // between two accounts has to be picking between the current two.
+        signingTeams = SigningAccount.availableTeams()
+
         // The CLI silently falls back to ad-hoc signing when Xcode has no Apple
         // account — and Safari disables ad-hoc extensions on every quit. Warn
         // up front instead of letting the extension quietly vanish later.
-        if !adhocAcknowledged, !adhocBypassOnce, !SigningAccount.xcodeTeamPresent() {
+        if !adhocAcknowledged, !adhocBypassOnce, signingTeams.isEmpty {
             adhocDespiteAccount = SigningAccount.xcodeAccountPresent()
             // Surface the alert even for headless viaduct:// installs.
             NSApp.activate(ignoringOtherApps: true)
@@ -341,6 +360,12 @@ final class ConverterViewModel: ObservableObject {
         }
         // Past the gate, so the pass has done its job.
         adhocBypassOnce = false
+
+        // Sign with the team the user picked, or the best one this Mac has. The
+        // id goes to the CLI explicitly: left to detect a team itself it takes
+        // whichever Xcode cached first, which on a Mac with a personal team and
+        // a paid one is a coin flip between a week and a year.
+        options.useTeam(signingTeam?.id)
 
         installedAppPath = nil
         failureSummary = nil
@@ -379,15 +404,14 @@ final class ConverterViewModel: ObservableObject {
         // Stash a durable copy of the source so auto-renew can rebuild later even if
         // the user moves/deletes the original (or the cached store .crx is purged).
         let archived = ExtensionRenewer.archiveSource(options.inputPath, appName: options.appName)
-        // Classify the signing account now rather than trusting a launch-time
-        // answer: someone who joined the Developer Program (or signed into a
+        // Re-read the teams rather than trusting the answer from the start of
+        // the run: someone who joined the Developer Program (or signed into a
         // different Apple ID) mid-session gets the year they paid for, not a
         // week of pointless weekly rebuilds. Then read the artifact, because a
         // run can succeed and still have come out ad-hoc.
-        let account = SigningAccount.detect()
-        signingAccount = account
+        signingTeams = SigningAccount.availableTeams()
         let build = SigningAccount.inspectBuild(installedAppPath: installedAppPath,
-                                                signedAt: Date(), account: account)
+                                                signedAt: Date(), account: signingAccount)
         lastBuildAdHoc = build.adHoc
         history.add(name: name, sourcePath: archived ?? options.inputPath,
                     appName: options.appName,
@@ -502,7 +526,7 @@ final class ConverterViewModel: ObservableObject {
     func recheckXcode() {
         // Someone who joined the Developer Program in another window shouldn't
         // have to relaunch to see the year they now sign for.
-        refreshSigningAccount()
+        refreshSigningTeams()
         // Signing into Xcode and switching back should be enough. Resume the
         // parked conversion the same way the Xcode gate's one-click fixes do.
         if needsAppleAccount, SigningAccount.xcodeTeamPresent() {

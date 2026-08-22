@@ -48,7 +48,7 @@ struct SettingsView: View {
         .frame(width: 460, height: 600)
         // Settings can be the first window a menu-bar-resident launch ever
         // shows, so the account row can't rely on the launch hook having run.
-        .task { vm.refreshSigningAccount() }
+        .task { vm.refreshSigningTeams() }
     }
 
     // MARK: - Cards
@@ -221,6 +221,16 @@ struct SettingsView: View {
                 ProBadge(color: Theme.Colors.accentBlue)
             }
         } content: {
+            // Which Apple account signs, but only when this Mac has more than
+            // one. A developer holding a personal team and a paid membership
+            // otherwise had no say in it, and Xcode's cache order decided —
+            // the personal team means Safari drops the extension after a week.
+            if vm.signingTeams.count > 1, let team = vm.signingTeam {
+                SigningTeamRow(teams: vm.signingTeams, selected: team,
+                               pinnedTeamID: $vm.signingTeamID)
+                Divider().overlay(Theme.Colors.hairlineSoft)
+            }
+
             // Free users always see (and get) OFF: the binding reads false and
             // ignores writes. Licensed users get the real stored toggle.
             Toggle("Re-sign extensions before they expire",
@@ -469,5 +479,44 @@ private struct VersionRow: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: status)
+    }
+}
+
+/// The Apple account row: the team id that signs, and a chip per team this Mac
+/// could sign with instead. Only rendered when there's more than one, so the
+/// single-account Mac most people have keeps the card down to its two toggles.
+/// Picking a team pins it — the card's own lifetime badge is the feedback, since
+/// it flips between Apple's week and its year with the choice.
+private struct SigningTeamRow: View {
+    let teams: [SigningAccount.Team]
+    let selected: SigningAccount.Team
+    @Binding var pinnedTeamID: String
+
+    var body: some View {
+        HStack(spacing: Theme.Space.sm) {
+            Image(systemName: "person.crop.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.Colors.primary)
+                .frame(width: 18)
+            Text(selected.id)
+                .font(Theme.Font.mono())
+                .foregroundStyle(Theme.Colors.body)
+                .help("The Apple team Viaduct signs with. Find it under Membership details at developer.apple.com.")
+            Spacer(minLength: Theme.Space.sm)
+            PillTabPicker(options: teams, label: label,
+                          selection: Binding(get: { selected },
+                                             set: { pinnedTeamID = $0.id }))
+                .fixedSize()
+        }
+    }
+
+    /// Chip text is the kind of account, since that's what the choice is about
+    /// and what changes how long Safari keeps the extension. Two teams of the
+    /// same kind (or two Viaduct can't classify) would read identically, so
+    /// those carry their team id instead.
+    private func label(_ team: SigningAccount.Team) -> String {
+        let name = team.account?.label ?? "Apple team"
+        let ambiguous = teams.filter { ($0.account?.label ?? "Apple team") == name }.count > 1
+        return ambiguous ? team.id : name
     }
 }

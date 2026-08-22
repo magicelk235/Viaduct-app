@@ -472,24 +472,31 @@ struct PillTabPicker<T: Hashable & Identifiable>: View {
         HStack(spacing: Theme.Space.xs) {
             ForEach(options) { option in
                 let active = option == selection
-                Text(label(option))
-                    .font(Theme.Font.button())
-                    .foregroundStyle(active ? Theme.Colors.ink : Theme.Colors.body)
-                    .padding(.horizontal, Theme.Space.md)
-                    .frame(height: 28)
-                    .background {
-                        if active {
-                            Color.clear.liquidGlass(radius: Theme.Radius.full)
-                                .overlay(Capsule().strokeBorder(
-                                    Theme.Colors.hairlineStrong, lineWidth: 1))
-                        }
+                // A real Button, not a tap gesture on text: this is the app's
+                // only segmented control, and a gesture leaves it unreachable by
+                // keyboard and silent to VoiceOver. `.plain` keeps the chip
+                // rendering exactly as designed.
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                        selection = option
                     }
-                    .contentShape(Capsule())
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-                            selection = option
+                } label: {
+                    Text(label(option))
+                        .font(Theme.Font.button())
+                        .foregroundStyle(active ? Theme.Colors.ink : Theme.Colors.body)
+                        .padding(.horizontal, Theme.Space.md)
+                        .frame(height: 28)
+                        .background {
+                            if active {
+                                Color.clear.liquidGlass(radius: Theme.Radius.full)
+                                    .overlay(Capsule().strokeBorder(
+                                        Theme.Colors.hairlineStrong, lineWidth: 1))
+                            }
                         }
-                    }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
             }
         }
     }

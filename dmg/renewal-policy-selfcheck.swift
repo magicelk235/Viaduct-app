@@ -82,6 +82,28 @@ enum SigningAccount: String {
         return certs[0]
     }
 
+    static func merge(cached: [Team], certs: [Team], provisioned: [Team]) -> [Team] {
+        var ordered: [Team] = []
+        if let best = pick(cached: cached, certs: certs, provisioned: provisioned) {
+            ordered.append(best)
+        }
+        for team in cached + certs where !ordered.contains(where: { $0.id == team.id }) {
+            ordered.append(team)
+        }
+        let known = cached + certs + provisioned
+        return ordered.map { team in
+            Team(id: team.id,
+                 account: team.account
+                     ?? known.first { $0.id == team.id && $0.account != nil }?.account)
+        }
+    }
+
+    static func signingTeam(from teams: [Team], pinned: String) -> Team? {
+        teams.first { $0.id == pinned }
+            ?? teams.first { $0.account == .paid }
+            ?? teams.first
+    }
+
     static func account(profileSpan span: TimeInterval) -> SigningAccount {
         span >= 30 * 24 * 3600 ? .paid : .free
     }
@@ -195,6 +217,36 @@ assert(SigningAccount.pick(cached: [], certs: [certDev],
                            provisioned: [SigningAccount.Team(id: certDev.id, account: .paid)])
         == SigningAccount.Team(id: certDev.id, account: .paid),
        "an Apple Development cert says nothing about the tier; the profile's own span does")
+
+// merge(cached:certs:provisioned:) — every team the user can be offered, best
+// first. A profile-only team is never offered: it's a team this Mac may hold no
+// account for, and picking it would produce an ad-hoc build.
+assert(SigningAccount.merge(cached: [cachedFree], certs: [certPaid], provisioned: [vendorProfile])
+        == [cachedFree, certPaid],
+       "the team that would sign leads, and the other signable team follows")
+assert(SigningAccount.merge(cached: [], certs: [], provisioned: [vendorProfile]).isEmpty,
+       "a profile alone is not a team this Mac can sign with, so it isn't offered")
+assert(SigningAccount.merge(cached: [cachedFree, cachedFree], certs: [cachedFree],
+                            provisioned: []) == [cachedFree],
+       "the same team named by several sources is offered once")
+assert(SigningAccount.merge(cached: [], certs: [certDev],
+                            provisioned: [SigningAccount.Team(id: certDev.id, account: .paid)])
+        == [SigningAccount.Team(id: certDev.id, account: .paid)],
+       "a team no nominating source can classify takes the verdict the profile carries")
+
+// signingTeam(from:pinned:) — which of those actually signs. Preferring paid is
+// the whole point: a Mac with both used to sign with whichever team Xcode
+// cached first, handing a paying developer a seven-day signature.
+assert(SigningAccount.signingTeam(from: [cachedFree, certPaid], pinned: "") == certPaid,
+       "no pin → the paid membership signs, even though the personal team is listed first")
+assert(SigningAccount.signingTeam(from: [cachedFree, certPaid], pinned: cachedFree.id) == cachedFree,
+       "a pinned team wins, including a deliberate pin to the personal one")
+assert(SigningAccount.signingTeam(from: [cachedFree, certPaid], pinned: "ZZ99YY88XX") == certPaid,
+       "a pin to a team this Mac no longer has falls back to the best one it does")
+assert(SigningAccount.signingTeam(from: [certDev], pinned: "") == certDev,
+       "nothing classified → the only team there is")
+assert(SigningAccount.signingTeam(from: [], pinned: "") == nil,
+       "no team at all → ad-hoc, and no picker to show")
 
 // A paid signature outlives the renew window by a year, so nothing is due; the
 // same build on a free account is due two days before its week is up.

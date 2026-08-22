@@ -175,7 +175,7 @@ components:
   fields:
     text:   "clear glass capsule, ink text, hairline edge, 32pt (.glass)"
     toggle: "switch with an accent-green on-track, white knob, spring (.glass)"
-    pill-tab: "transparent chip strip; the active chip lifts onto glass with a hairline-strong capsule (PillTabPicker) — replaces AppKit segmented/radio so the window stays one dark mode"
+    pill-tab: "transparent chip strip; the active chip lifts onto glass with a hairline-strong capsule (PillTabPicker) — replaces AppKit segmented/radio so the window stays one dark mode. Each chip is a real Button so the strip is keyboard-reachable and reads as a selected control to VoiceOver."
   cards:
     raycast-card: "hairline-bordered card on the surface ladder; glass:true floats it on Liquid Glass. The default container."
     drop-card: "the hero of User mode — one xl-radius glass card that morphs through empty → ready → converting → done/failed. Dashed hairline border when empty, solid + teal glow on drag-target."
@@ -186,6 +186,7 @@ components:
   status:
     step-dots: "one capsule per convert phase; fills emerald and the active dot widens. Gives the wait a sense of journey."
     status-pill: "glass pill, green check / red octagon, for run results."
+    value-row: "SF Symbol in an 18pt frame + the value in mono + a trailing control (VersionRow, SigningTeamRow). Mono covers any opaque identifier — a version, a team id — not just numerals. The card title labels the row, so the row carries no label of its own."
     keycap: "small glass keyboard glyph (⌘K, ⏎) for shortcut hints."
   backdrop:
     ambient-background: "the neutral adaptive canvas + one faint teal crown glow behind User mode."
@@ -198,7 +199,7 @@ layout:
   windows:
     user-mode:   "min 540×600. Centered card column, maxWidth 440. Brand lockup → drop-card → morphing CTA → recent list. Neutral canvas + faint teal crown glow."
     developer:   "min 820×640. HSplitView: scrollable options form (min 400 / ideal 440) | live log pane (min 380). Toolbar: User-mode · CLI menu · Doctor · Analyze · Convert(primary). Flat canvas (no aurora — it's a workbench)."
-    settings:    "fixed 460×600. Stacked RaycastCards: Interface · CLI · Signing · History."
+    settings:    "fixed 460×600. Stacked RaycastCards: Mode · License · App updates · CLI · Keeping extensions working · Warnings · Support · Converted extensions. The signing card leads with its lifetime badge (7 DAYS yellow / 1 YEAR green) and, only on a Mac with more than one Apple team, a value row pinning which team signs."
     activation:  "min 540×600. Centered: key glyph → title → field → Activate(primary) → buy link."
   forms: "label column fixed at 96pt, glass field fills the rest; sections are glass RaycastCards titled with an SF Symbol + heading-sm."
 

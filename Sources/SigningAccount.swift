@@ -55,24 +55,50 @@ enum SigningAccount: String, Codable {
     /// as "assume free": re-signing a year-long signature after a week only
     /// costs a rebuild, while assuming a year on a free account means Safari
     /// drops the extension with nothing scheduled to bring it back.
-    struct Team: Equatable {
+    struct Team: Hashable, Identifiable {
         let id: String
         let account: SigningAccount?
     }
 
-    /// The team the CLI will hand xcodebuild, or nil when the build will sign
-    /// ad-hoc. This mirrors viaduct's own `detectXcodeTeam()`
-    /// (`src/build/packager.ts`, as of 1.11.4): the app only decides whether to
-    /// warn, the CLI decides how it actually signs, and when they disagree the
-    /// user gets a silently ad-hoc build with no warning at all.
+    /// Every team this Mac can sign with, best first — index 0 is the team the
+    /// CLI's own detection would land on. Mirrors viaduct's `detectXcodeTeam()`
+    /// (`src/build/packager.ts`, as of 1.11.4), with the difference that the app
+    /// hands the chosen id back as `--team <id>`: once there is a list, the two
+    /// cannot disagree about which account signed.
     ///
     /// A team id lying on disk is not proof this Mac can sign for it. Profiles
     /// outlive the account that installed them, and installers drop profiles for
     /// their own vendor's team, so the CLI stopped letting a profile nominate a
     /// team (its issue #15: every build died on "No Account for Team"). Xcode's
     /// account cache and the keychain nominate; profiles only pick between them.
-    static func detectTeam() -> Team? {
-        pick(cached: cachedTeams(), certs: certificateTeams(), provisioned: provisionedTeams())
+    static func availableTeams() -> [Team] {
+        merge(cached: cachedTeams(), certs: certificateTeams(), provisioned: provisionedTeams())
+    }
+
+    /// The list itself, kept free of IO so it can be asserted against the cases
+    /// that matter (a Mac holding a personal team and a paid one, a profile
+    /// choosing among certificates).
+    static func merge(cached: [Team], certs: [Team], provisioned: [Team]) -> [Team] {
+        var ordered: [Team] = []
+        if let best = pick(cached: cached, certs: certs, provisioned: provisioned) {
+            ordered.append(best)
+        }
+        // Then everything else a nominating source named. Profiles stay out of
+        // the list for the same reason they can't nominate: they name teams this
+        // Mac may hold no account for, and offering one is offering an ad-hoc
+        // build dressed up as a choice.
+        for team in cached + certs where !ordered.contains(where: { $0.id == team.id }) {
+            ordered.append(team)
+        }
+        // A team is often named by two sources and classified by only one, so
+        // the free/paid verdict is pooled across all three rather than taken
+        // from whichever source happened to list it first.
+        let known = cached + certs + provisioned
+        return ordered.map { team in
+            Team(id: team.id,
+                 account: team.account
+                     ?? known.first { $0.id == team.id && $0.account != nil }?.account)
+        }
     }
 
     /// The pick itself, kept free of IO so it can be asserted against the cases
@@ -98,13 +124,36 @@ enum SigningAccount: String, Codable {
         return certs[0]
     }
 
-    /// The account class this Mac would sign with, or nil when nothing can tell
-    /// free from paid (including a Mac with no team at all, which signs ad-hoc).
-    static func detect() -> SigningAccount? { detectTeam()?.account }
+    /// UserDefaults key behind the pinned team.
+    private static let pinnedTeamKey = "signingTeamID"
 
-    /// True when the machine can team-sign — i.e. the CLI will find a team to
-    /// hand xcodebuild instead of falling back to ad-hoc signing.
-    static func xcodeTeamPresent() -> Bool { detectTeam() != nil }
+    /// The team id the user pinned in the signing picker, or "" when they never
+    /// touched it — the normal case, which leaves the choice to `signingTeam`.
+    /// Stored rather than passed around because auto-renew rebuilds hours later
+    /// with no view model in reach, and a renewal that re-signs with a different
+    /// account than the conversion did changes when the extension expires.
+    static var pinnedTeamID: String {
+        get { UserDefaults.standard.string(forKey: pinnedTeamKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: pinnedTeamKey) }
+    }
+
+    /// The team a build signs with: the pinned one while it's still signable,
+    /// otherwise a paid membership ahead of a personal team. Preferring paid
+    /// isn't cosmetic — a Mac holding both signed with whichever team Xcode
+    /// happened to cache first, so a paying developer could land a seven-day
+    /// signature and a weekly rebuild of every extension they own.
+    static func signingTeam(from teams: [Team], pinned: String = pinnedTeamID) -> Team? {
+        teams.first { $0.id == pinned }
+            ?? teams.first { $0.account == .paid }
+            ?? teams.first
+    }
+
+    /// Same, detected fresh.
+    static func signingTeam() -> Team? { signingTeam(from: availableTeams()) }
+
+    /// True when the machine can team-sign — i.e. there is a team to hand
+    /// xcodebuild instead of falling back to ad-hoc signing.
+    static func xcodeTeamPresent() -> Bool { !availableTeams().isEmpty }
 
     /// Teams Xcode caches once an account is added, in the order the CLI reads
     /// them. Two keys across two domains: current Xcode writes

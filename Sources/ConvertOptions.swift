@@ -90,6 +90,18 @@ struct ConvertOptions {
         return args
     }
 
+    /// Sign with a named Apple team, or let the CLI detect one when there is
+    /// nothing to name. Naming it is what stops a Mac with two accounts from
+    /// signing with whichever team Xcode cached first.
+    mutating func useTeam(_ id: String?) {
+        guard let id, !id.isEmpty else {
+            signing = .autoTeam
+            return
+        }
+        signing = .customTeam
+        customTeamId = id
+    }
+
     func analyzeArgs(json: Bool = false) -> [String] {
         var args = [inputPath, "--analyze"]
         if json { args.append("--json") }

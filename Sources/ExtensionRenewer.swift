@@ -207,19 +207,20 @@ final class ExtensionRenewer {
     private static func freshBuild(for rec: ConversionRecord) -> SigningAccount.Build {
         SigningAccount.inspectBuild(installedAppPath: rec.installedPath,
                                     signedAt: Date(),
-                                    account: SigningAccount.detect())
+                                    account: SigningAccount.signingTeam()?.account)
     }
 
     /// Run a full convert+install from source via the CLI, re-signing with the
-    /// auto-detected Apple team (re-mints the Apple-issued signature and, on a
-    /// free account, the seven-day profile behind it). Shared by renew and
-    /// update — one rebuild codepath. Returns the CLI exit code.
+    /// same Apple team a conversion would use — the one the user pinned, or the
+    /// best this Mac has (re-mints the Apple-issued signature and, on a free
+    /// account, the seven-day profile behind it). Shared by renew and update —
+    /// one rebuild codepath. Returns the CLI exit code.
     private func rebuild(sourcePath: String, appName: String) async -> Int32 {
         var opts = ConvertOptions()
         opts.inputPath = sourcePath
         opts.appName = appName
         opts.install = true
-        opts.signing = .autoTeam   // re-mint the Apple-issued dev signature
+        opts.useTeam(SigningAccount.signingTeam()?.id)
         opts.force = true          // never block a rebuild on advisory issues
 
         return await withCheckedContinuation { cont in
