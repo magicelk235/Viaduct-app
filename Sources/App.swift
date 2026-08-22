@@ -277,9 +277,11 @@ struct ViaductApp: App {
             return ["state": "failed",
                     "message": vm.failureSummary ?? "Conversion failed. Open Viaduct for details."]
         case .finishing, .done:
-            if vm.phase == .finishing {
-                // Headless: the in-app progress bar (which normally fires this
-                // at 100%) may be paused while the app is hidden, so nudge it.
+            if vm.phase == .finishing, NSApp.isHidden {
+                // Headless (store-page install, app hidden): the in-app orbit
+                // animation that normally fires this after its last absorption
+                // may be paused, so nudge it. Never fires while the window is
+                // visible — the animation gets to finish on screen.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { vm.completeFinishing() }
             }
             return ["state": "done"]

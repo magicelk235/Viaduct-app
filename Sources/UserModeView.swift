@@ -73,15 +73,26 @@ struct UserModeView: View {
 
     // MARK: - Drop card (centerpiece)
 
+    /// Taller while converting: the orbit stage needs more room than the
+    /// idle/done cards. Animated by the phase spring on the outer VStack.
+    private var dropCardHeight: CGFloat {
+        switch vm.phase {
+        case .idle, .done, .failed: return 230
+        default: return 300
+        }
+    }
+
     private var dropCard: some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.xl, style: .continuous)
+        // Glass is applied to the sized frame (not a ZStack sibling), so the
+        // pane and its border can never disagree with the card's real bounds.
         return ZStack {
-            Color.clear.liquidGlass(radius: Theme.Radius.xl)
-
             cardContent
                 .padding(Theme.Space.xl)
         }
-        .frame(height: 230)
+        .frame(maxWidth: .infinity)
+        .frame(height: dropCardHeight)
+        .liquidGlass(radius: Theme.Radius.xl)
         .overlay(
             shape.strokeBorder(
                 isTargeted ? Theme.Colors.primary : Theme.Colors.hairlineStrong,
@@ -190,12 +201,15 @@ struct UserModeView: View {
         }
     }
 
-    // Converting / finishing: live phase glyph + title + subtitle + step dots
-    // + glass progress bar. Each phase visibly advances the glyph and dots so
-    // the wait reads as motion, not a frozen spinner.
+    // Converting / finishing: the extension's icon center stage, absorbing its
+    // orbiting parts (manifest, scripts, images, styles, pages, build) one per
+    // phase — over live phase text.
     private var convertingCard: some View {
-        VStack(spacing: Theme.Space.md) {
-            PhaseGlyph(phase: vm.phase)
+        VStack(spacing: Theme.Space.sm) {
+            ConversionOrbit(phase: vm.phase,
+                            icon: vm.extInfo?.icon,
+                            finishing: vm.phase.isFinishing,
+                            onComplete: { vm.completeFinishing() })
 
             VStack(spacing: 2) {
                 Text(vm.phase.title)
@@ -212,13 +226,10 @@ struct UserModeView: View {
                     .transition(.opacity)
             }
 
-            StepDots(phase: vm.phase)
-
-            GlassProgressBar(fraction: vm.phase.fraction,
-                             finishing: vm.phase.isFinishing,
-                             onComplete: { vm.completeFinishing() },
-                             onCancel: { vm.cancel(); vm.resetUserFlow() })
-                .frame(width: 220)
+            Button("Cancel") { vm.cancel(); vm.resetUserFlow() }
+                .buttonStyle(.raycastGhost)
+                .disabled(vm.phase.isFinishing)
+                .opacity(vm.phase.isFinishing ? 0.4 : 1)
         }
     }
 
@@ -377,7 +388,7 @@ struct UserModeView: View {
             }
 
         default:
-            // Converting: cancel lives on the progress bar (hover + click).
+            // Converting: the Cancel button lives inside the converting card.
             EmptyView()
         }
     }
@@ -665,56 +676,6 @@ struct ExtensionIcon: View {
     }
 }
 
-/// The animated phase glyph at the top of the converting card. Shows the
-/// current phase's SF Symbol inside a glass tile, with a soft pulsing glow ring
-/// and a symbol-swap transition between phases so each step visibly advances.
-struct PhaseGlyph: View {
-    let phase: ConvertPhase
-    @State private var pulse = false
-
-    var body: some View {
-        ZStack {
-            // Breathing glow behind the tile — slow, subtle, never distracting.
-            Circle()
-                .fill(Theme.Colors.accentGreen.opacity(0.18))
-                .frame(width: 64, height: 64)
-                .blur(radius: 12)
-                .scaleEffect(pulse ? 1.15 : 0.9)
-                .opacity(pulse ? 0.9 : 0.5)
-
-            Color.clear
-                .liquidGlass(radius: Theme.Radius.lg)
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
-                    .strokeBorder(Theme.Colors.hairline, lineWidth: 1))
-                .frame(width: 60, height: 60)
-
-            glyph
-                .font(.system(size: 26, weight: .regular))
-                .foregroundStyle(Theme.Colors.ink)
-                .symbolRenderingMode(.hierarchical)
-                .id("glyph\(phase.rawValue)")
-                .transition(.scale(scale: 0.6).combined(with: .opacity))
-        }
-        .frame(width: 64, height: 64)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var glyph: some View {
-        let image = Image(systemName: phase.symbol)
-        if #available(macOS 14.0, *) {
-            // Gentle continuous motion on the active glyph (pulses the symbol).
-            image.symbolEffect(.pulse, options: .repeating)
-        } else {
-            image
-        }
-    }
-}
-
 /// The success label for a finished conversion. Solid green pill + white text so
 /// it stays legible on the neutral glass card in both light and dark themes.
 struct DoneBadge: View {
@@ -727,30 +688,3 @@ struct DoneBadge: View {
     }
 }
 
-/// A row of step dots — one per track phase — that fill as the conversion
-/// advances. Gives the wait a sense of journey beyond the progress bar.
-struct StepDots: View {
-    let phase: ConvertPhase
-
-    private var currentIndex: Int {
-        ConvertPhase.track.firstIndex(of: phase)
-            ?? (phase.fraction >= 1 ? ConvertPhase.track.count : 0)
-    }
-
-    var body: some View {
-        HStack(spacing: Theme.Space.sm) {
-            ForEach(Array(ConvertPhase.track.enumerated()), id: \.offset) { idx, _ in
-                let done = idx < currentIndex
-                let active = idx == currentIndex
-                Capsule()
-                    .fill(done || active
-                          ? AnyShapeStyle(Theme.Colors.accentGreen)
-                          : AnyShapeStyle(Theme.Colors.stone))
-                    .frame(width: active ? 16 : 6, height: 6)
-                    .overlay(active ? Capsule().fill(.white.opacity(0.25))
-                        .frame(width: 16, height: 6) : nil)
-            }
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: currentIndex)
-    }
-}

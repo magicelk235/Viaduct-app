@@ -54,21 +54,6 @@ enum ConvertPhase: Int, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .idle:       return "sparkles"
-        case .extracting: return "shippingbox"
-        case .reading:    return "doc.text.magnifyingglass"
-        case .staging:    return "wand.and.stars"
-        case .packaging:  return "hammer"
-        case .building:   return "gearshape.2"
-        case .installing: return "arrow.down.app"
-        case .finishing:  return "sparkles"
-        case .done:       return "checkmark.seal.fill"
-        case .failed:     return "exclamationmark.triangle.fill"
-        }
-    }
-
     /// Fractional progress for the ring (0…1).
     var fraction: Double {
         switch self {

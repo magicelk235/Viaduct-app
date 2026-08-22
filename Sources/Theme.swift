@@ -274,8 +274,8 @@ struct AmbientBackground: View {
 // MARK: - Glow ring
 //
 // The app's icon motif: a rounded-square (squircle) glass tile floating inside a
-// soft circular glow. ExtensionIcon and PhaseGlyph use it inline; this modifier
-// applies the same circle-behind-square treatment to any square icon view.
+// soft circular glow. ExtensionIcon builds it inline; this
+// modifier applies the same circle-behind-square treatment to any square icon view.
 extension View {
     func glowRing(_ color: Color, diameter: CGFloat, opacity: Double = 0.20) -> some View {
         self.background(

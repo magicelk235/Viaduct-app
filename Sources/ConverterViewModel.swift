@@ -347,7 +347,15 @@ final class ConverterViewModel: ObservableObject {
         lastReachedTrackPhase = nil
         lastBuildAdHoc = false
         phase = .extracting
-        runCLI(args: options.conversionArgs(), label: "Conversion", userMode: true)
+        var args = options.conversionArgs()
+        // Ask the CLI to launch the host app hidden (it still registers with
+        // Safari) so its window doesn't pop over the converting animation —
+        // `completeFinishing()` opens it once the animation is done. Older CLIs
+        // reject unknown flags outright, so only ask when the flag exists.
+        if let v = updater.installedVersion, !CLIUpdater.semverLess(v, "1.11.8") {
+            args.append("--background-launch")
+        }
+        runCLI(args: args, label: "Conversion", userMode: true)
     }
 
     /// "Convert Anyway" on the signing warning: run this one conversion without
@@ -643,9 +651,9 @@ final class ConverterViewModel: ObservableObject {
 
     private func finishUserPhase(code: Int32) {
         if code == 0 {
-            // CLI is done, but let the bar race the last stretch to 100% first.
-            // `completeFinishing()` (fired by the progress bar at 100%) flips to
-            // .done and opens the freshly-converted extension app.
+            // CLI is done, but let the orbit absorb its last satellites first.
+            // `completeFinishing()` (fired after the final absorption lands)
+            // flips to .done, which surfaces the "Open extension" button.
             phase = .finishing
         } else {
             failureSummary = lastCLIError
@@ -655,13 +663,15 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
-    /// Called by the progress bar once it reaches 100% during `.finishing`.
-    /// Marks the flow done. The user opens the converted extension manually via
-    /// the "Open extension" button — we no longer launch it automatically.
+    /// Called by the conversion orbit once everything is absorbed during
+    /// `.finishing`. Marks the flow done and opens the converted extension app
+    /// so its enable-in-Safari window appears — after the animation, never over
+    /// it (the CLI's own install launch is hidden via --background-launch).
     func completeFinishing() {
         guard phase == .finishing else { return }
         phase = .done
         Feedback.success()
+        openConvertedApp()
     }
 
     /// Launch the freshly-built Safari Web Extension host app so its enable
