@@ -141,7 +141,11 @@ struct ViaductApp: App {
                    isPresented: $vm.showAdhocWarning) {
                 Button("Convert Anyway") { vm.convertIgnoringSigning() }
                 Button("Open Xcode") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Xcode.app"))
+                    // Whichever Xcode this Mac actually has — an Xcode beta on a
+                    // macOS beta is often the only one installed.
+                    if let app = CLIRunner.installedXcodeApp() {
+                        NSWorkspace.shared.open(app)
+                    }
                     vm.needsAppleAccount = true
                     vm.failureSummary = vm.adhocDespiteAccount
                         ? "In Xcode: Settings → Accounts, select your Apple ID, click Manage Certificates, click +, and choose Apple Development. Then install again."

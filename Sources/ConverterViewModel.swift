@@ -408,9 +408,11 @@ final class ConverterViewModel: ObservableObject {
         case .ready:
             return ""
         case .notInstalled:
-            return "Converting to a Safari extension needs Apple's full Xcode, and only Apple can hand that out, so Viaduct can't bundle it. It's free on the App Store, though it's a big download. Once it's there, Viaduct picks it up on its own."
-        case .notSelected:
-            return "Xcode is installed, but macOS is still pointed at the Command Line Tools, so the Safari packager can't be found. Viaduct can point macOS at Xcode for you; you'll be asked for your password."
+            return "Converting to a Safari extension needs Apple's full Xcode, and only Apple can hand that out, so Viaduct can't bundle it. It's free on the App Store, though it's a big download. On a macOS beta the App Store copy usually refuses to run — grab the matching Xcode beta from Apple's developer downloads instead. Either way, Viaduct picks it up on its own."
+        case let .notSelected(dev):
+            // Name the copy: with an Xcode beta beside a release, "point macOS at
+            // Xcode" is otherwise a blind switch between two different Xcodes.
+            return "\(Self.appName(developerDir: dev)) is installed, but macOS is still pointed at the Command Line Tools, so the Safari packager can't be found. Viaduct can point macOS at it for you; you'll be asked for your password."
         case .setupIncomplete:
             return "Xcode hasn't finished its first-launch setup, so nothing can build yet. Viaduct can accept the license and install the missing components. You'll be asked for your password, and it takes a few minutes."
         case .installIncomplete:
@@ -418,10 +420,30 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
+    /// Display name of the Xcode behind a developer dir ("Xcode", "Xcode-beta"),
+    /// falling back to "Xcode" for a path that isn't inside an app bundle.
+    private static func appName(developerDir: String) -> String {
+        let app = URL(fileURLWithPath: developerDir)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return app.pathExtension == "app"
+            ? app.deletingPathExtension().lastPathComponent
+            : "Xcode"
+    }
+
     /// Open Xcode's App Store page so the user can install it in one click.
     func openXcodeInstall() {
         // Apple\u{2019}s Xcode App Store product page.
         if let url = URL(string: "macappstore://apps.apple.com/app/xcode/id497799835") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Apple's developer downloads, filtered to Xcode. The route for anyone the
+    /// App Store can't serve: a macOS beta (where the released Xcode won't run)
+    /// or a Mac that needs an older Xcode. Free Apple ID, same as signing.
+    func openXcodeDeveloperDownloads() {
+        if let url = URL(string: "https://developer.apple.com/download/all/?q=xcode") {
             NSWorkspace.shared.open(url)
         }
     }

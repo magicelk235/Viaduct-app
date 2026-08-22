@@ -366,8 +366,13 @@ struct UserModeView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.raycastPrimary)
-                    Button("I installed it, try again") { vm.recheckXcode() }
+                    // The App Store is a dead end on a prerelease macOS: it only
+                    // offers the released Xcode, which won't launch there. Apple's
+                    // developer downloads carry the matching beta.
+                    Button("Get Xcode from Apple instead") { vm.openXcodeDeveloperDownloads() }
                         .buttonStyle(.raycastGhost)
+                    Button("I installed it, try again") { vm.recheckXcode() }
+                        .buttonStyle(.raycastTertiary)
                 }
             }
 
@@ -428,7 +433,8 @@ struct UserModeView: View {
             .deletingLastPathComponent()                  // …/Xcode.app
         let target = app.pathExtension == "app"
             ? app
-            : URL(fileURLWithPath: "/Applications/Xcode.app")
+            : CLIRunner.installedXcodeApp()
+        guard let target else { return }
         NSWorkspace.shared.open(target)
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Locates node + the installed viaduct CLI and runs it,
@@ -120,14 +121,21 @@ final class CLIRunner {
 
     static func xcodeStatus() -> XcodeStatus {
         if xcodeReady() { return .ready }
-        guard let dev = installedXcodeDeveloperDir() else { return .notInstalled }
-        if activeDeveloperDir() != dev { return .notSelected(developerDir: dev) }
-        // Order matters. A pending first launch makes the packager lookup fail
-        // too, so it has to be ruled out before blaming the install: telling
-        // someone to reinstall Xcode when they only need to accept the license
-        // is the kind of advice that costs them an afternoon.
-        if !firstLaunchComplete() { return .setupIncomplete(developerDir: dev) }
-        return .installIncomplete(developerDir: dev)
+        let installed = installedXcodeDeveloperDirs()
+        guard let best = installed.first else { return .notInstalled }
+        // If the active developer dir already IS a full Xcode, the fault is with
+        // that copy — telling the user to "point macOS at Xcode" would switch
+        // them off the very Xcode they picked (an Xcode beta, typically the only
+        // one that runs on a macOS beta) and fix nothing.
+        if let active = activeDeveloperDir(), installed.contains(active) {
+            // Order matters. A pending first launch makes the packager lookup
+            // fail too, so it has to be ruled out before blaming the install:
+            // telling someone to reinstall Xcode when they only need to accept
+            // the license is the kind of advice that costs them an afternoon.
+            if !firstLaunchComplete() { return .setupIncomplete(developerDir: active) }
+            return .installIncomplete(developerDir: active)
+        }
+        return .notSelected(developerDir: best)
     }
 
     /// Active developer dir (`xcode-select -p`), or nil if unset.
@@ -137,17 +145,102 @@ final class CLIRunner {
         return (out?.isEmpty ?? true) ? nil : out
     }
 
-    /// Developer dir of a full Xcode installed on disk (never the Command Line
-    /// Tools), or nil if none is found. Prefers /Applications/Xcode.app, then
-    /// asks Spotlight for any Xcode bundle wherever the user put it.
+    /// Developer dir of the Xcode we'd point macOS at, or nil if there is none.
     static func installedXcodeDeveloperDir() -> String? {
-        let standard = "/Applications/Xcode.app/Contents/Developer"
-        if FileManager.default.fileExists(atPath: standard) { return standard }
-        guard let hit = runCapturing("/usr/bin/mdfind",
-                ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"])?
-            .split(separator: "\n").first.map(String.init) else { return nil }
-        let dev = hit + "/Contents/Developer"
-        return FileManager.default.fileExists(atPath: dev) ? dev : nil
+        installedXcodeDeveloperDirs().first
+    }
+
+    /// The `.app` bundle behind the best Xcode on disk — for "Open Xcode"
+    /// buttons, which must not assume /Applications/Xcode.app.
+    static func installedXcodeApp() -> URL? {
+        guard let dev = installedXcodeDeveloperDir() else { return nil }
+        return URL(fileURLWithPath: dev)      // …/Xcode.app/Contents/Developer
+            .deletingLastPathComponent()      // …/Xcode.app/Contents
+            .deletingLastPathComponent()      // …/Xcode.app
+    }
+
+    /// Developer dirs of every full Xcode on disk (never the Command Line
+    /// Tools), best candidate first: one that actually contains the Safari
+    /// packager beats one that doesn't, then the newest version wins. Newest
+    /// first matters on a prerelease macOS, where the released Xcode refuses to
+    /// launch and the Xcode beta beside it is the only one that can build.
+    static func installedXcodeDeveloperDirs() -> [String] {
+        var seen = Set<String>()
+        var found: [(dev: String, packager: Bool, version: [Int])] = []
+        for app in candidateXcodeApps() {
+            let dev = app.appendingPathComponent("Contents/Developer").path
+            guard FileManager.default.fileExists(atPath: dev),
+                  seen.insert(dev).inserted else { continue }
+            found.append((dev, hasPackager(developerDir: dev), bundleVersion(app: app)))
+        }
+        return found.sorted { a, b in
+            if a.packager != b.packager { return a.packager }
+            if a.version != b.version { return isNewer(a.version, b.version) }
+            return a.dev < b.dev
+        }.map(\.dev)
+    }
+
+    /// Every place an Xcode may be, in cheapest-first order. Four sources
+    /// because each one alone has a hole: the hardcoded paths miss an Xcode the
+    /// user moved or renamed, /Applications misses one kept elsewhere,
+    /// LaunchServices misses a copy that has never been launched, and Spotlight
+    /// misses everything on a volume with indexing off or an .xip expanded
+    /// seconds ago. Xcode betas install as Xcode-beta.app and share the release
+    /// bundle id, so all four have to be free of an "Xcode.app" assumption.
+    private static func candidateXcodeApps() -> [URL] {
+        var urls: [URL] = []
+        if let active = activeDeveloperDir() {
+            let app = URL(fileURLWithPath: active)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            if app.pathExtension == "app" { urls.append(app) }
+        }
+        urls += [URL(fileURLWithPath: "/Applications/Xcode.app"),
+                 URL(fileURLWithPath: "/Applications/Xcode-beta.app")]
+        let appDirs = [URL(fileURLWithPath: "/Applications"),
+                       FileManager.default.homeDirectoryForCurrentUser
+                           .appendingPathComponent("Applications")]
+        for dir in appDirs {
+            let entries = (try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: nil)) ?? []
+            urls += entries.filter {
+                $0.pathExtension == "app" && $0.lastPathComponent.hasPrefix("Xcode")
+            }
+        }
+        urls += NSWorkspace.shared.urlsForApplications(withBundleIdentifier: "com.apple.dt.Xcode")
+        if let dump = runCapturing("/usr/bin/mdfind",
+                                   ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"]) {
+            urls += dump.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+        }
+        return urls
+    }
+
+    /// Does this developer dir carry the Safari packager? Straight file check, so
+    /// it says nothing about the license or first launch — that's what keeps a
+    /// set-up-but-unlicensed Xcode from being ranked below a broken one.
+    private static func hasPackager(developerDir: String) -> Bool {
+        FileManager.default.fileExists(
+            atPath: developerDir + "/usr/bin/safari-web-extension-packager")
+    }
+
+    /// Xcode's marketing version as numbers ("27.0 beta 5" → [27, 0]), or empty
+    /// when the plist can't be read — an unreadable version sorts last rather
+    /// than throwing the candidate away.
+    private static func bundleVersion(app: URL) -> [Int] {
+        guard let plist = NSDictionary(contentsOf:
+                app.appendingPathComponent("Contents/Info.plist")),
+              let short = plist["CFBundleShortVersionString"] as? String else { return [] }
+        return short.split(whereSeparator: { !$0.isNumber })
+            .prefix(3).compactMap { Int($0) }
+    }
+
+    private static func isNewer(_ a: [Int], _ b: [Int]) -> Bool {
+        for i in 0..<max(a.count, b.count) {
+            let x = i < a.count ? a[i] : 0
+            let y = i < b.count ? b[i] : 0
+            if x != y { return x > y }
+        }
+        return false
     }
 
     /// What a one-click privileged fix did. `cancelled` stays apart from `failed`
