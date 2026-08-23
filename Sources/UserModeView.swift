@@ -185,7 +185,7 @@ struct UserModeView: View {
                     // Safari then refuses the extension outright until the
                     // unsigned toggle is on, so this can't stay in the log.
                     if vm.lastBuildAdHoc {
-                        Text("This one is signed ad-hoc, so Safari only loads it while Allow Unsigned Extensions is on in the Develop menu. Safari forgets that every time it quits.")
+                        Text("This build has no Apple signature. Safari only loads it while Allow Unsigned Extensions is on in the Develop menu, and forgets that setting every time it quits.")
                             .font(Theme.Font.caption())
                             .foregroundStyle(Theme.Colors.accentYellow)
                             .multilineTextAlignment(.center)

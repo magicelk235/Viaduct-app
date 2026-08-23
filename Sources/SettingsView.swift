@@ -304,7 +304,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func renewStatus(_ rec: ConversionRecord) -> some View {
         if rec.adHoc == true {
-            Label("Ad-hoc signed: Safari turns it off every time it quits",
+            Label("No Apple signature: Safari turns it off every time it quits",
                   systemImage: "exclamationmark.triangle.fill")
                 .font(Theme.Font.caption())
                 .foregroundStyle(Theme.Colors.accentYellow)

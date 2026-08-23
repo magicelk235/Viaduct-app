@@ -432,15 +432,15 @@ final class ConverterViewModel: ObservableObject {
         case .ready:
             return ""
         case .notInstalled:
-            return "Converting to a Safari extension needs Apple's full Xcode, and only Apple can hand that out, so Viaduct can't bundle it. It's free on the App Store, though it's a big download. On a macOS beta the App Store copy usually refuses to run — grab the matching Xcode beta from Apple's developer downloads instead. Either way, Viaduct picks it up on its own."
+            return "Building a Safari extension needs Apple's Xcode, so Viaduct can't bundle it. It's free on the App Store."
         case let .notSelected(dev):
             // Name the copy: with an Xcode beta beside a release, "point macOS at
             // Xcode" is otherwise a blind switch between two different Xcodes.
-            return "\(Self.appName(developerDir: dev)) is installed, but macOS is still pointed at the Command Line Tools, so the Safari packager can't be found. Viaduct can point macOS at it for you; you'll be asked for your password."
+            return "\(Self.appName(developerDir: dev)) is installed, but macOS is still pointed at the Command Line Tools. Viaduct can point macOS at it for you; you'll be asked for your password."
         case .setupIncomplete:
             return "Xcode hasn't finished its first-launch setup, so nothing can build yet. Viaduct can accept the license and install the missing components. You'll be asked for your password, and it takes a few minutes."
         case .installIncomplete:
-            return "macOS is pointed at Xcode, but this copy doesn't include the Safari extension packager, so the install is incomplete or damaged. Reinstalling Xcode should sort it out."
+            return "This copy of Xcode is missing the pieces that build Safari extensions, so the install is incomplete or damaged. Reinstalling Xcode should sort it out."
         }
     }
 
