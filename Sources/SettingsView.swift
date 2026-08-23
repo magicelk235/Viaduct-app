@@ -38,6 +38,7 @@ struct SettingsView: View {
                     appUpdateCard
                     cliCard
                     signingCard
+                    storeCard
                     warningsCard
                     supportCard
                     historyCard
@@ -48,7 +49,7 @@ struct SettingsView: View {
         .frame(width: 460, height: 600)
         // Settings can be the first window a menu-bar-resident launch ever
         // shows, so the account row can't rely on the launch hook having run.
-        .task { vm.refreshSigningTeams() }
+        .task { vm.refreshSigningTeams(); vm.refreshStoreButton() }
     }
 
     // MARK: - Cards
@@ -257,6 +258,32 @@ struct SettingsView: View {
                      destination: URL(string: "https://magicelk235.gumroad.com/l/viaduct")!)
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.accentBlue)
+            }
+        }
+    }
+
+    /// The bundled Safari extension that adds an Add-to-Safari button to
+    /// Chrome Web Store pages. Safari ships it off, so this card is its
+    /// permanent home: state, the switch, and (once on) a store shortcut.
+    private var storeCard: some View {
+        let enabled = vm.storeButtonEnabled == true
+        return SettingsSection(title: "Chrome Web Store", symbol: "safari") {
+            if enabled {
+                StatusBadge(text: "ON", color: Theme.Colors.accentGreen)
+            }
+        } content: {
+            Text(enabled
+                 ? "Chrome Web Store pages show an Add to Safari button, so extensions install straight from the store."
+                 : "Viaduct can add an Add to Safari button to Chrome Web Store pages, so extensions install straight from the store. Turn it on once in Safari.")
+                .font(Theme.Font.caption())
+                .foregroundStyle(Theme.Colors.mute)
+                .fixedSize(horizontal: false, vertical: true)
+            if enabled {
+                Button("Open the Chrome Web Store") { StoreButton.openWebStore() }
+                    .buttonStyle(.raycastTertiary)
+            } else {
+                Button("Turn On in Safari") { StoreButton.openSafariSettings() }
+                    .buttonStyle(.raycastPrimary)
             }
         }
     }

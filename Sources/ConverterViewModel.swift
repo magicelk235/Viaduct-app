@@ -43,6 +43,12 @@ final class ConverterViewModel: ObservableObject {
     /// Set when an unlicensed user hits the free-quota wall; drives the paywall sheet.
     @Published var showPaywall = false
 
+    /// Whether the bundled Safari extension (the Add-to-Safari button on
+    /// Chrome Web Store pages) is enabled in Safari. nil until Safari answers,
+    /// which the UI reads as off. Refreshed at launch and on focus regain, so
+    /// enabling it in Safari shows up the moment the user switches back.
+    @Published var storeButtonEnabled: Bool?
+
     /// Set when a conversion needs full Xcode but it isn't installed/selected.
     /// Drives the honest "install Xcode" card instead of a silent build failure.
     @Published var needsXcode = false
@@ -152,6 +158,15 @@ final class ConverterViewModel: ObservableObject {
 
     init() {
         installedVersion = updater.installedVersion ?? "not installed"
+        // The store-button heartbeat: the appex relays the extension's hello
+        // over the distributed bus whenever Safari starts its worker. Stamp it
+        // and flip the flag, so an open "turn it on" popup stands down live.
+        DistributedNotificationCenter.default().addObserver(
+            forName: StoreButton.aliveNote, object: nil, queue: .main
+        ) { [weak self] _ in
+            StoreButton.markAlive()
+            self?.storeButtonEnabled = true
+        }
     }
 
     /// Launch hook: make sure the CLI exists (first launch downloads it), keep it
@@ -168,7 +183,14 @@ final class ConverterViewModel: ObservableObject {
         // Forget extensions the user deleted from Finder, regardless of renew state.
         history.pruneDeleted()
         refreshSigningTeams()
+        refreshStoreButton()
         startAutoRenew()
+    }
+
+    /// Re-read the store-button heartbeat (live changes arrive via the
+    /// observer in init).
+    func refreshStoreButton() {
+        storeButtonEnabled = StoreButton.isEnabled
     }
 
     /// Work out which Apple teams this Mac can sign with — which decides whether
@@ -527,6 +549,9 @@ final class ConverterViewModel: ObservableObject {
         // Someone who joined the Developer Program in another window shouldn't
         // have to relaunch to see the year they now sign for.
         refreshSigningTeams()
+        // Same trip: the focus regain after "Turn On in Safari" is when the
+        // store-button nudge learns it can stand down.
+        refreshStoreButton()
         // Signing into Xcode and switching back should be enough. Resume the
         // parked conversion the same way the Xcode gate's one-click fixes do.
         if needsAppleAccount, SigningAccount.xcodeTeamPresent() {

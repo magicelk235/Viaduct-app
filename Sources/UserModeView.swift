@@ -14,6 +14,11 @@ struct UserModeView: View {
     @State private var isTargeted = false
     @State private var copiedLog = false
 
+    /// The store-button popup: shown once, the first time Safari reports the
+    /// bundled extension off. `seen` persists so it never nags twice.
+    @AppStorage("storeButtonPromptSeen") private var storePromptSeen = false
+    @State private var showStorePrompt = false
+
     /// Show the recent list only on the calm idle/done screens, never mid-convert.
     private var showsHistory: Bool {
         vm.phase == .idle || vm.phase == .done
@@ -41,11 +46,35 @@ struct UserModeView: View {
             .padding(.vertical, Theme.Space.xl)
         }
         .frame(minWidth: 540, minHeight: 600)
+        .onAppear {
+            // Offer the store button once. Heartbeat state is synchronous, so
+            // this can't race the launch hook.
+            if !storePromptSeen, !StoreButton.isEnabled, vm.phase == .idle {
+                showStorePrompt = true
+            }
+        }
         .onDrop(of: [.fileURL], isTargeted: $isTargeted.animation(.easeInOut(duration: 0.15)),
                 perform: handleDrop)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.phase)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.options.inputPath)
-        .onChange(of: vm.phase) { _ in copiedLog = false }
+        .onChange(of: vm.phase) { phase in
+            copiedLog = false
+            // A conversion started (drop, store install): the popup would sit
+            // over the converting card, so it steps aside. Not marked seen —
+            // it may offer again next launch.
+            if phase != .idle { showStorePrompt = false }
+        }
+        // The heartbeat arrived (user flipped the switch in Safari): the
+        // popup's job is done, close it under them.
+        .onChange(of: vm.storeButtonEnabled) { enabled in
+            if enabled == true { showStorePrompt = false }
+        }
+        .sheet(isPresented: $showStorePrompt) {
+            StoreButtonPrompt {
+                storePromptSeen = true
+                showStorePrompt = false
+            }
+        }
     }
 
     // MARK: - Header
@@ -693,4 +722,52 @@ struct DoneBadge: View {
             .background(Capsule().fill(Theme.Colors.accentGreen))
     }
 }
+
+/// One-time popup pointing at the app's second install path: the bundled
+/// Safari extension that puts an Add to Safari button on Chrome Web Store
+/// pages. Safari ships it off and nothing else in the app says it exists.
+struct StoreButtonPrompt: View {
+    /// Called on any explicit dismissal, so the popup never shows again.
+    let dismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Theme.Colors.canvas.ignoresSafeArea()
+
+
+            VStack(spacing: Theme.Space.lg) {
+                Image(systemName: "safari")
+                    .font(.system(size: 34, weight: .regular))
+                    .foregroundStyle(Theme.Colors.primary)
+                    .padding(.bottom, Theme.Space.xs)
+
+                Text("Install straight from the Chrome Web Store")
+                    .font(Theme.Font.headingMD())
+                    .foregroundStyle(Theme.Colors.ink)
+                    .multilineTextAlignment(.center)
+
+                Text("Viaduct adds an Add to Safari button to Chrome Web Store pages. Turn it on once in Safari, and extensions install with one click.")
+                    .font(Theme.Font.caption())
+                    .foregroundStyle(Theme.Colors.mute)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+
+                Button {
+                    StoreButton.openSafariSettings()
+                } label: {
+                    Text("Turn On in Safari")
+                        .frame(maxWidth: 360)
+                }
+                .buttonStyle(.raycastPrimary)
+
+                Button("Not Now", action: dismiss)
+                    .buttonStyle(.raycastGhost)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(Theme.Space.xxl)
+        }
+        .frame(width: 460)
+    }
+}
+
 

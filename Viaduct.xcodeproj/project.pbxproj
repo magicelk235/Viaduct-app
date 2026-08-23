@@ -37,6 +37,7 @@
 		E827408EA78A95108D5F62D2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2B7969794EF0B93CC897FE /* SettingsView.swift */; };
 		EB7FA085A32BE26506778407 /* bin in Resources */ = {isa = PBXBuildFile; fileRef = 5B3B349223B937D244E01611 /* bin */; };
 		ED4A5BBC553EBEBAFA69D002 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3D4685CB7B7673040D344CE7 /* Sparkle */; };
+		F315EA79EDAD1B804861FE08 /* StoreButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35BF1999828B1064D26A9212 /* StoreButton.swift */; };
 		FB447A2CB916C3211D0E4B8D /* ExtensionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */; };
 /* End PBXBuildFile section */
 
@@ -68,6 +69,7 @@
 		09BE5C61C57681BCE4413B57 /* CLIRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIRunner.swift; sourceTree = "<group>"; };
 		129FB30329F2C8050E59D618 /* ViaductExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ViaductExtension.entitlements; sourceTree = "<group>"; };
 		330566E75A535162514BBFA6 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		35BF1999828B1064D26A9212 /* StoreButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreButton.swift; sourceTree = "<group>"; };
 		44B8FE947E5A6B0F21B397CE /* RenewalPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenewalPolicy.swift; sourceTree = "<group>"; };
 		46A0D6A732F9ADA35FA28A8D /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
 		4706037E93DBAA4A3F086E94 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 				44B8FE947E5A6B0F21B397CE /* RenewalPolicy.swift */,
 				DF2B7969794EF0B93CC897FE /* SettingsView.swift */,
 				9B4CA23E222C7922E7D3DCB0 /* SigningAccount.swift */,
+				35BF1999828B1064D26A9212 /* StoreButton.swift */,
 				614D8805DDE093D020F1D0D7 /* Theme.swift */,
 				FC67CD1790FCD1A2DBD5B113 /* Updater.swift */,
 				D6A5AD59DEEF416F7494A43E /* UserModeView.swift */,
@@ -366,6 +369,7 @@
 				D18DDDAA1015F048BF31B754 /* RenewalPolicy.swift in Sources */,
 				E827408EA78A95108D5F62D2 /* SettingsView.swift in Sources */,
 				9592998665FD64231D84ED72 /* SigningAccount.swift in Sources */,
+				F315EA79EDAD1B804861FE08 /* StoreButton.swift in Sources */,
 				D498F700B216CEF067756D6A /* Theme.swift in Sources */,
 				08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */,
 				64A64A03445710FDDC87DF8C /* UserModeView.swift in Sources */,

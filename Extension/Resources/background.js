@@ -1,3 +1,10 @@
+// Heartbeat: Safari only starts this worker while the extension is enabled,
+// so one hello per start tells the Viaduct app to stop pointing the user at
+// a switch they already flipped. Failure means the app isn't running — fine.
+browser.runtime
+  .sendNativeMessage('com.magicelk235.viaduct.Extension', { type: 'hello' })
+  .catch(() => {});
+
 // Relay: content scripts can't call sendNativeMessage in Safari, so progress
 // polls route through here to the native SafariWebExtensionHandler.
 // sendResponse + `return true` (not a returned Promise) — Safari resolves the

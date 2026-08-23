@@ -21,6 +21,18 @@ public class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         let message = request?.userInfo?[SFExtensionMessageKey] as? [String: Any]
         let type = message?["type"] as? String
 
+        // Heartbeat from background.js, sent every time Safari starts the
+        // extension's worker — i.e. while the extension is enabled. Relayed to
+        // the app (same bus as the progress bridge; name duplicated in
+        // StoreButton.swift) so it stops offering a switch already flipped.
+        if type == "hello" {
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("com.magicelk235.viaduct.storebutton.alive"),
+                object: nil, userInfo: nil, deliverImmediately: true)
+            respond(context, ["ok": true])
+            return
+        }
+
         guard type == "progress" || type == "installed" else {
             respond(context, ["state": "unknown"])
             return
