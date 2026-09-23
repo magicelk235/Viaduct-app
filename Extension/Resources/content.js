@@ -147,24 +147,18 @@ function removeChromePromos() {
   //   2. The "Switch to Chrome?" promo modal, identified by its stable
   //      aria-labelledby="promo-header" (the visible copy is localized, and in
   //      some locales, e.g. Japanese, omits the word "Google" entirely).
-  const bannerBtn = document.querySelector(BANNER_BTN_SEL);
-  if (bannerBtn && bannerBtn.offsetHeight) {
-    // Hide the short banner row that wraps the button, not just the button:
-    // climb to the tallest ancestor still under a banner's height, stopping
-    // before the (tall) page content.
-    let el = bannerBtn, row = null;
-    for (let i = 0; i < 6 && el && el !== document.body; i++) {
-      const h = el.offsetHeight;
-      if (!(h > 0 && h < 120)) break;
-      row = el;
-      el = el.parentElement;
-    }
-    if (row) row.style.display = 'none';
+  // Every match, not just the first: a client-side navigation can leave an
+  // earlier, already-hidden copy in the DOM, and querySelector would return
+  // that one and stop.
+  for (const bannerBtn of document.querySelectorAll(BANNER_BTN_SEL)) {
+    const row = promoRow(bannerBtn);
+    if (row && row.style.display !== 'none') row.style.display = 'none';
   }
 
   let hidModal = false;
   for (const el of document.querySelectorAll('[aria-labelledby="promo-header"]')) {
-    if (!el.offsetHeight) continue;
+    if (promoHidden.has(el)) continue;
+    promoHidden.add(el);
     if (hideChromeModal(el)) hidModal = true;
   }
   // A full-screen modal locks page scroll (inline overflow:hidden); hiding the
@@ -173,6 +167,35 @@ function removeChromePromos() {
     document.documentElement.style.overflow = '';
     document.body.style.overflow = '';
   }
+}
+
+// Modals we've already hidden, so the pass stays idempotent without measuring
+// them (see promoRow: heights are unreliable here).
+const promoHidden = new WeakSet();
+
+// The banner row: climb from the "install Chrome" button to the highest
+// ancestor that still holds nothing but the promo, so the whole blue bar goes,
+// not just its button.
+//
+// The walk can't lean on measured heights. A store page that loads in a tab
+// that isn't visible — a link opened in the background, or Safari's window
+// occluded — reports every height as 0, and the old "is it taller than 0 and
+// shorter than a banner" test then hid nothing at all. Text length is the
+// layout-independent signal: an ancestor that pulls in page content jumps from
+// the banner's one sentence to hundreds of characters.
+function promoRow(btn) {
+  const base = btn.textContent.trim().length; // "Install Chrome" and its translations
+  const limit = Math.max(base * 6, 200);      // room for the banner's own sentence
+  let el = btn, row = null;
+  for (let i = 0; i < 6 && el && el !== document.body; i++) {
+    if (/^(MAIN|SECTION|HEADER|FOOTER|NAV|ASIDE|BODY)$/.test(el.tagName)) break;
+    if (el.textContent.trim().length > limit) break;
+    // Only trust a height that exists: 0 means "not measurable here", not "empty".
+    if (el.offsetHeight > 160) break;
+    row = el;
+    el = el.parentElement;
+  }
+  return row;
 }
 
 // Hide the whole modal overlay (dialog card + dimming backdrop), not just the
@@ -318,7 +341,28 @@ let applyQueued = false;
 function queueApply() {
   if (applyQueued) return;
   applyQueued = true;
-  requestAnimationFrame(() => { applyQueued = false; apply(); });
+  const run = () => {
+    if (!applyQueued) return;
+    applyQueued = false;
+    apply();
+  };
+  // rAF alone stalls forever in a tab that isn't visible: the callback never
+  // runs, `applyQueued` stays latched, and every later mutation is swallowed —
+  // the page keeps the promo banner and never gets an Add to Safari button,
+  // even after the user switches to it. The timer keeps firing there, so
+  // whichever wins does the pass and the other one no-ops.
+  requestAnimationFrame(run);
+  setTimeout(run, 100);
+}
+
+// The store's router swaps the page without a load event, and the promo banner
+// can land a second or two later — after the mutation burst we coalesced into
+// one pass. Treat a URL change like a fresh load and re-run on the same short
+// schedule.
+let lastHref = location.href;
+function onMutation() {
+  if (location.href !== lastHref) settle();
+  else queueApply();
 }
 
 // A full page load finishes differently from an SPA navigation: the server-rendered
@@ -326,6 +370,7 @@ function queueApply() {
 // disabled (Safari can't install to Chrome) — an attribute change with no node churn.
 // So re-run for a few seconds after load instead of trusting the observer to fire.
 function settle() {
+  lastHref = location.href;
   apply();
   for (const ms of [250, 750, 1500, 3000]) setTimeout(apply, ms);
 }
@@ -343,14 +388,14 @@ function start() {
   // label back to "Add to Chrome" until an unrelated mutation happened to fire, so the
   // button flickered between the two labels. Our own relabel only writes when the text
   // actually differs, so watching it can't feed itself.
-  new MutationObserver(queueApply).observe(document.documentElement, {
+  new MutationObserver(onMutation).observe(document.documentElement, {
     childList: true,
     subtree: true,
     characterData: true,
     attributes: true,
     attributeFilter: ['disabled', 'aria-disabled', 'jsname'],
   });
-  window.addEventListener('popstate', apply);
+  window.addEventListener('popstate', settle);
   if (document.readyState === 'complete') settle();
   else window.addEventListener('load', settle, { once: true });
 }
