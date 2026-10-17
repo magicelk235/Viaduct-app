@@ -419,7 +419,9 @@ final class CLIRunner {
                 DispatchQueue.main.async { onLine(line) }
             }
             DispatchQueue.main.async {
-                self.process = nil
+                // A cancelled process can exit after the next run has started;
+                // dropping that run's handle would make it uncancellable.
+                if self.process === proc { self.process = nil }
                 onExit(proc.terminationStatus)
             }
         }

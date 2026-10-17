@@ -9,7 +9,6 @@ import UniformTypeIdentifiers
 struct UserModeView: View {
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject private var license = LicenseManager.shared
-    @Binding var mode: AppMode
 
     @State private var isTargeted = false
     @State private var copiedLog = false
@@ -220,10 +219,15 @@ struct UserModeView: View {
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                } else if let version = info.version, !version.isEmpty {
-                    Text("Version \(version)")
-                        .font(Theme.Font.caption())
-                        .foregroundStyle(Theme.Colors.mute)
+                } else if let verdict = vm.compatibility {
+                    CompatibilityNotice(verdict: verdict)
+                } else {
+                    if let version = info.version, !version.isEmpty {
+                        Text("Version \(version)")
+                            .font(Theme.Font.caption())
+                            .foregroundStyle(Theme.Colors.mute)
+                    }
+                    OfficialVersionBanner(path: vm.options.inputPath, storeId: vm.pendingStoreId)
                 }
             }
             .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -263,7 +267,7 @@ struct UserModeView: View {
     }
 
     // Failed: red mark + which step broke + summary + a "Copy log" affordance.
-    // Recovery actions (Try again / Developer mode) live in the CTA block below.
+    // Recovery actions (Try again / Report) live in the CTA block below.
     private var failedCard: some View {
         VStack(spacing: Theme.Space.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -298,6 +302,7 @@ struct UserModeView: View {
     /// Name the step that failed, pulled from how far `phase` advanced before
     /// the CLI bailed. Falls back to a generic headline.
     private var failedHeadline: String {
+        if let verdict = vm.compatibility { return verdict.title }
         if vm.needsXcode {
             switch vm.xcodeStatus {
             case .notSelected:       return "macOS isn't pointed at Xcode yet"
@@ -318,9 +323,25 @@ struct UserModeView: View {
     private var ctaBlock: some View {
         switch vm.phase {
         case .idle where vm.options.inputPath.isEmpty:
-            Button("Choose extension") { vm.pickInput() }
+            Button("Choose extension") { vm.pickInput(allowBatch: true) }
                 .buttonStyle(.raycastPrimary)
                 .frame(maxWidth: .infinity)
+
+        // Nothing to retry and nothing to set up: the extension itself is the
+        // problem, so the way forward is a different one.
+        case .idle where vm.compatibility != nil, .failed where vm.compatibility != nil:
+            VStack(spacing: Theme.Space.sm) {
+                Button {
+                    vm.resetUserFlow()
+                    vm.pickInput(allowBatch: true)
+                } label: {
+                    Text("Choose another extension")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.raycastPrimary)
+                Button("Think this is wrong? Report it") { NSWorkspace.shared.open(failureReportURL) }
+                    .buttonStyle(.raycastTertiary)
+            }
 
         case .idle:
             Button { vm.userConvert() } label: {
@@ -407,16 +428,12 @@ struct UserModeView: View {
 
         case .failed:
             VStack(spacing: Theme.Space.sm) {
-                HStack(spacing: Theme.Space.md) {
-                    Button("Try again") { vm.resetUserFlow() }
-                        .buttonStyle(.raycastTertiary)
-                    Button("Developer mode") { mode = .developer }
-                        .buttonStyle(.raycastPrimary)
+                Button { vm.resetUserFlow() } label: {
+                    Text("Try again")
+                        .frame(maxWidth: .infinity)
                 }
-                Button("Report this issue") {
-                    NSWorkspace.shared.open(URL(string:
-                        "https://github.com/magicelk235/Viaduct-CLI/issues/new?template=conversion-failure.yml")!)
-                }
+                .buttonStyle(.raycastPrimary)
+                Button("Report this issue") { NSWorkspace.shared.open(failureReportURL) }
                 .buttonStyle(.raycastTertiary)
                 .frame(maxWidth: .infinity)
             }
@@ -434,7 +451,7 @@ struct UserModeView: View {
     private func reselect() {
         if vm.isRunning { vm.cancel() }
         vm.resetUserFlow()
-        vm.pickInput()
+        vm.pickInput(allowBatch: true)
     }
 
     /// Label for a one-click Xcode fix. `-runFirstLaunch` installs packages and
@@ -475,10 +492,30 @@ struct UserModeView: View {
         return info.name
     }
 
+    /// The CLI's failure form, filled in when that's switched on.
+    private var failureReportURL: URL {
+        let name = vm.extInfo.map(displayName)
+            ?? URL(fileURLWithPath: vm.options.inputPath).deletingPathExtension().lastPathComponent
+        // A verdict from the check alone has no log; the analyzer's findings
+        // are what someone needs to tell whether it was right.
+        let log = vm.phase == .failed ? vm.logLines : (vm.compatibility?.details ?? vm.logLines)
+        return IssueReport.conversionFailure(
+            extensionName: name, version: vm.extInfo?.version,
+            storeId: vm.pendingStoreId ?? ExtensionIdentity.chromeId(forSource: vm.options.inputPath),
+            summary: vm.compatibility?.title ?? vm.failureSummary, log: log, cliVersion: vm.installedVersion)
+    }
+
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         guard vm.phase == .idle || vm.phase == .done || vm.phase == .failed else { return false }
-        guard let provider = providers.first else { return false }
-        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+        guard !providers.isEmpty else { return false }
+        if providers.count > 1 {
+            BatchConvert.loadURLs(from: providers) { urls in
+                if vm.phase != .idle { vm.resetUserFlow() }
+                BatchConvert.start(urls, vm: vm)
+            }
+            return true
+        }
+        _ = providers[0].loadObject(ofClass: URL.self) { url, _ in
             guard let url else { return }
             DispatchQueue.main.async {
                 if vm.phase != .idle { vm.resetUserFlow() }
@@ -624,6 +661,12 @@ struct HistoryDetailSheet: View {
                         dismiss()
                     }
                     .buttonStyle(.raycastGhost)
+                    Button("Report a Problem") {
+                        NSWorkspace.shared.open(IssueReport.convertedButBroken(
+                            extensionName: record.name, version: record.version, storeId: record.storeId))
+                    }
+                    .buttonStyle(.raycastGhost)
+                    .help("It installed but doesn't work right in Safari")
                     Spacer()
                     Button("Close") { dismiss() }
                         .buttonStyle(.raycastGhost)

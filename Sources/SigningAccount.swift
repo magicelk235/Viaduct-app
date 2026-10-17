@@ -1,60 +1,19 @@
 import Foundation
 import Security
 
-/// Which kind of Apple account this Mac signs with, and therefore how long a
-/// converted extension keeps working: Apple gives a free Apple ID a seven-day
-/// signing window, while a paid Developer Program membership gets a year.
-///
-/// Treating every Mac as the free case rebuilt a paying developer's extensions
-/// fifty-odd times a year for nothing, and told them their extension expires in
-/// a week when it doesn't — so the account is classified once per build and each
-/// history record carries the expiry that came out of it.
+/// Which kind of Apple account this Mac signs with: a free Apple ID or a paid
+/// Developer Program membership. On a Mac holding both, conversions sign with
+/// the paid one.
 enum SigningAccount: String, Codable {
     /// A free Apple ID. Xcode calls it a personal team.
     case free
     /// A paid Apple Developer Program membership.
     case paid
 
-    /// How long a fresh signature from this account holds.
-    var signatureLifetime: TimeInterval {
-        switch self {
-        case .free: return RenewalPolicy.freeSignatureLifetime
-        case .paid: return RenewalPolicy.paidSignatureLifetime
-        }
-    }
-
-    /// The account as a settings row names it — short, since it sits in a value
-    /// slot next to the lifetime.
-    var label: String {
-        switch self {
-        case .free: return "Free Apple ID"
-        case .paid: return "Developer"
-        }
-    }
-
-    /// The same thing in a sentence.
-    var article: String {
-        switch self {
-        case .free: return "a free Apple ID"
-        case .paid: return "an Apple Developer account"
-        }
-    }
-
-    /// That lifetime in the words the UI uses.
-    var lifetimeText: String {
-        switch self {
-        case .free: return "7 days"
-        case .paid: return "1 year"
-        }
-    }
-
     // MARK: - Which team signs, and what kind it is
 
     /// A team this Mac might sign with. `account` is nil when whatever named the
-    /// team can't tell a free Apple ID from a paid membership — read everywhere
-    /// as "assume free": re-signing a year-long signature after a week only
-    /// costs a rebuild, while assuming a year on a free account means Safari
-    /// drops the extension with nothing scheduled to bring it back.
+    /// team can't tell a free Apple ID from a paid membership.
     struct Team: Hashable, Identifiable {
         let id: String
         let account: SigningAccount?
@@ -124,28 +83,11 @@ enum SigningAccount: String, Codable {
         return certs[0]
     }
 
-    /// UserDefaults key behind the pinned team.
-    private static let pinnedTeamKey = "signingTeamID"
-
-    /// The team id the user pinned in the signing picker, or "" when they never
-    /// touched it — the normal case, which leaves the choice to `signingTeam`.
-    /// Stored rather than passed around because auto-renew rebuilds hours later
-    /// with no view model in reach, and a renewal that re-signs with a different
-    /// account than the conversion did changes when the extension expires.
-    static var pinnedTeamID: String {
-        get { UserDefaults.standard.string(forKey: pinnedTeamKey) ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: pinnedTeamKey) }
-    }
-
-    /// The team a build signs with: the pinned one while it's still signable,
-    /// otherwise a paid membership ahead of a personal team. Preferring paid
-    /// isn't cosmetic — a Mac holding both signed with whichever team Xcode
-    /// happened to cache first, so a paying developer could land a seven-day
-    /// signature and a weekly rebuild of every extension they own.
-    static func signingTeam(from teams: [Team], pinned: String = pinnedTeamID) -> Team? {
-        teams.first { $0.id == pinned }
-            ?? teams.first { $0.account == .paid }
-            ?? teams.first
+    /// The team a build signs with: a paid membership ahead of a personal team,
+    /// so a Mac holding both doesn't sign with whichever one Xcode happened to
+    /// cache first.
+    static func signingTeam(from teams: [Team]) -> Team? {
+        teams.first { $0.account == .paid } ?? teams.first
     }
 
     /// Same, detected fresh.
@@ -368,33 +310,20 @@ enum SigningAccount: String, Codable {
         let teamID: String?
     }
 
-    /// What a finished build produced: when its signature stops being trusted,
-    /// and whether Safari will drop the extension on every quit.
+    /// What a finished build produced: whether Safari will turn the extension
+    /// off on every quit.
     struct Build: Equatable {
         let adHoc: Bool
-        let expiry: Date
     }
 
     /// Inspect a build that just landed. The CLI (1.11.4 and up) finishes a run
     /// ad-hoc when the team it detected turns out to be unable to sign, instead
-    /// of throwing the conversion away — so a successful run can leave an
-    /// artifact with no Apple signature at all, and stamping a paid account's
-    /// year on it would park the extension for twelve months while Safari drops
-    /// it at the first quit. Read the artifact; fall back to the account only
-    /// for what the artifact can't say.
-    static func inspectBuild(installedAppPath: String?, signedAt: Date,
-                             account: SigningAccount?) -> Build {
+    /// of throwing the conversion away — so a successful run can still leave an
+    /// artifact with no Apple signature at all. Read the artifact rather than
+    /// trusting what the run asked for.
+    static func inspectBuild(installedAppPath: String?) -> Build {
         let signature = installedAppPath.flatMap { installedSignature(appPath: $0) }
-        guard signature?.adHoc != true else {
-            // An ad-hoc signature has no Apple window to run out, so the date is
-            // only a rebuild cadence: keep it on the weekly one, since a rebuild
-            // is what picks up a team once the user has one.
-            return Build(adHoc: true,
-                         expiry: signedAt.addingTimeInterval(RenewalPolicy.freeSignatureLifetime))
-        }
-        return Build(adHoc: false,
-                     expiry: signatureExpiry(installedAppPath: installedAppPath,
-                                             signedAt: signedAt, account: account))
+        return Build(adHoc: signature?.adHoc == true)
     }
 
     /// How the installed extension is signed, or nil when nothing readable is
@@ -428,44 +357,6 @@ enum SigningAccount: String, Codable {
             .contentsOfDirectory(atPath: plugIns.path)) ?? []
         guard let appex = contents.first(where: { $0.hasSuffix(".appex") }) else { return app }
         return plugIns.appendingPathComponent(appex)
-    }
-
-    // MARK: - When a build's signature lapses
-
-    /// When a build signed just now stops being trusted. A provisioning profile
-    /// embedded in the build carries Apple's own expiry date, so it wins when
-    /// it's there; otherwise the date is the account's lifetime counted from the
-    /// signing. Being a day or two out doesn't matter — renewal looks two days
-    /// ahead of expiry and caps itself at one rebuild a week.
-    private static func signatureExpiry(installedAppPath: String?, signedAt: Date,
-                                        account: SigningAccount?) -> Date {
-        if let installedAppPath, let embedded = embeddedProfileExpiry(inApp: installedAppPath) {
-            return embedded
-        }
-        return signedAt.addingTimeInterval((account ?? .free).signatureLifetime)
-    }
-
-    /// Earliest expiry among the provisioning profiles embedded in a converted
-    /// .app and its extension appexes — whichever lapses first is when Safari
-    /// stops loading the extension. Nil when nothing embedded a profile, which
-    /// is the common case for a Mac build (the App Sandbox entitlement doesn't
-    /// require one).
-    private static func embeddedProfileExpiry(inApp appPath: String) -> Date? {
-        let app = URL(fileURLWithPath: appPath)
-        var profiles = [app.appendingPathComponent("Contents/embedded.provisionprofile")]
-        let plugIns = app.appendingPathComponent("Contents/PlugIns")
-        let contents = (try? FileManager.default
-            .contentsOfDirectory(atPath: plugIns.path)) ?? []
-        profiles += contents.filter { $0.hasSuffix(".appex") }.map {
-            plugIns.appendingPathComponent($0)
-                .appendingPathComponent("Contents/embedded.provisionprofile")
-        }
-        return profiles.compactMap(profileExpiry(at:)).min()
-    }
-
-    /// ExpirationDate out of a `.provisionprofile`.
-    static func profileExpiry(at url: URL) -> Date? {
-        profilePlist(at: url)?["ExpirationDate"] as? Date
     }
 
     /// The payload plist inside a `.provisionprofile`. The file is a CMS blob

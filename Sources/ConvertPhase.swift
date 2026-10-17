@@ -1,16 +1,5 @@
 import Foundation
 
-enum AppMode: String, CaseIterable, Identifiable {
-    case user, developer
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .user: return "User"
-        case .developer: return "Developer"
-        }
-    }
-}
-
 /// High-level phases the user-mode UI animates through, derived by parsing CLI output.
 enum ConvertPhase: Int, CaseIterable, Identifiable {
     case idle, extracting, reading, staging, packaging, building, installing, finishing, done, failed
@@ -50,7 +39,7 @@ enum ConvertPhase: Int, CaseIterable, Identifiable {
         case .installing: return "Registering with Safari"
         case .finishing:  return "Almost there"
         case .done:       return "Turn it on in Safari → Settings → Extensions"
-        case .failed:     return "Switch to Developer mode for the full log"
+        case .failed:     return "Copy the log to see what went wrong"
         }
     }
 

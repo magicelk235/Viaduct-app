@@ -1,18 +1,15 @@
-// Standalone self-check for RenewalPolicy's scheduling decisions and the
-// free-vs-paid Apple account classification they key off.
-// Run: swift dmg/renewal-policy-selfcheck.swift
+// Standalone self-check for UpdatePolicy's scheduling decisions and the
+// free-vs-paid Apple account classification that picks the signing team.
+// Run: swift dmg/update-policy-selfcheck.swift
 //
 // The pure functions are duplicated here (not imported) because the app has no
 // test target and these are dependency-free date math and string matching. If
-// Sources/RenewalPolicy.swift or Sources/SigningAccount.swift changes, mirror
+// Sources/UpdatePolicy.swift or Sources/SigningAccount.swift changes, mirror
 // the change here. Kept as a loose script per this repo's convention (see the
 // other dmg/*.swift tools).
 import Foundation
 
-enum RenewalPolicy {
-    static let freeSignatureLifetime: TimeInterval = 7 * 24 * 3600
-    static let paidSignatureLifetime: TimeInterval = 365 * 24 * 3600
-    static let renewWindow: TimeInterval = 2 * 24 * 3600
+enum UpdatePolicy {
     static let weeklyGap: TimeInterval = 7 * 24 * 3600
 
     static func versionChanged(stored: String?, latest: String) -> Bool {
@@ -23,25 +20,11 @@ enum RenewalPolicy {
         guard let lastCheck else { return true }
         return now.timeIntervalSince(lastCheck) >= gap
     }
-    static func dueForRenewal(expiresAt: Date, lastBuild: Date, now: Date,
-                              window: TimeInterval = renewWindow,
-                              minGap: TimeInterval = weeklyGap) -> Bool {
-        let nearExpiry = expiresAt <= now.addingTimeInterval(window)
-        let rebuiltThisWeek = now.timeIntervalSince(lastBuild) < minGap
-        return nearExpiry && !rebuiltThisWeek
-    }
 }
 
 enum SigningAccount: String {
     case free
     case paid
-
-    var signatureLifetime: TimeInterval {
-        switch self {
-        case .free: return RenewalPolicy.freeSignatureLifetime
-        case .paid: return RenewalPolicy.paidSignatureLifetime
-        }
-    }
 
     struct Team: Equatable {
         let id: String
@@ -98,10 +81,8 @@ enum SigningAccount: String {
         }
     }
 
-    static func signingTeam(from teams: [Team], pinned: String) -> Team? {
-        teams.first { $0.id == pinned }
-            ?? teams.first { $0.account == .paid }
-            ?? teams.first
+    static func signingTeam(from teams: [Team]) -> Team? {
+        teams.first { $0.account == .paid } ?? teams.first
     }
 
     static func account(profileSpan span: TimeInterval) -> SigningAccount {
@@ -113,29 +94,18 @@ let now = Date()
 let day: TimeInterval = 24 * 3600
 
 // versionChanged
-assert(RenewalPolicy.versionChanged(stored: "1.2.0", latest: "1.3.0") == true)
-assert(RenewalPolicy.versionChanged(stored: "1.2.0", latest: "1.2.0") == false)
-assert(RenewalPolicy.versionChanged(stored: nil, latest: "1.0.0") == true,
+assert(UpdatePolicy.versionChanged(stored: "1.2.0", latest: "1.3.0") == true)
+assert(UpdatePolicy.versionChanged(stored: "1.2.0", latest: "1.2.0") == false)
+assert(UpdatePolicy.versionChanged(stored: nil, latest: "1.0.0") == true,
        "nil stored → unknown → treat as changed")
 
 // dueForUpdateCheck (weekly gate)
-assert(RenewalPolicy.dueForUpdateCheck(lastCheck: nil, now: now) == true,
+assert(UpdatePolicy.dueForUpdateCheck(lastCheck: nil, now: now) == true,
        "never checked → due")
-assert(RenewalPolicy.dueForUpdateCheck(lastCheck: now.addingTimeInterval(-3 * day), now: now) == false,
+assert(UpdatePolicy.dueForUpdateCheck(lastCheck: now.addingTimeInterval(-3 * day), now: now) == false,
        "checked 3 days ago → not due (weekly)")
-assert(RenewalPolicy.dueForUpdateCheck(lastCheck: now.addingTimeInterval(-8 * day), now: now) == true,
+assert(UpdatePolicy.dueForUpdateCheck(lastCheck: now.addingTimeInterval(-8 * day), now: now) == true,
        "checked 8 days ago → due")
-
-// dueForRenewal (near expiry AND not rebuilt this week / once-a-week cap)
-assert(RenewalPolicy.dueForRenewal(expiresAt: now.addingTimeInterval(1 * day),
-                                   lastBuild: now.addingTimeInterval(-8 * day), now: now) == true,
-       "near expiry, not rebuilt this week → due")
-assert(RenewalPolicy.dueForRenewal(expiresAt: now.addingTimeInterval(5 * day),
-                                   lastBuild: now.addingTimeInterval(-8 * day), now: now) == false,
-       "not near expiry → not due")
-assert(RenewalPolicy.dueForRenewal(expiresAt: now.addingTimeInterval(1 * day),
-                                   lastBuild: now.addingTimeInterval(-2 * day), now: now) == false,
-       "rebuilt 2 days ago → once-a-week cap skips it")
 
 // teams(inTeamDump:) — Xcode's team cache, where isFreeProvisioningTeam is
 // Apple's own verdict and the first team listed is the one the CLI signs with.
@@ -234,30 +204,14 @@ assert(SigningAccount.merge(cached: [], certs: [certDev],
         == [SigningAccount.Team(id: certDev.id, account: .paid)],
        "a team no nominating source can classify takes the verdict the profile carries")
 
-// signingTeam(from:pinned:) — which of those actually signs. Preferring paid is
-// the whole point: a Mac with both used to sign with whichever team Xcode
-// cached first, handing a paying developer a seven-day signature.
-assert(SigningAccount.signingTeam(from: [cachedFree, certPaid], pinned: "") == certPaid,
-       "no pin → the paid membership signs, even though the personal team is listed first")
-assert(SigningAccount.signingTeam(from: [cachedFree, certPaid], pinned: cachedFree.id) == cachedFree,
-       "a pinned team wins, including a deliberate pin to the personal one")
-assert(SigningAccount.signingTeam(from: [cachedFree, certPaid], pinned: "ZZ99YY88XX") == certPaid,
-       "a pin to a team this Mac no longer has falls back to the best one it does")
-assert(SigningAccount.signingTeam(from: [certDev], pinned: "") == certDev,
+// signingTeam(from:) — which of those actually signs: the paid membership
+// ahead of a personal team, so a Mac holding both doesn't sign with whichever
+// team Xcode happened to cache first.
+assert(SigningAccount.signingTeam(from: [cachedFree, certPaid]) == certPaid,
+       "the paid membership signs, even though the personal team is listed first")
+assert(SigningAccount.signingTeam(from: [certDev]) == certDev,
        "nothing classified → the only team there is")
-assert(SigningAccount.signingTeam(from: [], pinned: "") == nil,
-       "no team at all → ad-hoc, and no picker to show")
+assert(SigningAccount.signingTeam(from: []) == nil,
+       "no team at all → ad-hoc")
 
-// A paid signature outlives the renew window by a year, so nothing is due; the
-// same build on a free account is due two days before its week is up.
-let paidSigned = now.addingTimeInterval(-8 * day)
-assert(RenewalPolicy.dueForRenewal(
-    expiresAt: paidSigned.addingTimeInterval(SigningAccount.paid.signatureLifetime),
-    lastBuild: paidSigned, now: now) == false,
-       "paid account signed 8 days ago → nowhere near its year → not due")
-assert(RenewalPolicy.dueForRenewal(
-    expiresAt: paidSigned.addingTimeInterval(SigningAccount.free.signatureLifetime),
-    lastBuild: paidSigned, now: now) == true,
-       "free account signed 8 days ago → past its week → due")
-
-print("RenewalPolicy self-check: all assertions passed ✓")
+print("UpdatePolicy self-check: all assertions passed ✓")

@@ -37,6 +37,9 @@ final class LicenseManager: ObservableObject {
 
     @Published private(set) var state: State = .unknown
     @Published var lastError: String?
+    /// Whether the launch check has an answer yet. Separate from `state`,
+    /// which also reads `.checking` while a typed key is being verified.
+    @Published private(set) var hasLaunchAnswer = false
 
     // MARK: - License storage
     //
@@ -49,12 +52,14 @@ final class LicenseManager: ObservableObject {
     // friction, so a file it is. File over Keychain — the key is a
     // purchase receipt, not a password.
 
-    /// ~/Library/Application Support/Viaduct/license (created lazily on first write).
-    private static let licenseFile: URL = {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    /// ~/Library/Application Support/Viaduct. Its creation date doubles as the
+    /// install date: the CLI is installed there on first launch.
+    private static let supportDir: URL =
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Viaduct", isDirectory: true)
-        return dir.appendingPathComponent("license")
-    }()
+
+    /// ~/Library/Application Support/Viaduct/license (created lazily on first write).
+    private static let licenseFile = supportDir.appendingPathComponent("license")
 
     private var storedKey: String? {
         get {
@@ -127,6 +132,39 @@ final class LicenseManager: ObservableObject {
         freeConversionsUsed += 1
     }
 
+    // MARK: - Checkout
+
+    /// Where a Buy link was clicked, reported with the purchase.
+    enum CheckoutSource: String {
+        case paywall, settings
+    }
+
+    /// Gumroad checkout link. `wanted=true` skips the product page and opens
+    /// the payment form. The other query items are anonymous usage counts;
+    /// Gumroad attaches them to the sale as `url_params`. Keep this list in
+    /// sync with the privacy page.
+    func checkoutURL(source: CheckoutSource, extensionCount: Int) -> URL {
+        var items = [
+            URLQueryItem(name: "wanted", value: "true"),
+            URLQueryItem(name: "conversions", value: String(freeConversionsUsed)),
+            URLQueryItem(name: "installed", value: String(extensionCount)),
+        ]
+        if let created = try? Self.supportDir.resourceValues(forKeys: [.creationDateKey]).creationDate {
+            let days = Calendar.current.dateComponents([.day], from: created, to: Date()).day ?? 0
+            items.append(URLQueryItem(name: "days", value: String(max(0, days))))
+        }
+        items.append(URLQueryItem(name: "source", value: source.rawValue))
+        if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+            items.append(URLQueryItem(name: "app", value: version))
+        }
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        items.append(URLQueryItem(name: "macos", value: "\(os.majorVersion).\(os.minorVersion)"))
+
+        var components = URLComponents(string: "https://magicelk235.gumroad.com/l/viaduct")!
+        components.queryItems = items
+        return components.url!
+    }
+
     // MARK: - Launch check
 
     /// Decide initial state. If we have a stored key, re-verify online;
@@ -134,10 +172,12 @@ final class LicenseManager: ObservableObject {
     func bootstrap() {
         guard let key = storedKey, !key.isEmpty else {
             state = .unlicensed
+            hasLaunchAnswer = true
             return
         }
         state = .checking
         Task {
+            defer { hasLaunchAnswer = true }
             do {
                 // Don't bump the uses counter on a routine launch re-check.
                 try await verify(key: key, incrementUses: false)

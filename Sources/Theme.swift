@@ -355,6 +355,8 @@ struct RaycastPrimaryButtonStyle: ButtonStyle {
 
 /// Mid-emphasis action — clear interactive Liquid Glass with a hairline edge.
 struct RaycastTertiaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.Font.button())
@@ -367,6 +369,7 @@ struct RaycastTertiaryButtonStyle: ButtonStyle {
                     .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 1))
             .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(isEnabled ? 1 : 0.4)
             .animation(.spring(response: 0.22, dampingFraction: 0.75), value: configuration.isPressed)
     }
 }
@@ -454,53 +457,3 @@ struct GlassToggleStyle: ToggleStyle {
 extension ToggleStyle where Self == GlassToggleStyle {
     static var glass: GlassToggleStyle { .init() }
 }
-
-// MARK: - Pill-tab segmented control
-//
-// DESIGN.md's `pill-tab`: a transparent chip strip where the active chip lifts
-// one surface notch onto glass. Replaces raw AppKit segmented/radio pickers so
-// the whole window stays in one continuous dark mode.
-
-/// A segmented control rendered as Raycast pill-tab chips. Generic over any
-/// `CaseIterable & Identifiable` enum with a `label`.
-struct PillTabPicker<T: Hashable & Identifiable>: View {
-    let options: [T]
-    let label: (T) -> String
-    @Binding var selection: T
-
-    var body: some View {
-        HStack(spacing: Theme.Space.xs) {
-            ForEach(options) { option in
-                let active = option == selection
-                // A real Button, not a tap gesture on text: this is the app's
-                // only segmented control, and a gesture leaves it unreachable by
-                // keyboard and silent to VoiceOver. `.plain` keeps the chip
-                // rendering exactly as designed.
-                Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-                        selection = option
-                    }
-                } label: {
-                    Text(label(option))
-                        .font(Theme.Font.button())
-                        .foregroundStyle(active ? Theme.Colors.ink : Theme.Colors.body)
-                        .padding(.horizontal, Theme.Space.md)
-                        .frame(height: 28)
-                        .background {
-                            if active {
-                                Color.clear.liquidGlass(radius: Theme.Radius.full)
-                                    .overlay(Capsule().strokeBorder(
-                                        Theme.Colors.hairlineStrong, lineWidth: 1))
-                            }
-                        }
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
-            }
-        }
-    }
-}
-
-// Equality via id since the enums are simple String-backed cases.
-extension PillTabPicker where T: CaseIterable {}

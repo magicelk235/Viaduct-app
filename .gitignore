@@ -20,7 +20,7 @@ dmg/dmg-split.png
 # Exported Sparkle signing key. Belongs in a password manager, never in git.
 sparkle-private-key.txt
 
-CLAUDE.md
+AGENTS.md
 
 # Local agent/tooling artifacts — never publish
 .claude/

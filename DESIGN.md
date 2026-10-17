@@ -175,7 +175,6 @@ components:
   fields:
     text:   "clear glass capsule, ink text, hairline edge, 32pt (.glass)"
     toggle: "switch with an accent-green on-track, white knob, spring (.glass)"
-    pill-tab: "transparent chip strip; the active chip lifts onto glass with a hairline-strong capsule (PillTabPicker) — replaces AppKit segmented/radio so the window stays one dark mode. Each chip is a real Button so the strip is keyboard-reachable and reads as a selected control to VoiceOver."
   cards:
     raycast-card: "hairline-bordered card on the surface ladder; glass:true floats it on Liquid Glass. The default container."
     drop-card: "the hero of User mode — one xl-radius glass card that morphs through empty → ready → converting → done/failed. Dashed hairline border when empty, solid + teal glow on drag-target."
@@ -186,7 +185,7 @@ components:
   status:
     step-dots: "one capsule per convert phase; fills emerald and the active dot widens. Gives the wait a sense of journey."
     status-pill: "glass pill, green check / red octagon, for run results."
-    value-row: "SF Symbol in an 18pt frame + the value in mono + a trailing control (VersionRow, SigningTeamRow). Mono covers any opaque identifier — a version, a team id — not just numerals. The card title labels the row, so the row carries no label of its own."
+    value-row: "SF Symbol in an 18pt frame + the value in mono + a trailing control (VersionRow). Mono covers any opaque identifier — a version, a team id — not just numerals. The card title labels the row, so the row carries no label of its own."
     keycap: "small glass keyboard glyph (⌘K, ⏎) for shortcut hints."
   backdrop:
     ambient-background: "the neutral adaptive canvas + one faint teal crown glow behind User mode."
@@ -198,8 +197,9 @@ components:
 layout:
   windows:
     user-mode:   "min 540×600. Centered card column, maxWidth 440. Brand lockup → drop-card → morphing CTA → recent list. Neutral canvas + faint teal crown glow."
-    developer:   "min 820×640. HSplitView: scrollable options form (min 400 / ideal 440) | live log pane (min 380). Toolbar: User-mode · CLI menu · Doctor · Analyze · Convert(primary). Flat canvas (no aurora — it's a workbench)."
-    settings:    "fixed 460×600. Stacked RaycastCards: Mode · License · App updates · CLI · Keeping extensions working · Warnings · Support · Converted extensions. The signing card leads with its lifetime badge (7 DAYS yellow / 1 YEAR green) and, only on a Mac with more than one Apple team, a value row pinning which team signs."
+    settings:    "min 680×520, AppKit window with .fullSizeContentView (SettingsWindowController) so the sidebar gets the system glass; selection is teal via the AccentColor asset. NavigationSplitView: fixed 190pt sidebar (General · License · Extensions) with back/forward in the toolbar | detail on the canvas, one column of stacked glass cards capped at 560. A page with a single card gives it no header (the page title already says it). General: App updates · CLI · Warnings · Setup · Support. License: one untitled card. Extensions: Chrome Web Store (store button state + the Pro weekly-update toggle) · Converted extensions · Move to another Mac."
+    setup:       "first launch on a fresh install, replaces the main window content. Two screens. Checklist: 'Set up Viaduct' heading-md → one xl-radius glass card with a row per step (32pt glass glyph tile, title that states where things stand: 'Xcode is ready', not 'Install Xcode' beside a done mark), hairlines between rows. Done rows are one line with a trailing green check; rows still waiting are mute; the open row has a faint teal selection wash, a teal-edged tile and its body explanation. Any row can be clicked to open it — that is the only way back, there is no Back button. → full-width primary (the open step's fix, then Continue) over a full-width Later tertiary while the open step isn't done. Setup opens the first step that still needs something and moves on by itself 0.6s after the open step turns done. The last step is 'Activate Pro' (done, and skipped, once a license is active). When setup reaches it, the row opens with no explanation, just a focused glass 'License key' field under the title, and Activate as the primary; Later goes on to the welcome screen. Gumroad's error shows in red under the field after a failed try; once active the row reads 'Viaduct Pro is active'. No buy link in setup. Welcome: the arch mark (icon.png, 88pt, glowRing) settling in once with a 0.6s spring (static under Reduce Motion) → 'Welcome to Viaduct' display-lg → one body line → a glass card listing only the ways in that work on this Mac (drop a file; the store button once it's on; import once a Chromium browser is there) → Import from Chrome primary over a full-width Later tertiary, or Start using Viaduct alone when there's nothing to import. No step-dots, no ghost row."
+    import:      "sheet, 520 wide, titled 'Import from Chrome' to match the button and menu item. One row per extension: checkbox, 26pt icon tile, name + mono version, at most one muted status line (Already in Safari / Off in <browser> / Loaded unpacked), a teal 'Safari version' link trailing when the maker ships one. Profile group labels only when there's more than one profile. Footer: Cancel ghost, the free-tier note only when the ticks exceed it, Convert N primary."
     activation:  "min 540×600. Centered: key glyph → title → field → Activate(primary) → buy link."
   forms: "label column fixed at 96pt, glass field fills the rest; sections are glass RaycastCards titled with an SF Symbol + heading-sm."
 
@@ -212,7 +212,6 @@ refinements:
   - "Calm canvas: a single faint teal crown glow gives brand presence; no drifting aurora — Apple chrome is neutral and still."
   - "Type contrast: display weights up, captions tracked open — a visible, intentional hierarchy."
   - "Vertical rhythm: card columns optically centered, not top-pinned; even breathing room top and bottom."
-  - "Consistency: developer mode inherits the same type/spacing refinements so both surfaces feel like one premium product."
 
 dont:
   - "No light surfaces or opaque panels — never break the dark continuity."

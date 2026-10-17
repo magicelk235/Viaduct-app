@@ -5,21 +5,11 @@ struct ConversionRecord: Codable, Identifiable {
     var id = UUID()
     var name: String
     var sourcePath: String
-    /// The --app-name used, so auto-renew rebuilds to the exact same .app.
+    /// The --app-name used, so a rebuild lands on the exact same .app.
     /// Optional so old records still decode; falls back to `name` when absent.
     var appName: String?
     var installedPath: String?
     var date: Date
-    /// When this build's signature was last refreshed. Used by auto-renew to find
-    /// builds nearing expiry. Old records fall back to `date`.
-    var lastSigned: Date?
-    /// When that signature lapses, resolved at signing time from the Apple
-    /// account that signed it (a free Apple ID gets a week, a paid Developer
-    /// Program membership a year) or from a provisioning profile the build
-    /// embedded. Optional so records written before the two were told apart
-    /// still decode — those keep the free-account week they were scheduled on,
-    /// and get a real date at their next renew.
-    var signatureExpiry: Date?
 
     /// True when the build that produced this record came out ad-hoc signed —
     /// the CLI falls back to it when the team it detected can't sign, and Safari
@@ -27,16 +17,20 @@ struct ConversionRecord: Codable, Identifiable {
     /// written before the fallback existed still decode (nil → not known to be
     /// ad-hoc, which is what every team-signed record is).
     var adHoc: Bool?
-    /// Last time auto-renew tried this record, and whether it failed. Surfaced in
-    /// Settings so the user sees a silent failure before Safari drops the extension.
-    var lastRenewAttempt: Date?
-    var lastRenewFailed: Bool?
+    /// Whether the last Chrome Web Store update failed to rebuild. Shown in
+    /// Settings; the installed version keeps working either way.
+    var lastUpdateFailed: Bool?
     /// PNG of the extension's own icon, captured at conversion time. Optional
     /// so old records (and icon-less extensions) still decode.
     var iconData: Data?
-    /// Chrome Web Store id for store-flow installs. Lets auto-renew re-download
-    /// the .crx if the archived source vanishes (cache purge, failed archive).
+    /// Chrome Web Store id for store-flow installs. Lets auto-update re-download
+    /// the .crx when the store ships a new version.
     var storeId: String?
+    /// Chrome extension id, whatever the source (store, a browser profile, a
+    /// zip with a manifest key). `storeId` only covers store installs and also
+    /// drives store auto-update, so it can't double as this. Lets Import from
+    /// Chrome see an extension is already in Safari. Optional for old records.
+    var chromeId: String?
 
     /// Upstream extension version (manifest "version") at build time. Auto-update
     /// compares the latest CWS manifest against this to decide whether to rebuild.
@@ -48,15 +42,13 @@ struct ConversionRecord: Codable, Identifiable {
     /// records decode (nil → check on next pass).
     var lastUpdateCheck: Date?
 
+    /// When Viaduct removes this extension, for one converted on the free plan.
+    /// Nil for Pro conversions, and for anything converted before the free plan
+    /// had this limit, so those stay. Activating Pro clears it on every record.
+    var freeRemovesAt: Date?
+
     /// Effective app name for rebuilds.
     var resolvedAppName: String { appName ?? name }
-    /// When this build's signature is assumed to lapse.
-    var expiresAt: Date {
-        signatureExpiry
-            ?? (lastSigned ?? date).addingTimeInterval(RenewalPolicy.freeSignatureLifetime)
-    }
-    /// Last time this build was (re)signed — the once-a-week renew cap keys off this.
-    var lastBuild: Date { lastSigned ?? date }
 }
 
 /// Append-only history of converted extensions, backed by UserDefaults.
@@ -72,14 +64,16 @@ final class ConversionHistory: ObservableObject {
 
     func add(name: String, sourcePath: String, appName: String,
              installedPath: String?, build: SigningAccount.Build,
-             iconData: Data?, storeId: String? = nil, version: String? = nil) {
+             iconData: Data?, storeId: String? = nil, chromeId: String? = nil,
+             version: String? = nil, freeRemovesAt: Date? = nil) {
         let now = Date()
-        let record = ConversionRecord(name: name, sourcePath: sourcePath,
+        var record = ConversionRecord(name: name, sourcePath: sourcePath,
                                       appName: appName, installedPath: installedPath,
-                                      date: now, lastSigned: now,
-                                      signatureExpiry: build.expiry, adHoc: build.adHoc,
+                                      date: now, adHoc: build.adHoc,
                                       iconData: iconData,
-                                      storeId: storeId, version: version)
+                                      storeId: storeId, chromeId: chromeId ?? storeId,
+                                      version: version)
+        record.freeRemovesAt = freeRemovesAt
         // Re-converting the same app replaces its record instead of stacking duplicates.
         records.removeAll { $0.resolvedAppName == appName }
         records.insert(record, at: 0)
@@ -87,39 +81,34 @@ final class ConversionHistory: ObservableObject {
         save()
     }
 
-    /// Stamp a record as freshly re-signed (called after a successful auto-renew).
-    /// The build comes from the caller because both halves can have changed since
-    /// the last one — someone who joined the Developer Program in the meantime
-    /// should stop being renewed weekly, and a rebuild that fell back to ad-hoc
-    /// must stop claiming an Apple signature it no longer has.
-    func markRenewed(id: ConversionRecord.ID, installedPath: String?,
-                     build: SigningAccount.Build) {
-        guard let i = records.firstIndex(where: { $0.id == id }) else { return }
-        let now = Date()
-        records[i].lastSigned = now
-        records[i].signatureExpiry = build.expiry
-        records[i].adHoc = build.adHoc
-        records[i].lastRenewAttempt = now
-        records[i].lastRenewFailed = false
-        if let p = installedPath { records[i].installedPath = p }
+    /// Free-plan extensions still waiting to be removed.
+    var pendingFreeRemovals: [ConversionRecord] {
+        records.filter { $0.freeRemovesAt != nil }
+    }
+
+    /// Pro keeps everything: forget every free-plan removal date.
+    func keepAllFreeExtensions() {
+        guard records.contains(where: { $0.freeRemovesAt != nil }) else { return }
+        for i in records.indices { records[i].freeRemovesAt = nil }
         save()
     }
 
+    /// Remove the free-plan extensions whose time is up. Returns what went.
+    func removeExpiredFreeExtensions(now: Date = Date()) -> [ConversionRecord] {
+        let due = records.filter { ($0.freeRemovesAt ?? .distantFuture) <= now }
+        due.forEach { remove($0) }
+        return due
+    }
+
     /// Stamp a record after a successful auto-update: new upstream version built.
-    /// An update is also a fresh sign, so lastSigned and the expiry advance too
-    /// (which resets the once-a-week renew cap). Also stamps the update-check
-    /// timestamp.
+    /// Also stamps the update-check timestamp.
     func markUpdated(id: ConversionRecord.ID, version: String, installedPath: String?,
                      build: SigningAccount.Build) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
-        let now = Date()
         records[i].version = version
-        records[i].lastSigned = now
-        records[i].signatureExpiry = build.expiry
         records[i].adHoc = build.adHoc
-        records[i].lastUpdateCheck = now
-        records[i].lastRenewAttempt = now
-        records[i].lastRenewFailed = false
+        records[i].lastUpdateCheck = Date()
+        records[i].lastUpdateFailed = false
         if let p = installedPath { records[i].installedPath = p }
         save()
     }
@@ -132,15 +121,14 @@ final class ConversionHistory: ObservableObject {
         save()
     }
 
-    /// Stamp a failed auto-renew attempt (lastSigned stays put — still on the old expiry).
-    func markRenewFailed(id: ConversionRecord.ID) {
+    /// The store had a new version but rebuilding it failed.
+    func markUpdateFailed(id: ConversionRecord.ID) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
-        records[i].lastRenewAttempt = Date()
-        records[i].lastRenewFailed = true
+        records[i].lastUpdateFailed = true
         save()
     }
 
-    /// Point a record at a fresh source copy (renew re-downloaded/re-archived it).
+    /// Point a record at a fresh source copy (an update re-downloaded it).
     func updateSource(id: ConversionRecord.ID, path: String) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         records[i].sourcePath = path
@@ -150,7 +138,7 @@ final class ConversionHistory: ObservableObject {
     func clear() { records.removeAll(); save() }
 
     /// Drop records whose installed .app the user deleted from Finder, and clean
-    /// their archived source — so auto-renew won't rebuild an app they removed.
+    /// their archived source — so auto-update won't rebuild an app they removed.
     func pruneDeleted() {
         let fm = FileManager.default
         let gone = records.filter { rec in
@@ -164,8 +152,8 @@ final class ConversionHistory: ObservableObject {
         save()
     }
 
-    /// Drop a record AND delete its archived source + installed .app, so auto-renew
-    /// can never rebuild it (renew skips records whose source is gone). Best-effort
+    /// Drop a record AND delete its archived source + installed .app, so
+    /// auto-update can never rebuild it. Best-effort
     /// on the file deletes — a stale .app left on disk is harmless.
     func remove(_ record: ConversionRecord) {
         let fm = FileManager.default
@@ -180,6 +168,15 @@ final class ConversionHistory: ObservableObject {
     func isInstalled(storeId: String) -> Bool {
         records.contains { rec in
             rec.storeId == storeId
+                && (rec.installedPath.map { FileManager.default.fileExists(atPath: $0) } ?? false)
+        }
+    }
+
+    /// Same check keyed on the Chrome id, for sources that didn't come from
+    /// the store (Edge/Opera profiles, unpacked folders).
+    func isInstalled(chromeId: String) -> Bool {
+        records.contains { rec in
+            (rec.chromeId ?? rec.storeId) == chromeId
                 && (rec.installedPath.map { FileManager.default.fileExists(atPath: $0) } ?? false)
         }
     }

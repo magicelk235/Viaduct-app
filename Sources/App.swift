@@ -2,10 +2,12 @@ import SwiftUI
 import AppKit
 import ServiceManagement
 import Combine
+import UserNotifications
 
 /// Turns on macOS native window tabbing so Cmd+T / the tab bar work. SwiftUI
 /// leaves `allowsAutomaticWindowTabbing` off by default, which disables Cmd+T.
 /// Also owns the quit policy: quitting a window retreats to the menu bar.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by the menu-bar "Quit Viaduct" so terminate actually terminates.
     /// Static: SwiftUI wraps the adaptor delegate in its own NSApp.delegate,
@@ -16,9 +18,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = true
     }
 
+    /// Launch work lives here, not on the window: the app often starts with no
+    /// window at all (at login, or relaunched after quitting to the menu bar),
+    /// and the background timers and store-page handler are needed either way.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        ViaductApp.bootstrap()
+    }
+
     /// Cmd+Q / Quit from a window doesn't kill the process — it closes the
     /// windows and drops the Dock icon, leaving the menu-bar item (and the
-    /// daily auto-renew timer) alive. Real quit is in the menu-bar menu.
+    /// background timers) alive. Real quit is in the menu-bar menu.
     /// Logout/shutdown/restart still terminate normally, or the app would
     /// block the whole logout.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -70,14 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct ViaductApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var vm = ConverterViewModel()
+    @StateObject private var vm = ConverterViewModel.shared
     @StateObject private var license = LicenseManager.shared
-    @AppStorage("appMode") private var modeRaw = AppMode.user.rawValue
-
-    private var mode: Binding<AppMode> {
-        Binding(get: { AppMode(rawValue: modeRaw) ?? .user },
-                set: { modeRaw = $0.rawValue })
-    }
 
     /// Menu-bar glyph: the bundled brand mark (icon.png), rendered as a template
     /// so macOS tints it to the menu-bar's adaptive light/dark color. Falls back
@@ -102,26 +105,14 @@ struct ViaductApp: App {
         Window("Viaduct", id: "main") {
             Group {
                 // Freemium: the app is usable without a license (2 free
-                // conversions). Only block on the brief launch license check;
-                // the paywall is presented in-flow when the free quota runs out.
-                switch license.state {
-                case .unknown, .checking:
+                // conversions). Only block on the brief launch license check,
+                // not on a key being activated later; the paywall is presented
+                // in-flow when the free quota runs out.
+                if license.hasLaunchAnswer {
+                    RootView(vm: vm)
+                } else {
                     LaunchGateView()
-                case .licensed, .unlicensed:
-                    RootView(vm: vm, mode: mode)
                 }
-            }
-            .onAppear {
-                license.bootstrap(); vm.onLaunch()
-                // Starts Sparkle's background checks. It also needs to know when
-                // a conversion is running so an update never relaunches us
-                // mid-xcodebuild.
-                Updater.shared.isBusy = { [weak vm] in vm?.isRunning ?? false }
-                InstallProgressBridge.shared.start()
-                InstallProgressBridge.shared.snapshot = { [weak vm] queryId in
-                    ViaductApp.progressSnapshot(vm, queryId: queryId)
-                }
-                AppDelegate.openURLHandler = { handleOpenURL($0) }
             }
             // If the Xcode gate is up, a finished download / component install /
             // toolchain switch usually happens while the user is away in the App
@@ -182,7 +173,7 @@ struct ViaductApp: App {
             // Paywall: shown when an unlicensed user hits the free-quota wall.
             // Dismisses itself once activation flips the license to .licensed.
             .sheet(isPresented: $vm.showPaywall) {
-                ActivationView(license: license) { vm.showPaywall = false }
+                ActivationView(license: license, extensionCount: vm.history.records.count) { vm.showPaywall = false }
                     .onChange(of: license.state) { newState in
                         if newState == .licensed { vm.showPaywall = false }
                     }
@@ -195,45 +186,72 @@ struct ViaductApp: App {
         .windowResizability(.contentMinSize)
         .commands {
 
-            CommandGroup(after: .toolbar) {
-                Picker("Mode", selection: mode) {
-                    ForEach(AppMode.allCases) { Text($0.label).tag($0) }
-                }
-                .keyboardShortcut("m", modifiers: [.command, .shift])
+            ChromeImportCommands()
+            // Settings lives in an AppKit window (see SettingsWindowController),
+            // so ⌘, has to be wired to it by hand.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { SettingsWindowController.show(vm: vm) }
+                    .keyboardShortcut(",", modifiers: .command)
             }
         }
 
         // Always present: quitting a window only retreats the app here (the
-        // process stays alive so the daily auto-renew timer keeps firing).
+        // process stays alive so its background timers keep firing).
         // Real quit lives in this menu.
         MenuBarExtra {
-            RenewMenu(vm: vm)
+            StatusMenu(vm: vm)
         } label: {
-            Image(nsImage: Self.menubarIcon)
-        }
-
-        Settings {
-            SettingsView(mode: mode, vm: vm)
+            MenuBarLabel()
         }
     }
 
-    private func handleOpenURL(_ url: URL) {
+    /// Everything the app needs running whether or not a window is open.
+    /// Called once, from `applicationDidFinishLaunching`.
+    @MainActor
+    static func bootstrap() {
+        let vm = ConverterViewModel.shared
+        // Set before launch finishes, so a click on a notification that
+        // launched the app still gets routed.
+        UNUserNotificationCenter.current().delegate = NotificationRouter.shared
+        LicenseManager.shared.bootstrap()
+        vm.onLaunch()
+        // Starts Sparkle's background checks. It also needs to know when the
+        // CLI is busy so an update never relaunches us mid-xcodebuild.
+        Updater.shared.isBusy = { [weak vm] in vm?.isBusy ?? false }
+        InstallProgressBridge.shared.start()
+        InstallProgressBridge.shared.snapshot = { [weak vm] queryId in
+            ViaductApp.progressSnapshot(vm, queryId: queryId)
+        }
+        AppDelegate.openURLHandler = { handleOpenURL($0, vm: vm) }
+    }
+
+    private static func handleOpenURL(_ url: URL, vm: ConverterViewModel) {
         guard url.scheme == "viaduct" else { return }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
         let id = items?.first(where: { $0.name == "id" })?.value
         switch url.host {
         case "install":
-            if let id {
-                // The store URL is /detail/NAME/ID — pass NAME so the app isn't named
-                // after the random-looking ID when the manifest name is an __MSG_ i18n key.
-                let name = items?.first(where: { $0.name == "name" })?.value
+            guard let id else { return }
+            // Starting a store install resets the flow, which would wipe the
+            // conversion or batch already running (and record its app under
+            // this one's name). Show what's running instead.
+            guard !vm.isRunning, !ConversionQueue.shared.isRunning,
+                  !InstallProgressBridge.shared.downloading,
+                  OfficialVersionPrompt.shared.question == nil else {
+                MainWindow.show()
+                return
+            }
+            // The store URL is /detail/NAME/ID — pass NAME so the app isn't named
+            // after the random-looking ID when the manifest name is an __MSG_ i18n key.
+            let name = items?.first(where: { $0.name == "name" })?.value
+            OfficialVersionPrompt.shared.checkBeforeStoreInstall(chromeId: id) {
                 // Install came from the Safari extension on the store page — the
                 // page renders the progress bar (via InstallProgressBridge), so
                 // keep the app out of the user's way instead of coming forward.
                 NSApp.hide(nil)
                 vm.resetUserFlow()
                 InstallProgressBridge.shared.downloading = true
-                downloadAndConvert(extensionId: id, displayName: name)
+                downloadAndConvert(extensionId: id, displayName: name, vm: vm)
             }
         case "remove":
             // Store-page "Remove from Safari": delete every install for this CWS
@@ -271,7 +289,7 @@ struct ViaductApp: App {
             // state. The full reason shows only in the app window.
             return ["state": "failed", "message": "Open Viaduct to continue."]
         }
-        if vm.showAdhocWarning {
+        if vm.showAdhocWarning || OfficialVersionPrompt.shared.question != nil {
             return ["state": "active", "fraction": 0.04,
                     "title": "Needs your answer",
                     "subtitle": "Open Viaduct to continue"]
@@ -310,30 +328,37 @@ struct ViaductApp: App {
         }
     }
 
-    private func downloadAndConvert(extensionId: String, displayName: String? = nil) {
+    private static func downloadAndConvert(extensionId: String, displayName: String?, vm: ConverterViewModel) {
         Task {
             do {
-                let finalURL = try await ChromeStore.downloadCRX(id: extensionId)
+                let downloaded = try await ChromeStore.downloadCRX(id: extensionId)
+                // Settings saved by the same extension in a browser on this Mac
+                // come along.
+                let carried = await Task.detached(priority: .userInitiated) {
+                    SettingsCarryOver.apply(to: downloaded, chromeId: extensionId, profile: nil,
+                                            name: displayName ?? extensionId)
+                }.value
+                let finalURL = carried.url
+                let settingsNote = carried.note
                 await MainActor.run {
                     // Download over — never leave the flag stuck on a flow that
                     // stops before the convert phases start (e.g. ad-hoc alert).
                     InstallProgressBridge.shared.downloading = false
-                    modeRaw = AppMode.user.rawValue
                     vm.resetUserFlow()
+                    if let settingsNote { vm.appendLog("→ \(settingsNote)") }
                     vm.selectInput(path: finalURL.path)
                     // Store name beats the manifest's __MSG_ key / the .crx filename.
                     if let displayName, !displayName.isEmpty {
                         vm.options.appName = displayName
                     }
-                    // Stamped onto the history record so auto-renew can
-                    // re-download this extension by id if the source vanishes.
+                    // Stamped onto the history record so auto-update can
+                    // re-download this extension by id.
                     vm.pendingStoreId = extensionId
                     vm.userConvert()
                 }
             } catch {
                 await MainActor.run {
                     InstallProgressBridge.shared.downloading = false
-                    modeRaw = AppMode.user.rawValue
                     vm.failureSummary = (error as? ChromeStore.DownloadError)?.errorDescription
                         ?? "Failed to download extension: \(error.localizedDescription)"
                     vm.phase = .failed
@@ -343,10 +368,22 @@ struct ViaductApp: App {
     }
 }
 
-/// The menu-bar dropdown: renew status at a glance + quick actions. Lives here so
-/// the app stays resident (and the daily renew timer keeps firing) after the
-/// window is closed.
-struct RenewMenu: View {
+/// The menu-bar icon. Also where `MainWindow` gets its way to open the main
+/// window when the app launched without one: the status item is on screen
+/// from launch, the window may never have been.
+private struct MenuBarLabel: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Image(nsImage: ViaductApp.menubarIcon)
+            .onAppear { MainWindow.openAction = openWindow }
+    }
+}
+
+/// The menu-bar dropdown: installed extensions at a glance + quick actions.
+/// Lives here so the app stays resident (and its background timers keep
+/// firing) after the window is closed.
+struct StatusMenu: View {
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject private var history: ConversionHistory
     @ObservedObject private var license = LicenseManager.shared
@@ -357,37 +394,25 @@ struct RenewMenu: View {
         _history = ObservedObject(wrappedValue: vm.history)
     }
 
-    /// Failures first (they need action), then whatever expires soonest.
+    /// Whatever goes soonest on the free plan first, then the rest.
     private var sortedRecords: [ConversionRecord] {
         history.records.sorted {
-            if ($0.lastRenewFailed == true) != ($1.lastRenewFailed == true) {
-                return $0.lastRenewFailed == true
-            }
-            return $0.expiresAt < $1.expiresAt
+            ($0.freeRemovesAt ?? .distantFuture) < ($1.freeRemovesAt ?? .distantFuture)
         }
     }
 
     var body: some View {
-        // Expiry tracking + renewal is a Pro feature. Free users see an upsell,
-        // not extension expiry rows or a Renew action they can't use.
-        if !license.isLicensed {
-            Text("Auto-renew keeps Safari from dropping extensions")
-            Button("Unlock with Pro") {
-                NSApp.setActivationPolicy(.regular)
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-                vm.showPaywall = true
-            }
-        } else if history.records.isEmpty {
-            // One row per installed extension, soonest expiry first, failures on top.
+        if history.records.isEmpty {
             Text("No extensions installed")
         } else {
             Section("Extensions") {
                 ForEach(sortedRecords.prefix(8)) { rec in
-                    if rec.lastRenewFailed == true {
-                        Text("⚠︎ \(rec.resolvedAppName): renew failed")
+                    if let removesAt = rec.freeRemovesAt {
+                        Text("\(rec.name): removed \(removesAt.formatted(.relative(presentation: .numeric)))")
+                    } else if rec.lastUpdateFailed == true {
+                        Text("⚠︎ \(rec.name): update failed")
                     } else {
-                        Text("\(rec.resolvedAppName) expires \(rec.expiresAt.formatted(.relative(presentation: .named)))")
+                        Text(rec.name)
                     }
                 }
                 if history.records.count > 8 {
@@ -396,12 +421,17 @@ struct RenewMenu: View {
             }
         }
 
-        Divider()
-
-        if license.isLicensed {
-            Button("Renew Now") { vm.renewNow() }
-                .disabled(vm.isRunning)
+        if !license.isLicensed {
+            Divider()
+            Button("Unlock with Pro") {
+                NSApp.setActivationPolicy(.regular)
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+                vm.showPaywall = true
+            }
         }
+
+        Divider()
         Button("Open Viaduct") {
             // Restore the Dock icon (quit-to-menubar drops it) and the window.
             NSApp.setActivationPolicy(.regular)
@@ -427,21 +457,38 @@ struct LaunchGateView: View {
     }
 }
 
-/// Routes between the simple User surface and the full Developer surface.
+/// Routes between first-launch setup and the converter.
 struct RootView: View {
     @ObservedObject var vm: ConverterViewModel
-    @Binding var mode: AppMode
+    @ObservedObject private var queue = ConversionQueue.shared
+    @ObservedObject private var chromeImport = ChromeImport.shared
+    @ObservedObject private var setup = SetupFlow.shared
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Group {
-            switch mode {
-            case .user:
-                UserModeView(vm: vm, mode: $mode)
-            case .developer:
-                ContentView(vm: vm, mode: $mode)
-                    .frame(minWidth: 820, minHeight: 640)
+            if setup.isActive {
+                SetupView(vm: vm, flow: setup)
+            } else {
+                UserModeView(vm: vm)
             }
         }
-        .onAppear { vm.checkForUpdates() }
+        .onAppear {
+            MainWindow.openAction = openWindow
+            setup.startIfFreshInstall(history: vm.history)
+            vm.checkForUpdates()
+        }
+        .sheet(isPresented: $queue.isPresented) {
+            ConversionQueueView(queue: queue, vm: vm)
+                .interactiveDismissDisabled(queue.isRunning)
+        }
+        .background(
+            Color.clear.sheet(isPresented: $chromeImport.isPresented) {
+                ChromeImportView(vm: vm) { chromeImport.isPresented = false }
+            })
+        .officialVersionPrompt()
+        // Its own host view: two alerts on one view can swallow each other.
+        .background(Color.clear.freePlanRemovedNotice(vm: vm,
+                                                      blocked: queue.isPresented || setup.isActive))
     }
 }

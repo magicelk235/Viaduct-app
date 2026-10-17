@@ -4,6 +4,8 @@ import SwiftUI
 /// conversions; dismisses when a valid Gumroad key activates.
 struct ActivationView: View {
     @ObservedObject var license: LicenseManager
+    /// Converted extensions, reported with the purchase.
+    var extensionCount: Int
     /// When set, a close affordance (button + Esc) dismisses without activating.
     /// Used by the paywall sheet; omit for a non-dismissible launch wall.
     var onClose: (() -> Void)? = nil
@@ -43,7 +45,7 @@ struct ActivationView: View {
                     .foregroundStyle(Theme.Colors.ink)
                     .multilineTextAlignment(.center)
 
-                Text("Paste the key from your purchase email. You pay once, there's no subscription, and the key also turns on auto-renew.")
+                Text("Paste the key from your purchase email. You pay once, there's no subscription, and the key also keeps the extensions you've converted.")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
                     .multilineTextAlignment(.center)
@@ -73,7 +75,7 @@ struct ActivationView: View {
                 .buttonStyle(.raycastPrimary)
                 .disabled(checking || key.trimmingCharacters(in: .whitespaces).isEmpty)
 
-                Link("Buy a license", destination: URL(string: "https://magicelk235.gumroad.com/l/viaduct")!)
+                Link("Buy a license", destination: license.checkoutURL(source: .paywall, extensionCount: extensionCount))
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.accentBlue)
                     .padding(.top, Theme.Space.xs)

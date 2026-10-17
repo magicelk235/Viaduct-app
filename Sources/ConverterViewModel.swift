@@ -1,14 +1,13 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
+import Combine
 
 @MainActor
 final class ConverterViewModel: ObservableObject {
     @Published var options = ConvertOptions()
     @Published var logLines: [String] = []
     @Published var isRunning = false
-    @Published var statusMessage = "Ready."
-    @Published var lastExitCode: Int32? = nil
 
     @Published var updateChecking = false
     @Published var updateAvailable = false
@@ -32,6 +31,10 @@ final class ConverterViewModel: ObservableObject {
     /// Highest real track phase reached this run — survives the flip to `.failed`
     /// so the failure card can name the step that broke.
     @Published var lastReachedTrackPhase: ConvertPhase? = nil
+    /// Set when the picked extension can't work in Safari: by the check that
+    /// runs as soon as it's picked, or read off a conversion the CLI refused.
+    @Published var compatibility: CompatibilityVerdict?
+    private var compatibilityCheck: Task<Void, Never>?
 
     /// True when the conversion that just finished came out ad-hoc signed. The
     /// CLI rebuilds ad-hoc when the team it detected can't sign, so a run the
@@ -42,6 +45,14 @@ final class ConverterViewModel: ObservableObject {
 
     /// Set when an unlicensed user hits the free-quota wall; drives the paywall sheet.
     @Published var showPaywall = false
+
+    /// Free-plan extensions Viaduct removed that the user hasn't been told
+    /// about in the window yet. Saved, because the removal usually happens
+    /// while the window is closed, and the message waits for the next open.
+    @Published var removedOnFreePlan: [String] =
+        UserDefaults.standard.stringArray(forKey: "freePlanRemoved") ?? [] {
+        didSet { UserDefaults.standard.set(removedOnFreePlan, forKey: "freePlanRemoved") }
+    }
 
     /// Whether the bundled Safari extension (the Add-to-Safari button on
     /// Chrome Web Store pages) is enabled in Safari. nil until Safari answers,
@@ -93,8 +104,26 @@ final class ConverterViewModel: ObservableObject {
     private var adhocBypassOnce = false
 
     /// Chrome Web Store id of the install in flight (store flow only). Stamped
-    /// onto the history record so auto-renew can re-download the source by id.
+    /// onto the history record so auto-update can re-download it by id.
     var pendingStoreId: String?
+    /// Chrome id of the install in flight when it's known up front (Import
+    /// from Chrome), recorded so a later import can tell it's already here.
+    var pendingChromeId: String?
+
+    /// Fired when a user-mode conversion that actually started comes to an end,
+    /// with whether it installed. The batch queue advances on it.
+    var userRunEnded: ((Bool) -> Void)?
+
+    /// "Convert Anyway" answered once for a whole batch, so a queue of nine
+    /// extensions asks about signing once rather than nine times. The queue
+    /// clears it when the batch ends.
+    var signingWarningAnsweredForBatch = false
+    var batchActive = false
+
+    /// The one view model the app runs on. Shared rather than owned by the
+    /// window, because launch work (license check, store auto-update, the store-page
+    /// URL handler) has to run even when the app starts with no window open.
+    static let shared = ConverterViewModel()
 
     let history = ConversionHistory()
 
@@ -104,47 +133,36 @@ final class ConverterViewModel: ObservableObject {
     /// detection lands, and on a Mac with no Apple account at all.
     @Published var signingTeams: [SigningAccount.Team] = []
 
-    /// The team the user pinned in the signing picker, or "" for Viaduct's own
-    /// pick. Mirrored into `SigningAccount.pinnedTeamID` so an auto-renew
-    /// rebuild hours later re-signs with the same account.
-    @Published var signingTeamID: String = SigningAccount.pinnedTeamID {
-        didSet { SigningAccount.pinnedTeamID = signingTeamID }
-    }
-
     /// The team the next conversion signs with.
     var signingTeam: SigningAccount.Team? {
-        SigningAccount.signingTeam(from: signingTeams, pinned: signingTeamID)
+        SigningAccount.signingTeam(from: signingTeams)
     }
-
-    /// Which Apple account that is — a free Apple ID's signature lapses in a
-    /// week, a paid Developer Program membership's in a year. Nil until
-    /// detection lands, when Xcode holds no team, and when nothing can tell the
-    /// two apart; read as "assume free" everywhere.
-    var signingAccount: SigningAccount? { signingTeam?.account }
-
-    /// Auto re-sign installed extensions before their signature lapses. On by
-    /// default — it's the thing that keeps extensions from vanishing. Pro-only:
-    /// unlicensed users can't keep extensions alive past Apple's signing window,
-    /// which is the upgrade lever.
-    @AppStorage("autoRenew") var autoRenew = true
-
-    /// Whether auto-renew is actually allowed to run — the stored toggle AND a
-    /// valid license. Gating here (not just the toggle UI) means a free user
-    /// can't keep renewing by flipping the persisted flag some other way.
-    var autoRenewEnabled: Bool { autoRenew && LicenseManager.shared.isLicensed }
 
     /// Auto-update installed store extensions when the Chrome Web Store ships a
     /// newer version. Off by default — it polls the CWS, so it's opt-in. Pro-only.
     @AppStorage("autoUpdate") var autoUpdate = false
 
-    /// Same license gate as auto-renew: a free user can't enable CWS polling by
-    /// flipping the persisted flag.
+    /// The stored toggle AND a valid license: a free user can't enable CWS
+    /// polling by flipping the persisted flag some other way.
     var autoUpdateEnabled: Bool { autoUpdate && LicenseManager.shared.isLicensed }
 
     private let runner = CLIRunner.shared
     private let updater = CLIUpdater.shared
-    private lazy var renewer = ExtensionRenewer(history: history)
-    private var renewTimer: Timer?
+    private lazy var extensionUpdater = ExtensionUpdater(history: history)
+    private lazy var freePlan: FreePlan = {
+        let plan = FreePlan(history: history)
+        plan.onRemoved = { [weak self] removed in
+            self?.removedOnFreePlan += removed.map(\.name)
+        }
+        return plan
+    }()
+    private var updateTimer: Timer?
+    private var licenseWatch: AnyCancellable?
+    private var historyWatch: AnyCancellable?
+    /// Bumped whenever a CLI run starts or is cancelled. A cancelled process
+    /// still prints and exits after SIGTERM; its callbacks check this and stay
+    /// quiet, so they can't fail the card or end a batch item that came later.
+    private var runGeneration = 0
     /// An update found while a conversion was in flight, applied as soon as the
     /// run finishes. Dropping it meant anyone who only installs from the store
     /// URL scheme never updated at all: the app cold-launches, the conversion
@@ -156,7 +174,7 @@ final class ConverterViewModel: ObservableObject {
     /// The first-install download in flight, so concurrent callers share it.
     private var cliInstallTask: Task<Bool, Never>?
 
-    init() {
+    private init() {
         installedVersion = updater.installedVersion ?? "not installed"
         // The store-button heartbeat: the appex relays the extension's hello
         // over the distributed bus whenever Safari starts its worker. Stamp it
@@ -170,7 +188,7 @@ final class ConverterViewModel: ObservableObject {
     }
 
     /// Launch hook: make sure the CLI exists (first launch downloads it), keep it
-    /// current, and start auto-renew. Idempotent.
+    /// current, and start store auto-update. Idempotent.
     func onLaunch() {
         if updater.isInstalled {
             // Auto-update the CLI on launch (self-installs if a newer version exists).
@@ -180,11 +198,35 @@ final class ConverterViewModel: ObservableObject {
             // the engine is there before the user drops anything on the window.
             Task { await ensureCLIInstalled() }
         }
-        // Forget extensions the user deleted from Finder, regardless of renew state.
+        // Forget extensions the user deleted from Finder.
         history.pruneDeleted()
         refreshSigningTeams()
         refreshStoreButton()
-        startAutoRenew()
+        // Auto-update is Pro-only, and the stored license is still being
+        // verified at this point. Wait for the answer instead of reading
+        // "checking" as "unlicensed", which would drop the login item for every
+        // paying user.
+        licenseWatch = LicenseManager.shared.$state
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                // Free-plan removals first: buying Pro clears them, and the
+                // login item below has to know whether any are left.
+                self?.freePlan.sync()
+                // Pro after the fact: nothing left to upsell.
+                if state == .licensed { self?.removedOnFreePlan = [] }
+                self?.startAutoUpdate()
+            }
+        // Any change to the list (a conversion, a removal from Settings or the
+        // store page, an app deleted in Finder) can add or retire a free-plan
+        // removal; keep its timer, reminder and the login item current.
+        historyWatch = history.$records
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.freePlan.sync()
+                self?.syncLoginItem()
+            }
     }
 
     /// Re-read the store-button heartbeat (live changes arrive via the
@@ -193,11 +235,10 @@ final class ConverterViewModel: ObservableObject {
         storeButtonEnabled = StoreButton.isEnabled
     }
 
-    /// Work out which Apple teams this Mac can sign with — which decides whether
-    /// the next conversion gets Apple's week or its year, and whether the user
-    /// is offered a choice at all. Off the main thread: it's four `defaults`
-    /// reads, a keychain scan and the provisioning profiles on disk, and nothing
-    /// on screen is waiting for the answer.
+    /// Work out which Apple teams this Mac can sign with, and whether it can
+    /// team-sign at all. Off the main thread: it's four `defaults` reads, a
+    /// keychain scan and the provisioning profiles on disk, and nothing on
+    /// screen is waiting for the answer.
     func refreshSigningTeams() {
         Task.detached(priority: .utility) {
             let teams = SigningAccount.availableTeams()
@@ -216,7 +257,6 @@ final class ConverterViewModel: ObservableObject {
         let task = Task { @MainActor () -> Bool in
             cliInstalling = true
             cliInstallError = nil
-            statusMessage = "Installing the converter engine…"
             appendLog("→ Installing the viaduct engine from npm…")
             do {
                 try await updater.update(rawLog: { [weak self] line in self?.appendLog(line) })
@@ -230,16 +270,14 @@ final class ConverterViewModel: ObservableObject {
             let ok = updater.isInstalled
             if ok {
                 updateAvailable = false
-                statusMessage = "Engine installed (\(installedVersion))."
-                // Renew/auto-update were skipped at launch for want of an engine;
-                // now there is one, so give them their pass — unless a conversion
-                // is already queued behind this download, since a renew would
+                // Auto-update was skipped at launch for want of an engine; now
+                // there is one, so give it its pass — unless a conversion is
+                // already queued behind this download, since an update would
                 // take the single CLI slot out from under it.
-                if !isRunning { startAutoRenew() }
+                if !isRunning { startAutoUpdate() }
             } else {
                 let msg = cliInstallError ?? "The converter engine could not be installed."
                 cliInstallError = msg
-                statusMessage = msg
             }
             return ok
         }
@@ -247,43 +285,35 @@ final class ConverterViewModel: ObservableObject {
         return await task.value
     }
 
-    /// Kick off auto-renew at launch and re-check daily. Idempotent.
-    func startAutoRenew() {
-        // Relaunch at login so the daily renew timer survives reboots — auto-renew
-        // is worthless if the app isn't running when the signing window closes.
+    /// Start store auto-update at launch and re-check daily. Idempotent. The
+    /// per-record weekly gate keeps CWS polling to at most once a week.
+    func startAutoUpdate() {
+        // Nothing to decide until the license check has an answer.
+        guard LicenseManager.shared.state == .licensed || LicenseManager.shared.state == .unlicensed else { return }
         syncLoginItem()
-        // Auto-update shares the renew timer; its own per-record weekly gate keeps
-        // CWS polling to at most once/week regardless of the daily tick.
-        guard autoRenewEnabled || autoUpdateEnabled else { return }
-        if autoRenewEnabled { renewer.renewIfNeeded() }
-        if autoUpdateEnabled { renewer.updateIfNeeded() }
-        guard renewTimer == nil else { return }
-        renewTimer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
+        guard autoUpdateEnabled else { return }
+        extensionUpdater.updateIfNeeded()
+        guard updateTimer == nil else { return }
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, !self.isRunning else { return }
-                if self.autoRenewEnabled { self.renewer.renewIfNeeded() }
-                if self.autoUpdateEnabled { self.renewer.updateIfNeeded() }
+                guard let self, self.autoUpdateEnabled, !self.isRunning, !self.batchActive else { return }
+                self.extensionUpdater.updateIfNeeded()
             }
         }
     }
 
-    /// Manual renew trigger from the menu bar. Same due-check as the timer.
-    /// Pro-only: re-signing before expiry is a paid feature (matches the
-    /// Settings auto-renew toggle, which is also licensed-only). Guard here so
-    /// no caller can trigger a renew on the free tier.
-    func renewNow() {
-        guard LicenseManager.shared.isLicensed else { showPaywall = true; return }
-        guard autoRenewEnabled, !isRunning else { return }
-        renewer.renewIfNeeded()
-    }
+    /// Something holds the CLI: a user conversion or a background update. The
+    /// CLI folder mustn't be swapped and the app mustn't relaunch under either.
+    var isBusy: Bool { isRunning || runner.isRunning || extensionUpdater.isRunning }
 
-    /// Register/unregister the app as a login item to match `autoRenewEnabled`.
-    /// SMAppService.mainApp — no separate helper bundle/plist to maintain.
+    /// Register/unregister the app as a login item for whatever needs it
+    /// running. SMAppService.mainApp — no separate helper bundle/plist to maintain.
     func syncLoginItem() {
         do {
-            // Either background feature needs the app relaunched at login so its
-            // daily timer survives reboots.
-            if autoRenewEnabled || autoUpdateEnabled {
+            // Background features need the app relaunched at login so their
+            // timers survive reboots: the weekly store update, and the free-plan
+            // removal that would otherwise never happen if the user just quit.
+            if autoUpdateEnabled || !history.pendingFreeRemovals.isEmpty {
                 if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
             } else {
                 if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
@@ -303,34 +333,10 @@ final class ConverterViewModel: ObservableObject {
         return clean
     }
 
-    func clearLog() { logLines.removeAll() }
+    // MARK: - Convert
 
-    // MARK: - Run actions
-
-    func runConversion() {
-        let args = options.conversionArgs()
-        // A real build/sign needs full Xcode; --no-build / --temp-load do not.
-        let needsBuild = !args.contains("--no-build") && !args.contains("--temp-load")
-        if needsBuild {
-            let status = CLIRunner.xcodeStatus()
-            if status != .ready {
-                xcodeStatus = status
-                needsXcode = true
-                statusMessage = "Full Xcode required for build/sign."
-                appendLog("\u{2717} " + Self.xcodeMessage(for: status))
-                appendLog("  Tip: use --temp-load or --no-build to convert without Xcode.")
-                return
-            }
-        }
-        runCLI(args: args, label: "Conversion")
-    }
-    func runAnalyze()    { runCLI(args: options.analyzeArgs(),   label: "Analysis") }
-    func runDoctor()     { runCLI(args: ConvertOptions.doctorArgs(), label: "Toolchain check") }
-
-    // MARK: - User-mode one-tap convert
-
-    /// Convert + auto-install + register, forcing the simplest safe option set.
-    /// Drives `phase` for the animated UI instead of exposing the raw log.
+    /// Convert + install + register with Safari. Drives `phase` for the
+    /// animated UI instead of exposing the raw log.
     func userConvert() {
         guard !isRunning else { return }
         guard !options.inputPath.isEmpty,
@@ -339,14 +345,9 @@ final class ConverterViewModel: ObservableObject {
             phase = .failed
             return
         }
-        // Freemium gate is enforced in runCLI (the choke point all conversion
-        // paths funnel through, including Developer mode), so it can't be
-        // bypassed by switching modes.
+        // The freemium gate is enforced in runCLI, the choke point every
+        // conversion path (single, batch, store page, Shortcuts) goes through.
 
-        // Force the user-friendly path: build, install to Applications, register with Safari.
-        options.noBuild = false
-        options.tempLoad = false
-        options.install = true
         if options.appName.isEmpty {
             options.appName = URL(fileURLWithPath: options.inputPath)
                 .deletingPathExtension().lastPathComponent
@@ -373,26 +374,28 @@ final class ConverterViewModel: ObservableObject {
         // The CLI silently falls back to ad-hoc signing when Xcode has no Apple
         // account — and Safari disables ad-hoc extensions on every quit. Warn
         // up front instead of letting the extension quietly vanish later.
-        if !adhocAcknowledged, !adhocBypassOnce, signingTeams.isEmpty {
+        if !adhocAcknowledged, !adhocBypassOnce, !signingWarningAnsweredForBatch, signingTeams.isEmpty {
             adhocDespiteAccount = SigningAccount.xcodeAccountPresent()
-            // Surface the alert even for headless viaduct:// installs.
-            NSApp.activate(ignoringOtherApps: true)
+            // Surface the alert even for headless viaduct:// installs. It lives
+            // on the main window, which may be closed (quit to the menu bar).
+            MainWindow.show()
             showAdhocWarning = true
             return
         }
         // Past the gate, so the pass has done its job.
         adhocBypassOnce = false
 
-        // Sign with the team the user picked, or the best one this Mac has. The
-        // id goes to the CLI explicitly: left to detect a team itself it takes
-        // whichever Xcode cached first, which on a Mac with a personal team and
-        // a paid one is a coin flip between a week and a year.
+        // Sign with the best team this Mac has. The id goes to the CLI explicitly:
+        // left to detect a team itself it takes whichever Xcode cached first, which
+        // on a Mac with a personal team and a paid one isn't the paid one.
         options.useTeam(signingTeam?.id)
 
         installedAppPath = nil
         failureSummary = nil
         lastReachedTrackPhase = nil
         lastBuildAdHoc = false
+        // The run analyzes it anyway, and a refusal is read off its log.
+        compatibilityCheck?.cancel()
         phase = .extracting
         var args = options.conversionArgs()
         // Ask the CLI to launch the host app hidden (it still registers with
@@ -402,7 +405,7 @@ final class ConverterViewModel: ObservableObject {
         if let v = updater.installedVersion, !CLIUpdater.semverLess(v, "1.11.8") {
             args.append("--background-launch")
         }
-        runCLI(args: args, label: "Conversion", userMode: true)
+        runCLI(args: args)
     }
 
     /// "Convert Anyway" on the signing warning: run this one conversion without
@@ -410,6 +413,7 @@ final class ConverterViewModel: ObservableObject {
     /// Settings.
     func convertIgnoringSigning() {
         adhocBypassOnce = true
+        if batchActive { signingWarningAnsweredForBatch = true }
         userConvert()
     }
 
@@ -423,25 +427,26 @@ final class ConverterViewModel: ObservableObject {
             : (!options.appName.isEmpty
                 ? options.appName
                 : URL(fileURLWithPath: options.inputPath).deletingPathExtension().lastPathComponent)
-        // Stash a durable copy of the source so auto-renew can rebuild later even if
-        // the user moves/deletes the original (or the cached store .crx is purged).
-        let archived = ExtensionRenewer.archiveSource(options.inputPath, appName: options.appName)
-        // Re-read the teams rather than trusting the answer from the start of
-        // the run: someone who joined the Developer Program (or signed into a
-        // different Apple ID) mid-session gets the year they paid for, not a
-        // week of pointless weekly rebuilds. Then read the artifact, because a
-        // run can succeed and still have come out ad-hoc.
-        signingTeams = SigningAccount.availableTeams()
-        let build = SigningAccount.inspectBuild(installedAppPath: installedAppPath,
-                                                signedAt: Date(), account: signingAccount)
+        // Stash a durable copy of the source so it can be rebuilt or moved to
+        // another Mac even if the user moves/deletes the original (or the cached
+        // store .crx is purged).
+        let archived = ExtensionUpdater.archiveSource(options.inputPath, appName: options.appName)
+        // Read the artifact, because a run can succeed and still have come out
+        // ad-hoc.
+        let build = SigningAccount.inspectBuild(installedAppPath: installedAppPath)
         lastBuildAdHoc = build.adHoc
         history.add(name: name, sourcePath: archived ?? options.inputPath,
                     appName: options.appName,
                     installedPath: installedAppPath,
                     build: build,
                     iconData: extInfo?.icon?.pngData(),
-                    storeId: pendingStoreId, version: extInfo?.version)
+                    storeId: pendingStoreId,
+                    chromeId: pendingChromeId ?? pendingStoreId
+                        ?? ExtensionIdentity.chromeId(forSource: options.inputPath),
+                    version: extInfo?.version,
+                    freeRemovesAt: FreePlan.removalDate(licensed: LicenseManager.shared.isLicensed))
         pendingStoreId = nil
+        pendingChromeId = nil
         // Count this against the free quota (no-op once licensed).
         LicenseManager.shared.recordFreeConversion()
     }
@@ -611,30 +616,31 @@ final class ConverterViewModel: ObservableObject {
         phase = .idle
         installedAppPath = nil
         failureSummary = nil
-        lastExitCode = nil
         extInfo = nil
         needsXcode = false
         needsAppleAccount = false
         lastBuildAdHoc = false
         options.inputPath = ""
+        compatibilityCheck?.cancel()
+        compatibility = nil
         options.appName = ""
+        // A store install that stopped early would otherwise stamp its id on
+        // the next, unrelated conversion.
+        pendingStoreId = nil
+        pendingChromeId = nil
     }
 
-    private func runCLI(args: [String], label: String, userMode: Bool = false) {
-        if let err = preflight(args: args) {
-            statusMessage = err
+    private func runCLI(args: [String]) {
+        if let err = options.validationError() {
             appendLog("✗ \(err)")
-            if userMode { failureSummary = err; phase = .failed }
+            failureSummary = err
+            phase = .failed
             return
         }
-        // Freemium gate at the choke point: every conversion path lands here,
-        // so an unlicensed user can't bypass the quota via Developer mode.
-        // Analyze/doctor runs aren't conversions and stay free.
-        if label == "Conversion", !LicenseManager.shared.canConvert {
+        if !LicenseManager.shared.canConvert {
             showPaywall = true
-            statusMessage = "Free conversions used. Activate a license to continue."
             appendLog("✗ Free conversion limit reached.")
-            if userMode { phase = .idle }
+            phase = .idle
             return
         }
         // No engine yet (first launch, or the launch fetch hasn't landed): get it,
@@ -643,48 +649,71 @@ final class ConverterViewModel: ObservableObject {
         // Sparkle won't relaunch us mid-download.
         if !updater.isInstalled {
             isRunning = true
-            statusMessage = "Installing the converter engine…"
+            runGeneration += 1
+            let generation = runGeneration
             Task {
                 let ok = await ensureCLIInstalled()
-                // Cancelled while the download ran — `isRunning` going false is
-                // the only signal cancel() leaves behind.
-                guard isRunning else { return }
+                // Cancelled while the download ran (cancel() bumps the
+                // generation), or a newer run took over.
+                guard isRunning, runGeneration == generation else { return }
+                isRunning = false
                 guard ok else {
-                    isRunning = false
-                    let msg = cliInstallError ?? "The converter engine could not be installed."
-                    statusMessage = msg
-                    if userMode { failureSummary = msg; phase = .failed }
+                    failureSummary = cliInstallError ?? "The converter engine could not be installed."
+                    phase = .failed
+                    userRunEnded?(false)
                     return
                 }
-                runCLI(args: args, label: label, userMode: userMode)
+                runCLI(args: args)
+            }
+            return
+        }
+        // A background store update may hold the CLI (it runs at launch and daily).
+        // Wait for it rather than failing with "A task is already running".
+        if runner.isRunning {
+            isRunning = true
+            runGeneration += 1
+            let generation = runGeneration
+            appendLog("→ Waiting for a background update to finish…")
+            Task {
+                while runner.isRunning {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+                guard isRunning, runGeneration == generation else { return }
+                isRunning = false
+                runCLI(args: args)
             }
             return
         }
         isRunning = true
-        lastExitCode = nil
         lastCLIError = nil
-        statusMessage = "\(label) running…"
+        runGeneration += 1
+        let generation = runGeneration
         appendLog("$ viaduct \(args.joined(separator: " "))")
         do {
             try runner.run(args: args, onLine: { [weak self] line in
-                guard let self else { return }
+                guard let self, self.runGeneration == generation else { return }
                 let clean = self.appendLog(line)
-                // Keep the CLI's own reason for failing. User mode hides the log, so
+                // Keep the CLI's own reason for failing. The log stays hidden, so
                 // without this every failure reads as the same generic sentence — which
                 // is how a specific, actionable message like "the extension is ad-hoc"
                 // ends up invisible to the person who needs it.
                 if let reason = Self.errorReason(in: clean) { self.lastCLIError = reason }
-                if userMode { self.advancePhase(from: clean) }
+                self.advancePhase(from: clean)
             }, onExit: { [weak self] code in
-                guard let self else { return }
+                guard let self, self.runGeneration == generation else { return }
                 self.isRunning = false
-                self.lastExitCode = code
-                self.statusMessage = code == 0
-                    ? "\(label) finished."
-                    : "\(label) failed (exit \(code))."
                 self.appendLog(code == 0 ? "✓ Done." : "✗ Exit \(code).")
-                if code == 0, label == "Conversion" { self.recordConversion() }
-                if userMode { self.finishUserPhase(code: code) }
+                // Refused only for being a webRequest content blocker: it still
+                // installs and its element hiding works, so convert it anyway.
+                if code != 0, !args.contains("--force"),
+                   let refused = CompatibilityCheck.refusal(inLog: self.logLines),
+                   !refused.isEmpty, refused.allSatisfy(\.isContentBlocker) {
+                    self.runCLI(args: args + ["--force"])
+                    return
+                }
+                if code == 0 { self.recordConversion() }
+                self.finishUserPhase(code: code)
+                self.userRunEnded?(code == 0)
                 // Pick up an update the check had to skip while this run held
                 // the CLI. Swapping now is safe: nothing is executing it.
                 if self.updatePendingAfterRun {
@@ -694,9 +723,10 @@ final class ConverterViewModel: ObservableObject {
             })
         } catch {
             isRunning = false
-            statusMessage = error.localizedDescription
             appendLog("✗ \(error.localizedDescription)")
-            if userMode { failureSummary = error.localizedDescription; phase = .failed }
+            failureSummary = error.localizedDescription
+            phase = .failed
+            userRunEnded?(false)
         }
     }
 
@@ -727,8 +757,13 @@ final class ConverterViewModel: ObservableObject {
             // flips to .done, which surfaces the "Open extension" button.
             phase = .finishing
         } else {
-            failureSummary = lastCLIError
-                ?? "The conversion stopped partway through. Copy the log or switch to Developer mode to see what failed."
+            if let verdict = CompatibilityCheck.verdict(fromLog: logLines) {
+                compatibility = verdict
+                failureSummary = verdict.message
+            } else {
+                failureSummary = lastCLIError
+                    ?? "The conversion stopped partway through. Copy the log to see what failed, or report it."
+            }
             phase = .failed
             Feedback.failure()
         }
@@ -742,7 +777,9 @@ final class ConverterViewModel: ObservableObject {
         guard phase == .finishing else { return }
         phase = .done
         Feedback.success()
-        openConvertedApp()
+        // A batch opens Safari's settings once at the end instead of launching
+        // every converted app over the queue.
+        if !batchActive { openConvertedApp() }
     }
 
     /// Launch the freshly-built Safari Web Extension host app so its enable
@@ -771,21 +808,10 @@ final class ConverterViewModel: ObservableObject {
         return nil
     }
 
-    private func preflight(args: [String]) -> String? {
-        // Doctor/analyze only need input for analyze.
-        if args.contains("--analyze") || args == ConvertOptions.doctorArgs() {
-            if args.contains("--analyze"), options.inputPath.isEmpty {
-                return "Choose an input first."
-            }
-            return nil
-        }
-        return options.validationError()
-    }
-
     func cancel() {
+        runGeneration += 1
         runner.cancel()
         appendLog("⚠︎ Cancelled.")
-        statusMessage = "Cancelled."
         isRunning = false
     }
 
@@ -802,19 +828,15 @@ final class ConverterViewModel: ObservableObject {
         updateChecking = true
         Task {
             defer { updateChecking = false }
-            do {
-                let available = try await updater.updateAvailable()
-                updateAvailable = available
-                guard available else { statusMessage = "CLI is up to date."; return }
-                guard !isRunning else {
-                    updatePendingAfterRun = true
-                    statusMessage = "CLI update queued (runs after this conversion)."
-                    return
-                }
-                await applyUpdate()
-            } catch {
-                statusMessage = "Update check failed: \(error.localizedDescription)"
+            // A failed check just waits for the next launch.
+            guard let available = try? await updater.updateAvailable() else { return }
+            updateAvailable = available
+            guard available else { return }
+            guard !isBusy else {
+                updatePendingAfterRun = true
+                return
             }
+            await applyUpdate()
         }
     }
 
@@ -827,15 +849,13 @@ final class ConverterViewModel: ObservableObject {
             await ensureCLIInstalled()
             return
         }
-        statusMessage = "Updating CLI…"
         appendLog("→ Auto-updating CLI…")
         do {
             try await updater.update(rawLog: { [weak self] line in self?.appendLog(line) })
             installedVersion = updater.installedVersion ?? "not installed"
             updateAvailable = false
-            statusMessage = "CLI updated to \(installedVersion)."
         } catch {
-            statusMessage = "Update failed: \(error.localizedDescription)"
+            // Kept in the log: Settings re-checks, and the next launch retries.
             appendLog("✗ \(error.localizedDescription)")
         }
     }
@@ -863,38 +883,35 @@ final class ConverterViewModel: ObservableObject {
                 self.options.appName = n
             }
         }
+        // Say up front when it can't work, before Xcode, signing or a free
+        // conversion come into it. A batch starts converting straight away and
+        // gets the same answer from the run's log instead.
+        compatibilityCheck?.cancel()
+        compatibility = nil
+        guard !batchActive else { return }
+        compatibilityCheck = Task { [weak self] in
+            let verdict = await CompatibilityCheck.run(path: path)
+            guard !Task.isCancelled, let self, self.options.inputPath == path,
+                  self.phase == .idle else { return }
+            self.compatibility = verdict
+        }
     }
 
-    func pickInput() {
+    /// `allowBatch` lets user mode pick several at once; more than one goes to
+    /// the batch queue.
+    func pickInput(allowBatch: Bool = false) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a .zip, .crx, or unpacked extension folder."
-        if panel.runModal() == .OK, let url = panel.url {
+        panel.allowsMultipleSelection = allowBatch
+        panel.message = panel.allowsMultipleSelection
+            ? "Choose one or more .zip, .crx, or unpacked extension folders."
+            : "Choose a .zip, .crx, or unpacked extension folder."
+        guard panel.runModal() == .OK else { return }
+        if panel.urls.count > 1 {
+            BatchConvert.start(panel.urls, vm: self)
+        } else if let url = panel.url {
             selectInput(path: url.path)
-        }
-    }
-
-    func pickOutputDir() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.message = "Choose an output directory."
-        if panel.runModal() == .OK, let url = panel.url {
-            options.outputDir = url.path
-        }
-    }
-
-    func pickInstallDir() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.message = "Choose an install directory."
-        if panel.runModal() == .OK, let url = panel.url {
-            options.installDir = url.path
         }
     }
 

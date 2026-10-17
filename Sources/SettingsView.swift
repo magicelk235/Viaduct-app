@@ -1,12 +1,42 @@
 import SwiftUI
 import AppKit
 
+/// The pages in the Settings sidebar.
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case general, license, extensions
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .general:    return "General"
+        case .license:    return "License"
+        case .extensions: return "Extensions"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general:    return "gearshape"
+        case .license:    return "checkmark.seal"
+        case .extensions: return "puzzlepiece.extension"
+        }
+    }
+}
+
+/// Which page is showing. Shared so other code can open Settings on a page.
+@MainActor
+final class SettingsNavigation: ObservableObject {
+    static let shared = SettingsNavigation()
+    @Published var selectedTab: SettingsTab? = .general
+}
+
 struct SettingsView: View {
-    @Binding var mode: AppMode
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject private var history: ConversionHistory
     @ObservedObject private var license = LicenseManager.shared
     @ObservedObject private var updater = Updater.shared
+    @ObservedObject private var navigation = SettingsNavigation.shared
     @State private var showDeactivateConfirm = false
     @State private var licenseKey = ""
     /// "Up to date" confirmation after a manual CLI check, cleared on a timer so
@@ -15,41 +45,105 @@ struct SettingsView: View {
     /// True only between a click on the version number and that check finishing,
     /// so background checks never trigger the inline confirmation.
     @State private var cliCheckRequested = false
+    /// Back/forward through the pages visited, like System Settings.
+    @State private var visited: [SettingsTab] = [.general]
+    @State private var visitedIndex = 0
+    @State private var steppingThroughHistory = false
 
-    init(mode: Binding<AppMode>, vm: ConverterViewModel) {
-        _mode = mode
+    init(vm: ConverterViewModel) {
         self.vm = vm
         _history = ObservedObject(wrappedValue: vm.history)
     }
 
+    private var activeTab: SettingsTab { navigation.selectedTab ?? .general }
+
     var body: some View {
-        ZStack {
-            Theme.Colors.canvas.ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Space.lg) {
-                    Text("Settings")
-                        .font(Theme.Font.headingXL())
-                        .foregroundStyle(Theme.Colors.ink)
-                        .padding(.bottom, Theme.Space.xxs)
-
-                    interfaceCard
-                    licenseCard
-                    appUpdateCard
-                    cliCard
-                    signingCard
-                    storeCard
-                    warningsCard
-                    supportCard
-                    historyCard
-                }
-                .padding(Theme.Space.xl)
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 190, ideal: 190, max: 190)
+                .removingSidebarToggle()
+        } detail: {
+            page(activeTab)
+                .navigationTitle(activeTab.title)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .navigationTitle("Settings")
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 680, minHeight: 520)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                Button { step(-1) } label: { Image(systemName: "chevron.left") }
+                    .disabled(visitedIndex == 0)
+                Button { step(1) } label: { Image(systemName: "chevron.right") }
+                    .disabled(visitedIndex >= visited.count - 1)
             }
         }
-        .frame(width: 460, height: 600)
+        .onChange(of: navigation.selectedTab) { _ in recordVisit() }
         // Settings can be the first window a menu-bar-resident launch ever
-        // shows, so the account row can't rely on the launch hook having run.
-        .task { vm.refreshSigningTeams(); vm.refreshStoreButton() }
+        // shows, so the store-button state can't rely on the launch hook.
+        .task { vm.refreshStoreButton() }
+    }
+
+    private var sidebar: some View {
+        // Clicking empty sidebar space or cmd-clicking the selected row would
+        // clear the selection; keep the current page instead.
+        List(selection: Binding(get: { navigation.selectedTab },
+                                set: { if let tab = $0 { navigation.selectedTab = tab } })) {
+            ForEach(SettingsTab.allCases) { tab in
+                Label(tab.title, systemImage: tab.systemImage).tag(tab)
+            }
+        }
+        .listStyle(.sidebar)
+        .softScrollEdges()
+    }
+
+    @ViewBuilder
+    private func page(_ tab: SettingsTab) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Space.lg) {
+                switch tab {
+                case .general:
+                    appUpdateCard
+                    cliCard
+                    warningsCard
+                    SetupAgainSection(vm: vm)
+                    supportCard
+                case .license:
+                    licenseCard
+                case .extensions:
+                    storeCard
+                    MigrationSection(vm: vm, history: history)
+                    // Kept last: the list grows with every conversion, so it
+                    // shouldn't push the other sections down.
+                    historyCard
+                }
+            }
+            // System Settings' rhythm: one readable column, not cards stretched
+            // across whatever width the window happens to be.
+            .frame(maxWidth: 560, alignment: .leading)
+            .padding(Theme.Space.xl)
+            .frame(maxWidth: .infinity)
+        }
+        .background(Theme.Colors.canvas)
+        // A page of its own, so switching pages doesn't keep the last scroll offset.
+        .id(tab)
+    }
+
+    // MARK: - Page history
+
+    private func step(_ delta: Int) {
+        let target = visitedIndex + delta
+        guard visited.indices.contains(target) else { return }
+        steppingThroughHistory = true
+        visitedIndex = target
+        navigation.selectedTab = visited[target]
+        DispatchQueue.main.async { steppingThroughHistory = false }
+    }
+
+    private func recordVisit() {
+        guard !steppingThroughHistory, let tab = navigation.selectedTab, visited[visitedIndex] != tab else { return }
+        visited = Array(visited.prefix(visitedIndex + 1)) + [tab]
+        visitedIndex = visited.count - 1
     }
 
     // MARK: - Cards
@@ -77,12 +171,6 @@ struct SettingsView: View {
             .init(name: "body", value: body),
         ]
         return c.url!
-    }
-
-    private var interfaceCard: some View {
-        SettingsSection(title: "Mode", symbol: "macwindow") {
-            PillTabPicker(options: AppMode.allCases, label: \.label, selection: $mode)
-        }
     }
 
     private var cliCard: some View {
@@ -126,18 +214,16 @@ struct SettingsView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { cliUpToDate = false }
     }
 
-    /// How long an Apple signature lasts on this Mac, in words. Falls back to the
-    /// free week when the account hasn't been classified yet — the same
-    /// assumption renewal scheduling makes.
-    private var signingLifetimeText: String { (vm.signingAccount ?? .free).lifetimeText }
-
     private var licenseCard: some View {
-        SettingsSection(title: "License", symbol: "checkmark.seal") {
+        SettingsSection {
             if license.isLicensed {
-                ProBadge(color: Theme.Colors.accentGreen)
-            }
-        } content: {
-            if license.isLicensed {
+                HStack {
+                    Text("Viaduct Pro is active on this Mac.")
+                        .font(Theme.Font.body())
+                        .foregroundStyle(Theme.Colors.body)
+                    Spacer()
+                    ProBadge(color: Theme.Colors.accentGreen)
+                }
                 Button("Deactivate on this Mac") { showDeactivateConfirm = true }
                     .buttonStyle(.raycastTertiary)
                     .confirmationDialog("Viaduct will go back to the free tier on this Mac",
@@ -150,7 +236,7 @@ struct SettingsView: View {
                         Text("Frees up the seat for another Mac. You'll need your key to activate again.")
                     }
             } else {
-                Text("\(license.freeConversionsRemaining) of \(license.freeQuota) free conversions left. A license removes the limit and turns on auto-renew, so Safari stops dropping your extensions after \(signingLifetimeText).")
+                Text("\(license.freeConversionsRemaining) of \(license.freeQuota) free conversions left. A license removes the limit and keeps your extensions. On the free plan, Viaduct removes them after 7 days.")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
 
@@ -182,7 +268,8 @@ struct SettingsView: View {
                               || licenseKey.trimmingCharacters(in: .whitespaces).isEmpty)
                     Spacer()
                     Link("Buy a license",
-                         destination: URL(string: "https://magicelk235.gumroad.com/l/viaduct")!)
+                         destination: license.checkoutURL(source: .settings,
+                                                          extensionCount: history.records.count))
                         .font(Theme.Font.caption())
                         .foregroundStyle(Theme.Colors.accentBlue)
                 }
@@ -205,85 +292,42 @@ struct SettingsView: View {
         }
     }
 
-    private var signingCard: some View {
-        let licensed = license.isLicensed
-        return SettingsSection(title: "Keeping extensions working", symbol: "signature") {
-            // Two binary facts, as capsules rather than card copy: how long Apple
-            // signs for here, and whether renewal is unlocked.
-            if let account = vm.signingAccount {
-                StatusBadge(text: account.lifetimeText.uppercased(),
-                            color: account == .paid
-                                ? Theme.Colors.accentGreen
-                                : Theme.Colors.accentYellow)
-                    .help("Apple signs a converted extension for \(account.lifetimeText) with \(account.article)."
-                          + (licensed && vm.autoRenew ? " Viaduct re-signs it before that runs out." : ""))
-            }
-            if !licensed {
-                ProBadge(color: Theme.Colors.accentBlue)
-            }
-        } content: {
-            // Which Apple account signs, but only when this Mac has more than
-            // one. A developer holding a personal team and a paid membership
-            // otherwise had no say in it, and Xcode's cache order decided —
-            // the personal team means Safari drops the extension after a week.
-            if vm.signingTeams.count > 1, let team = vm.signingTeam {
-                SigningTeamRow(teams: vm.signingTeams, selected: team,
-                               pinnedTeamID: $vm.signingTeamID)
-                Divider().overlay(Theme.Colors.hairlineSoft)
-            }
-
-            // Free users always see (and get) OFF: the binding reads false and
-            // ignores writes. Licensed users get the real stored toggle.
-            Toggle("Re-sign extensions before they expire",
-                   isOn: licensed
-                       ? $vm.autoRenew
-                       : .constant(false))
-                .toggleStyle(.glass)
-                .disabled(!licensed)
-                .onChange(of: vm.autoRenew) { _ in vm.startAutoRenew() }
-            Divider().overlay(Theme.Colors.hairlineSoft)
-
-            Toggle("Update Chrome Web Store extensions weekly",
-                   isOn: licensed
-                       ? $vm.autoUpdate
-                       : .constant(false))
-                .toggleStyle(.glass)
-                .disabled(!licensed)
-                .onChange(of: vm.autoUpdate) { _ in vm.startAutoRenew() }
-            if !licensed {
-                // Settings is its own window; the activation sheet lives on the
-                // main window. Just send them to buy — converting again surfaces
-                // the in-app paywall to paste the key.
-                Link("Unlock with a license",
-                     destination: URL(string: "https://magicelk235.gumroad.com/l/viaduct")!)
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.accentBlue)
-            }
-        }
-    }
-
     /// The bundled Safari extension that adds an Add-to-Safari button to
     /// Chrome Web Store pages. Safari ships it off, so this card is its
     /// permanent home: state, the switch, and (once on) a store shortcut.
     private var storeCard: some View {
         let enabled = vm.storeButtonEnabled == true
+        let licensed = license.isLicensed
         return SettingsSection(title: "Chrome Web Store", symbol: "safari") {
             if enabled {
                 StatusBadge(text: "ON", color: Theme.Colors.accentGreen)
             }
         } content: {
-            Text(enabled
-                 ? "Chrome Web Store pages show an Add to Safari button, so extensions install straight from the store."
-                 : "Viaduct can add an Add to Safari button to Chrome Web Store pages, so extensions install straight from the store. Turn it on once in Safari.")
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
-                .fixedSize(horizontal: false, vertical: true)
             if enabled {
                 Button("Open the Chrome Web Store") { StoreButton.openWebStore() }
                     .buttonStyle(.raycastTertiary)
             } else {
                 Button("Turn On in Safari") { StoreButton.openSafariSettings() }
                     .buttonStyle(.raycastPrimary)
+            }
+            Divider().overlay(Theme.Colors.hairlineSoft)
+
+            // Free users always see (and get) OFF: the binding reads false and
+            // ignores writes. Licensed users get the real stored toggle.
+            Toggle("Update Chrome Web Store extensions weekly",
+                   isOn: licensed ? $vm.autoUpdate : .constant(false))
+                .toggleStyle(.glass)
+                .disabled(!licensed)
+                .onChange(of: vm.autoUpdate) { _ in vm.startAutoUpdate() }
+            if !licensed {
+                HStack(spacing: Theme.Space.sm) {
+                    ProBadge(color: Theme.Colors.accentBlue)
+                    // The License page has the key field and the Buy link.
+                    Button("Unlock with a license") { navigation.selectedTab = .license }
+                        .buttonStyle(.plain)
+                        .font(Theme.Font.caption())
+                        .foregroundStyle(Theme.Colors.accentBlue)
+                }
             }
         }
     }
@@ -302,17 +346,13 @@ struct SettingsView: View {
     private var historyCard: some View {
         SettingsSection(title: "Converted extensions", symbol: "clock.arrow.circlepath") {
         } content: {
-            if history.records.isEmpty {
-                Text("Nothing converted yet.")
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.mute)
-            } else {
+            if !history.records.isEmpty{
                 ScrollView {
                     VStack(spacing: Theme.Space.xs) {
                         ForEach(history.records) { historyRow($0) }
                     }
                 }
-                .frame(maxHeight: 180)
+                .frame(maxHeight: 360)
             }
         }
     }
@@ -324,12 +364,11 @@ struct SettingsView: View {
         }
     }
 
-    /// Per-row signing state. Ad-hoc comes first and shows for everyone: Safari
-    /// turns those extensions off every time it quits, which no amount of
-    /// re-signing fixes. Otherwise a failed renew is loud (red), and licensed
-    /// users see when the next one lands — the free tier doesn't auto-renew.
+    /// Per-row state. Ad-hoc shows for everyone, because Safari turns those
+    /// extensions off every time it quits; then a store update that didn't go
+    /// through.
     @ViewBuilder
-    private func renewStatus(_ rec: ConversionRecord) -> some View {
+    private func rowStatus(_ rec: ConversionRecord) -> some View {
         if rec.adHoc == true {
             Label("No Apple signature: Safari turns it off every time it quits",
                   systemImage: "exclamationmark.triangle.fill")
@@ -340,19 +379,13 @@ struct SettingsView: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .help("This build has no Apple signature, so Safari only loads it while Allow Unsigned Extensions is on in the Develop menu. Sign in to Xcode under Settings → Accounts, then convert it again to get a signed build.")
-        } else if license.isLicensed && vm.autoRenew {
-            if rec.lastRenewFailed == true {
-                Label("Couldn't re-sign. Convert it again before \(rec.expiresAt.formatted(date: .abbreviated, time: .omitted))",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.accentRed)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Re-signs \(rec.expiresAt.formatted(.relative(presentation: .named)))")
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.ash)
-            }
+        } else if rec.lastUpdateFailed == true {
+            Label("Couldn't update to the new store version. This one still works.",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(Theme.Font.caption())
+                .foregroundStyle(Theme.Colors.accentYellow)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -369,7 +402,7 @@ struct SettingsView: View {
                 Text(rec.date.formatted(date: .abbreviated, time: .shortened))
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
-                renewStatus(rec)
+                rowStatus(rec)
             }
             Spacer()
             if let path = rec.installedPath {
@@ -389,7 +422,7 @@ struct SettingsView: View {
                     .foregroundStyle(Color.red)
             }
             .buttonStyle(.raycastGhost)
-            .help("Forget this extension and stop renewing it")
+            .help("Remove this extension")
         }
         .padding(.vertical, Theme.Space.xs)
         .padding(.horizontal, Theme.Space.sm)
@@ -425,13 +458,15 @@ struct ProBadge: View {
 // MARK: - Settings building blocks
 
 /// A glass card with an icon + title header and an optional trailing accessory.
-private struct SettingsSection<Accessory: View, Content: View>: View {
-    let title: String
-    let symbol: String
+/// A card that is the only thing on its page passes no title: the page title
+/// already says it, and a card saying it again is the same label twice.
+struct SettingsSection<Accessory: View, Content: View>: View {
+    let title: String?
+    let symbol: String?
     @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder var content: () -> Content
 
-    init(title: String, symbol: String,
+    init(title: String? = nil, symbol: String? = nil,
          @ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() },
          @ViewBuilder content: @escaping () -> Content) {
         self.title = title
@@ -443,19 +478,24 @@ private struct SettingsSection<Accessory: View, Content: View>: View {
     var body: some View {
         RaycastCard(glass: true) {
             VStack(alignment: .leading, spacing: Theme.Space.md) {
-                HStack(spacing: Theme.Space.sm) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.Colors.primary)
-                        .frame(width: 18)
-                    Text(title)
-                        .font(Theme.Font.headingSM())
-                        .foregroundStyle(Theme.Colors.ink)
-                    Spacer()
-                    accessory()
+                if let title {
+                    HStack(spacing: Theme.Space.sm) {
+                        if let symbol {
+                            Image(systemName: symbol)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Theme.Colors.primary)
+                                .frame(width: 18)
+                        }
+                        Text(title)
+                            .font(Theme.Font.headingSM())
+                            .foregroundStyle(Theme.Colors.ink)
+                        Spacer()
+                        accessory()
+                    }
                 }
                 content()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -506,44 +546,5 @@ private struct VersionRow: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: status)
-    }
-}
-
-/// The Apple account row: the team id that signs, and a chip per team this Mac
-/// could sign with instead. Only rendered when there's more than one, so the
-/// single-account Mac most people have keeps the card down to its two toggles.
-/// Picking a team pins it — the card's own lifetime badge is the feedback, since
-/// it flips between Apple's week and its year with the choice.
-private struct SigningTeamRow: View {
-    let teams: [SigningAccount.Team]
-    let selected: SigningAccount.Team
-    @Binding var pinnedTeamID: String
-
-    var body: some View {
-        HStack(spacing: Theme.Space.sm) {
-            Image(systemName: "person.crop.circle")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.Colors.primary)
-                .frame(width: 18)
-            Text(selected.id)
-                .font(Theme.Font.mono())
-                .foregroundStyle(Theme.Colors.body)
-                .help("The Apple team Viaduct signs with. Find it under Membership details at developer.apple.com.")
-            Spacer(minLength: Theme.Space.sm)
-            PillTabPicker(options: teams, label: label,
-                          selection: Binding(get: { selected },
-                                             set: { pinnedTeamID = $0.id }))
-                .fixedSize()
-        }
-    }
-
-    /// Chip text is the kind of account, since that's what the choice is about
-    /// and what changes how long Safari keeps the extension. Two teams of the
-    /// same kind (or two Viaduct can't classify) would read identically, so
-    /// those carry their team id instead.
-    private func label(_ team: SigningAccount.Team) -> String {
-        let name = team.account?.label ?? "Apple team"
-        let ambiguous = teams.filter { ($0.account?.label ?? "Apple team") == name }.count > 1
-        return ambiguous ? team.id : name
     }
 }

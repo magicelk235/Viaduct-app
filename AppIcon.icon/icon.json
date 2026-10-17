@@ -1,10 +1,12 @@
 {
-  "fill" : "system-light",
+  "fill" : {
+    "automatic-gradient" : "display-p3:0.14977,0.30849,0.29171,1.00000"
+  },
   "groups" : [
     {
       "layers" : [
         {
-          "blend-mode" : "overlay",
+          "blend-mode" : "normal",
           "fill" : "automatic",
           "glass" : true,
           "image-name" : "icon.png",

@@ -28,6 +28,10 @@ targets:
     sources:
       - path: Sources
       - path: AppIcon.icon
+      # Only the AccentColor lives here: the app's teal for system-drawn
+      # controls (sidebar selection, checkboxes, progress bars), which ignore
+      # SwiftUI's .tint and would otherwise come out macOS blue.
+      - path: Assets.xcassets
       - path: icon.png
         buildPhase: resources
       - path: Resources/bin
@@ -54,6 +58,10 @@ targets:
         LSMinimumSystemVersion: "13.0"
         NSHumanReadableCopyright: "Copyright © 2026 Yehonatan Cohen. PolyForm Shield License 1.0.0."
         LSApplicationCategoryType: public.app-category.developer-tools
+        # macOS asks before one app reads another's data. Import from Chrome and
+        # bringing settings over read the browser's profile folder, and without
+        # a reason here the prompt reads like something to deny.
+        NSAppDataUsageDescription: "Viaduct reads the extensions installed in your browsers, and their saved settings, so it can bring them over to Safari."
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - viaduct
@@ -72,6 +80,7 @@ targets:
         ENABLE_HARDENED_RUNTIME: false
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     preBuildScripts:
       - name: Fetch Node
         # Download a self-contained universal node into Resources/bin/node so the
