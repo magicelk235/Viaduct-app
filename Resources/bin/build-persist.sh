@@ -17,8 +17,12 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Persist's source lives in a private repo. A checkout of this public repo without it
 # builds an app without Firefox support; release.sh refuses to ship that build.
+# Xcode copies Resources/firefox whether or not it holds anything, so the folder must
+# exist, and an earlier build's persist.mjs must not ship in a build without persist.
 if [ ! -f "$PERSIST/package.json" ]; then
   echo "warning: build-persist: no persist checkout at $PERSIST. This build has no Firefox support. Set PERSIST_DIR to build it."
+  mkdir -p "$(dirname "$OUT")"
+  rm -f "$OUT"
   exit 0
 fi
 command -v npm >/dev/null || { echo "error: build-persist: npm not found. Install Node.js (brew install node)."; exit 1; }
