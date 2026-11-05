@@ -2,15 +2,16 @@ import SwiftUI
 import AppKit
 
 /// First-launch setup: gets a new install to the point where a conversion can
-/// succeed (Xcode, an Apple account in it, read access to the browsers), offers
-/// the store button, then ends on a welcome screen that hands over to Import
-/// from Chrome.
+/// succeed for the browser picked at the top. For Safari that's Xcode, an
+/// Apple account in it and the store button; for Firefox it's Firefox itself.
+/// Both ask for read access to the browsers and a license, then end on a
+/// welcome screen that hands over to Import from Chrome.
 @MainActor
 final class SetupFlow: ObservableObject {
     static let shared = SetupFlow()
 
     enum Step: Int, CaseIterable, Identifiable {
-        case xcode, appleAccount, diskAccess, storeButton, license
+        case xcode, appleAccount, diskAccess, storeButton, license, firefox
         var id: Int { rawValue }
     }
 
@@ -37,6 +38,8 @@ final class SetupFlow: ObservableObject {
     /// asked, because the check itself is what raises the macOS prompt.
     @Published private(set) var blockedBrowsers: [ChromiumBrowser]?
     @Published private(set) var checkingDiskAccess = false
+    /// The Firefox conversions would go to, if there is one.
+    @Published private(set) var firefox: FirefoxLocator.Install?
 
     private let doneKey = "setupDone"
 
@@ -80,10 +83,22 @@ final class SetupFlow: ObservableObject {
 
     // MARK: - Steps
 
-    /// The steps this Mac needs. Disk access only makes sense with a Chromium
-    /// browser installed.
-    var steps: [Step] {
-        Step.allCases.filter { $0 != .diskAccess || ChromeImport.hasBrowsers }
+    /// Setup is for the browser picked at the top of it, the same choice the
+    /// main window converts for.
+    var browser: Browser { ConverterViewModel.shared.targetBrowser }
+
+    /// The steps this Mac needs for the picked browser.
+    var steps: [Step] { Self.steps(for: browser, hasBrowsers: ChromeImport.hasBrowsers) }
+
+    /// Firefox needs neither Xcode nor an Apple account. Disk access only
+    /// makes sense with a Chromium browser installed.
+    static func steps(for browser: Browser, hasBrowsers: Bool) -> [Step] {
+        let steps: [Step]
+        switch browser {
+        case .safari:  steps = [.xcode, .appleAccount, .diskAccess, .storeButton, .license]
+        case .firefox: steps = [.firefox, .diskAccess, .license]
+        }
+        return steps.filter { $0 != .diskAccess || hasBrowsers }
     }
 
     /// Whether the welcome screen offers Import from Chrome.
@@ -108,6 +123,19 @@ final class SetupFlow: ObservableObject {
         }
     }
 
+    /// The picker at the top changed browser: open the first step the new
+    /// list still needs, or the welcome screen when it needs none.
+    func browserChanged() {
+        firefox = FirefoxLocator.find()
+        if let first = steps.first(where: { !isDone($0) }) {
+            step = first
+            refresh()
+        } else if !preparing {
+            // While the first checks are out, their answer picks the step.
+            showingWelcome = true
+        }
+    }
+
     /// The step on screen just finished. Move on after a beat, so the green
     /// check registers before its row closes.
     func stepCompleted() {
@@ -121,11 +149,12 @@ final class SetupFlow: ObservableObject {
 
     // MARK: - Checks
 
-    /// Re-check what can be checked quietly: Xcode, the Apple account and the
-    /// store button, so every row of the checklist is right from the start. Called on
-    /// entering a step and whenever the app comes back to the front, since
-    /// every fix happens in another app.
+    /// Re-check what can be checked quietly: Firefox, Xcode, the Apple account
+    /// and the store button, so every row of the checklist is right from the
+    /// start. Called on entering a step and whenever the app comes back to the
+    /// front, since every fix happens in another app.
     func refresh() {
+        firefox = FirefoxLocator.find()
         // Each step keeps its last answer until the new one lands, so going
         // back to a done row doesn't flash a spinner or reopen it.
         Task.detached(priority: .userInitiated) {
@@ -173,7 +202,8 @@ final class SetupFlow: ObservableObject {
         case .appleAccount: return account == .signedIn
         case .diskAccess:   return blockedBrowsers?.isEmpty == true
         case .storeButton:  return ConverterViewModel.shared.storeButtonEnabled == true
-        case .license:      return LicenseManager.shared.unlimited(.safari)
+        case .license:      return LicenseManager.shared.unlimited(browser)
+        case .firefox:      return firefox != nil && FirefoxDisclosure.isAccepted()
         }
     }
 }

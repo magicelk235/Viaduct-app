@@ -16,6 +16,7 @@ struct SetupView: View {
     @State private var seen = Seen(step: .xcode, done: false)
     @StateObject private var keyEntry = KeyEntry()
     @FocusState private var keyFocused: Bool
+    @State private var showFirefoxDisclosure = false
 
     private var storeButtonOn: Bool { vm.storeButtonEnabled == true }
     private var current: Seen { Seen(step: flow.step, done: flow.isDone(flow.step)) }
@@ -51,6 +52,12 @@ struct SetupView: View {
             if now.done, !seen.done, now.step == seen.step, !flow.preparing { flow.stepCompleted() }
             seen = now
         }
+        .firefoxDisclosureAlert(isPresented: $showFirefoxDisclosure,
+                                onContinue: {
+                                    FirefoxDisclosure.accept()
+                                    flow.refresh()
+                                },
+                                onCancel: {})
     }
 
     // MARK: - Checklist
@@ -61,6 +68,8 @@ struct SetupView: View {
                 .heading()
                 .font(Theme.Font.headingMD())
                 .foregroundStyle(Theme.Colors.ink)
+            BrowserPicker(selection: $vm.targetBrowser)
+                .onChange(of: vm.targetBrowser) { _ in flow.browserChanged() }
             VStack(spacing: 0) {
                 ForEach(flow.steps) { step in
                     if step != flow.steps.first {
@@ -197,6 +206,12 @@ struct SetupView: View {
                 }
             case .storeButton:
                 wide("Turn On in Safari") { StoreButton.openSafariSettings() }
+            case .firefox:
+                if flow.firefox == nil {
+                    wide("Get Firefox") { NSWorkspace.shared.open(FirefoxLocator.downloadURL) }
+                } else {
+                    wide("Set Up Firefox") { showFirefoxDisclosure = true }
+                }
             case .license:
                 if license.isAddingKey {
                     Button {} label: {
@@ -252,7 +267,7 @@ struct SetupView: View {
         case .xcode:        return flow.xcode == nil
         case .appleAccount: return flow.account == nil
         case .diskAccess:   return flow.checkingDiskAccess
-        case .storeButton, .license: return false
+        case .storeButton, .license, .firefox: return false
         }
     }
 
@@ -279,7 +294,10 @@ struct SetupView: View {
         case .storeButton:
             return storeButtonOn ? "Add to Safari is on" : "Add to Safari button"
         case .license:
-            return license.unlimited(.safari) ? "Safari is unlimited" : "Activate a license"
+            return license.unlimited(flow.browser) ? "\(flow.browser.displayName) is unlimited" : "Activate a license"
+        case .firefox:
+            if flow.firefox == nil { return "Install Firefox" }
+            return flow.isDone(.firefox) ? "Firefox is ready" : "Keep add-ons in Firefox"
         }
     }
 
@@ -316,7 +334,7 @@ struct SetupView: View {
             case nil:
                 return "To list the extensions in Chrome and your other browsers, and bring their settings along. macOS will ask you once."
             case let blocked? where blocked.isEmpty:
-                return "Your extensions and their settings can come over to Safari."
+                return "Your extensions and their settings can come over to \(flow.browser.displayName)."
             case let blocked?:
                 return "macOS is still keeping Viaduct out of \(ListFormatter.localizedString(byJoining: blocked.map(\.name))). Turn Viaduct on under Full Disk Access, then come back."
             }
@@ -325,9 +343,14 @@ struct SetupView: View {
                 ? "Chrome Web Store pages show the button."
                 : "Puts a button on Chrome Web Store pages, so extensions install straight from the store."
         case .license:
-            return license.unlimited(.safari)
+            return license.unlimited(flow.browser)
                 ? "No conversion limit, and your extensions stay on this Mac."
                 : nil
+        case .firefox:
+            if flow.firefox == nil { return "Viaduct puts your extensions in Firefox. It's free to download." }
+            return flow.isDone(.firefox)
+                ? "Your add-ons stay in Firefox when it quits."
+                : "Firefox restarts once when your first add-on goes in. Your tabs come back."
         }
     }
 
@@ -345,6 +368,7 @@ struct SetupView: View {
         case .diskAccess:   return "lock.open.fill"
         case .storeButton:  return "safari.fill"
         case .license:      return "key.fill"
+        case .firefox:      return "flame.fill"
         }
     }
 
