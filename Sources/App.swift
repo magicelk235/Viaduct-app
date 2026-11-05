@@ -181,12 +181,14 @@ struct ViaductApp: App {
                 → Apple Account is a different thing and won't work.
                 """)
             }
-            // Paywall: shown when an unlicensed user hits the free-quota wall.
-            // Dismisses itself once activation flips the license to .licensed.
+            // Paywall: shown when a browser runs out of free conversions, and
+            // from the menu bar. It closes once a key covers the browser that
+            // hit the limit, or, opened without one, once any key goes in.
             .sheet(isPresented: $vm.showPaywall, onDismiss: { vm.paywallDidClose() }) {
-                ActivationView(license: license, extensionCount: vm.history.records.count) { vm.showPaywall = false }
-                    .onChange(of: license.state) { newState in
-                        if newState == .licensed { vm.showPaywall = false }
+                ActivationView(license: license, blockedBrowser: vm.paywallBrowser,
+                               extensionCount: vm.history.records.count) { vm.showPaywall = false }
+                    .onChange(of: license.entitlements) { owned in
+                        if vm.paywallBrowser.map(owned.unlimited) ?? (owned != Entitlements.none) { vm.showPaywall = false }
                     }
             }
             // Brand teal as the app-wide accent for in-app SwiftUI controls.
