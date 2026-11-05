@@ -301,30 +301,3 @@ final class LicenseManager: ObservableObject {
         s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s
     }
 }
-
-// MARK: - Legacy Keychain migration (read-only, one-time)
-
-enum Keychain {
-    /// Read a license key an older (Keychain-backed) build may have stored, so a
-    /// paying user isn't logged out by the switch to file storage. Read-only:
-    /// nothing new is ever written to the Keychain. Checks both service names
-    /// ever used. Returns nil (no prompt) when no such item exists — the case
-    /// for essentially everyone.
-    static func readLegacyLicense() -> String? {
-        for service in ["com.magicelk235.viaduct.license", "com.viaduct.app.license"] {
-            let q: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service,
-                kSecAttrAccount as String: "license-key",
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne,
-            ]
-            var out: AnyObject?
-            if SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-               let data = out as? Data, let key = String(data: data, encoding: .utf8) {
-                return key
-            }
-        }
-        return nil
-    }
-}
