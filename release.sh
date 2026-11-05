@@ -58,6 +58,24 @@ xcodebuild -project "$ROOT/Viaduct.xcodeproj" -scheme Viaduct \
   -destination 'generic/platform=macOS' \
   CODE_SIGNING_ALLOWED=NO >/dev/null
 
+# An empty Polar value ships an app that can't sell licenses or check keys.
+# A --no-notarize build never ships, so there it only warns.
+MISSING_POLAR=()
+for key in PolarOrganizationID PolarBenefitFirefox PolarBenefitSafari PolarBenefitMixed \
+           PolarCheckoutFirefox PolarCheckoutSafari PolarCheckoutMixed PolarPortalURL; do
+  value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$REL/Viaduct.app/Contents/Info.plist" 2>/dev/null || true)"
+  [ -n "$value" ] || MISSING_POLAR+=("$key")
+done
+if [ ${#MISSING_POLAR[@]} -gt 0 ]; then
+  if [ "$NOTARIZE" = 1 ]; then
+    for key in "${MISSING_POLAR[@]}"; do
+      echo "FAILED: $key is empty. Fill in the Polar values in project.yml."
+    done
+    exit 1
+  fi
+  echo "WARNING: empty Polar values: ${MISSING_POLAR[*]}. This build can't sell licenses or check keys."
+fi
+
 # Copy out of the iCloud-synced repo to /tmp, then sign there (see WORK note above).
 echo "==> Staging to $WORK for signing"
 rm -rf "$WORK" && mkdir -p "$WORK"

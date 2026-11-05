@@ -69,6 +69,17 @@ targets:
           - CFBundleURLSchemes:
               - viaduct
             CFBundleURLName: com.magicelk235.viaduct
+        # Polar license keys and checkout. Not secrets: the app only calls
+        # Polar's public customer-portal endpoints. The owner fills these in,
+        # and release.sh won't notarize a release while any is empty.
+        PolarOrganizationID: ""
+        PolarBenefitFirefox: ""
+        PolarBenefitSafari: ""
+        PolarBenefitMixed: ""
+        PolarCheckoutFirefox: ""
+        PolarCheckoutSafari: ""
+        PolarCheckoutMixed: ""
+        PolarPortalURL: ""
     entitlements:
       path: Viaduct.entitlements
       properties:
