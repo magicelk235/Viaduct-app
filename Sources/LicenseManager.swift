@@ -29,6 +29,11 @@ final class LicenseManager: ObservableObject {
     /// it couldn't check for too long.
     @Published private(set) var problem: String?
 
+    /// The problem shown after an offline Remove: the key is gone from this
+    /// Mac, but its Polar activation is still taken.
+    static let activationNotFreed =
+        "Viaduct couldn't reach Polar to free this Mac's activation. You can free it from Manage Activations."
+
     private let store: LicenseStore
     private let polar: PolarLicensing
     private let gumroad: GumroadLicensing
@@ -138,14 +143,21 @@ final class LicenseManager: ObservableObject {
                 keys.remove(at: i)
                 problem = problem ?? reason.map { "\(message) \($0)" } ?? message
             case .unanswered:
-                if !keys[i].isUsable(at: date) {
-                    problem = problem ?? "Couldn't check your license key for 14 days. Viaduct checks again the next time it opens with an internet connection."
-                }
+                if !keys[i].isUsable(at: date) { problem = problem ?? Self.uncheckedTooLong }
             }
         }
         store.save(keys)
         entitlements = Self.unlocked(by: keys, at: date)
         hasLaunchAnswer = true
+    }
+
+    private static let uncheckedTooLong =
+        "Couldn't check your license key for 14 days. Viaduct checks again the next time it opens with an internet connection."
+
+    /// The problem left once the keys change outside the launch check: a key
+    /// past its grace, if one is still here.
+    private func remainingProblem(at date: Date) -> String? {
+        keys.contains { !$0.isUsable(at: date) } ? Self.uncheckedTooLong : nil
     }
 
     /// What a store said about one key.
@@ -184,19 +196,22 @@ final class LicenseManager: ObservableObject {
 
     /// Adds a key the user typed or pasted. Polar activates it for this Mac.
     /// A key Polar has never heard of can still be a Pro key from Gumroad,
-    /// which counts as Mixed. Throws a `LicenseError`.
+    /// which counts as Mixed. A key already here that's past its grace is
+    /// checked again instead, which needs no activation. Throws a
+    /// `LicenseError`.
     func addKey(_ typed: String) async throws {
         let key = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw LicenseError.unknownKey }
-        guard !keys.contains(where: { $0.key == key }), !keysBeingAdded.contains(key) else {
-            throw LicenseError.alreadyAdded
-        }
+        let stored = keys.first { $0.key == key }
+        if let stored, stored.isUsable(at: now()) { throw LicenseError.alreadyAdded }
+        guard !keysBeingAdded.contains(key) else { throw LicenseError.alreadyAdded }
         keysBeingAdded.insert(key)
         isAddingKey = true
         defer {
             keysBeingAdded.remove(key)
             isAddingKey = !keysBeingAdded.isEmpty
         }
+        if let stored { return try await checkAgain(stored) }
 
         let added: StoredKey
         do {
@@ -222,16 +237,50 @@ final class LicenseManager: ObservableObject {
         problem = nil
     }
 
+    /// Checks a stored key past its grace with its store and keeps what it
+    /// says, like the launch check does. Throws when the key isn't back.
+    private func checkAgain(_ stored: StoredKey) async throws {
+        let answer = await Self.check(stored, polar: polar, gumroad: gumroad, benefitIds: benefitIds)
+        // Removed in Settings while the check ran.
+        guard let i = keys.firstIndex(where: { $0.key == stored.key }) else { return }
+        let date = now()
+        switch answer {
+        case .good(let tier):
+            keys[i].tier = tier
+            keys[i].lastValidated = date
+        case .refused:
+            keys.remove(at: i)
+        case .unanswered:
+            throw LicenseError.unreachable
+        }
+        store.save(keys)
+        entitlements = Self.unlocked(by: keys, at: date)
+        problem = remainingProblem(at: date)
+        if case .refused(let reason) = answer {
+            throw reason.map(LicenseError.rejected) ?? .unknownKey
+        }
+    }
+
     /// Forgets a key on this Mac. A Polar key gives its activation back
     /// first, so it can go on another Mac, and goes anyway when Polar can't
-    /// be reached. Gumroad has nothing to give back.
+    /// be reached; `problem` then says the activation is still taken.
+    /// Gumroad has nothing to give back.
     func removeKey(_ key: StoredKey) async {
+        var freed = true
         if key.provider == .polar, let activationId = key.activationId {
-            try? await polar.deactivate(key: key.key, activationId: activationId)
+            do {
+                try await polar.deactivate(key: key.key, activationId: activationId)
+            } catch LicenseError.unreachable {
+                freed = false
+            } catch {
+                // Polar answered, so there's no activation left to free.
+            }
         }
         keys.removeAll { $0.key == key.key }
         store.save(keys)
-        entitlements = Self.unlocked(by: keys, at: now())
+        let date = now()
+        entitlements = Self.unlocked(by: keys, at: date)
+        problem = freed ? remainingProblem(at: date) : Self.activationNotFreed
     }
 
     // MARK: - Checkout

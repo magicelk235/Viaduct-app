@@ -94,6 +94,41 @@ final class LicenseManagerTests: XCTestCase {
         XCTAssertEqual(store.load().first?.lastValidated, now)
     }
 
+    func testUnknownBenefitOnLaunchKeepsTheKeyAsItWas() async {
+        let key = LicenseFixtures.key(.safari, validated: now.addingTimeInterval(-10 * day))
+        let polar = FakePolar()
+        polar.validateResults[key.key] = .success("benefit-nobody-configured")
+        let m = await LicenseFixtures.manager(keys: [key], polar: polar)
+        XCTAssertEqual(m.keys, [key], "kept, with its last good check unchanged")
+        XCTAssertEqual(m.entitlements, LicenseTier.safari.entitlements)
+        XCTAssertNil(m.problem)
+    }
+
+    func testKeyAddedDuringTheLaunchCheckIsKept() async throws {
+        let slow = LicenseFixtures.key(.safari)
+        let defaults = TestDefaults.make()
+        let store = LicenseStore(file: TempDir.make().appendingPathComponent("licenses.json"), defaults: defaults,
+                                 legacyKeychainKey: { nil })
+        store.save([slow])
+        let polar = FakePolar()
+        polar.slowKeys = [slow.key]
+        polar.validateResults[slow.key] = .success(LicenseFixtures.benefitIds[.safari]!)
+        polar.activateResult = .success(PolarActivation(activationId: "act-new", benefitId: LicenseFixtures.benefitIds[.firefox]!))
+        let t = now
+        let m = LicenseManager(store: store, polar: polar, gumroad: FakeGumroad(), benefitIds: LicenseFixtures.benefitIds,
+                               defaults: defaults, now: { t }, macName: { "Test Mac" })
+
+        let check = Task { await m.validateStoredKeys() }
+        await Task.yield()
+        try await m.addKey("NEW-KEY")
+        XCTAssertFalse(m.hasLaunchAnswer, "the key went in while the launch check was still running")
+        await check.value
+
+        XCTAssertEqual(m.keys.map(\.key), [slow.key, "NEW-KEY"])
+        XCTAssertEqual(store.load().map(\.key), [slow.key, "NEW-KEY"])
+        XCTAssertEqual(m.entitlements, .mixed)
+    }
+
     func testAddingAPolarKeyActivatesThisMac() async throws {
         let polar = FakePolar()
         polar.activateResult = .success(PolarActivation(activationId: "act-9", benefitId: LicenseFixtures.benefitIds[.firefox]!))
@@ -153,7 +188,38 @@ final class LicenseManagerTests: XCTestCase {
         XCTAssertTrue(polar.activatedLabels.isEmpty)
     }
 
-    func testRemovingAKeyFreesItsActivationEvenOffline() async {
+    func testPastedKeyPastItsGraceIsCheckedAgain() async throws {
+        let stale = LicenseFixtures.key(.safari, validated: now.addingTimeInterval(-15 * day))
+        let polar = FakePolar()
+        let m = await LicenseFixtures.manager(keys: [stale], polar: polar)   // offline launch
+        XCTAssertEqual(m.entitlements, .none)
+        polar.validateResults[stale.key] = .success(LicenseFixtures.benefitIds[.safari]!)
+        try await m.addKey(stale.key)
+        var checked = stale
+        checked.lastValidated = now
+        XCTAssertEqual(m.keys, [checked])
+        XCTAssertEqual(m.entitlements, LicenseTier.safari.entitlements)
+        XCTAssertNil(m.problem)
+        XCTAssertTrue(polar.activatedLabels.isEmpty, "a check, not a second activation")
+    }
+
+    func testPastedKeyPastItsGraceIsDroppedWhenTheStoreSaysNo() async {
+        let stale = LicenseFixtures.key(.safari, validated: now.addingTimeInterval(-15 * day))
+        let polar = FakePolar()
+        let m = await LicenseFixtures.manager(keys: [stale], polar: polar)
+        polar.validateResults[stale.key] = .failure(.rejected("License key is no longer active."))
+        await assertThrows(.rejected("License key is no longer active.")) { try await m.addKey(stale.key) }
+        XCTAssertTrue(m.keys.isEmpty)
+    }
+
+    func testPastedKeyPastItsGraceStaysWhenStillOffline() async {
+        let stale = LicenseFixtures.key(.safari, validated: now.addingTimeInterval(-15 * day))
+        let m = await LicenseFixtures.manager(keys: [stale])
+        await assertThrows(.unreachable) { try await m.addKey(stale.key) }
+        XCTAssertEqual(m.keys, [stale])
+    }
+
+    func testRemovingAKeyOfflineDropsItAndSaysTheActivationWasntFreed() async {
         let key = LicenseFixtures.key(.safari)
         let polar = FakePolar()
         polar.deactivateResult = .failure(.unreachable)
@@ -162,6 +228,25 @@ final class LicenseManagerTests: XCTestCase {
         XCTAssertEqual(polar.deactivatedActivationIds, [key.activationId!])
         XCTAssertTrue(m.keys.isEmpty)
         XCTAssertEqual(m.entitlements, .none)
+        XCTAssertEqual(m.problem, LicenseManager.activationNotFreed)
+    }
+
+    func testRemovingTheStaleKeyClearsItsProblem() async {
+        let stale = LicenseFixtures.key(.safari, validated: now.addingTimeInterval(-15 * day))
+        let m = await LicenseFixtures.manager(keys: [stale])
+        XCTAssertNotNil(m.problem)
+        await m.removeKey(stale)
+        XCTAssertNil(m.problem)
+    }
+
+    func testRemovingAnotherKeyKeepsTheStaleKeysProblem() async {
+        let stale = LicenseFixtures.key(.safari, validated: now.addingTimeInterval(-15 * day))
+        let other = LicenseFixtures.key(.firefox)
+        let m = await LicenseFixtures.manager(keys: [stale, other])
+        let problem = m.problem
+        XCTAssertNotNil(problem)
+        await m.removeKey(other)
+        XCTAssertEqual(m.problem, problem)
     }
 
     func testRemovingAGumroadKeyCallsNoServer() async {

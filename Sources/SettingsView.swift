@@ -40,6 +40,8 @@ struct SettingsView: View {
     @StateObject private var keyEntry = KeyEntry()
     /// The key whose Remove was clicked, while its confirmation is up.
     @State private var keyToRemove: StoredKey?
+    /// Keys whose Remove is talking to Polar, so it can't be clicked twice.
+    @State private var keysBeingRemoved: Set<String> = []
     /// "Up to date" confirmation after a manual CLI check, cleared on a timer so
     /// it doesn't linger as permanent chrome.
     @State private var cliUpToDate = false
@@ -228,6 +230,10 @@ struct SettingsView: View {
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.accentRed)
             }
+            if license.problem == LicenseManager.activationNotFreed, let portal = PolarConfig.portalURL {
+                Button("Manage Activations") { NSWorkspace.shared.open(portal) }
+                    .buttonStyle(.raycastTertiary)
+            }
 
             if !license.keys.isEmpty {
                 ForEach(license.keys) { keyRow($0) }
@@ -270,7 +276,11 @@ struct SettingsView: View {
                                                  set: { if !$0 { keyToRemove = nil } }),
                             presenting: keyToRemove) { key in
             Button("Remove", role: .destructive) {
-                Task { await license.removeKey(key) }
+                keysBeingRemoved.insert(key.key)
+                Task {
+                    await license.removeKey(key)
+                    keysBeingRemoved.remove(key.key)
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: { key in
@@ -289,9 +299,11 @@ struct SettingsView: View {
             Text(key.maskedKey)
                 .font(Theme.Font.mono())
                 .foregroundStyle(Theme.Colors.body)
+                .accessibilityLabel("Key ending in \(String(key.key.suffix(6)))")
             Spacer()
             Button("Remove") { keyToRemove = key }
                 .buttonStyle(.raycastTertiary)
+                .disabled(keysBeingRemoved.contains(key.key))
                 .accessibilityLabel("Remove the \(key.tier.displayName) license")
         }
     }
