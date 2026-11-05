@@ -5,9 +5,7 @@ import Foundation
 /// filesystem machinery. No side effects — just dates and versions in,
 /// booleans out.
 ///
-/// Self-check lives in `dmg/update-policy-selfcheck.swift` (run standalone,
-/// matching this repo's loose-script convention). It can't live here: a
-/// top-level expression is illegal in a multi-file app-target module.
+/// UpdatePolicyTests in the ViaductTests target covers these.
 enum UpdatePolicy {
     /// How often each store install is polled for a new version.
     static let weeklyGap: TimeInterval = 7 * 24 * 3600

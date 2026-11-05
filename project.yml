@@ -25,6 +25,9 @@ targets:
   Viaduct:
     type: application
     platform: macOS
+    scheme:
+      testTargets:
+        - ViaductTests
     sources:
       - path: Sources
       - path: AppIcon.icon
@@ -128,3 +131,17 @@ targets:
           grep -q "\"version\": \"$MARKETING_VERSION\"" "$manifest" \
             || { echo "error: manifest version not stamped in $manifest"; exit 1; }
         basedOnDependencyAnalysis: false
+
+  ViaductTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/ViaductTests
+    dependencies:
+      - target: Viaduct
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.magicelk235.viaduct.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Viaduct.app/Contents/MacOS/Viaduct"
+        BUNDLE_LOADER: "$(TEST_HOST)"

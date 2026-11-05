@@ -14,6 +14,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// so instance access via `NSApp.delegate as? AppDelegate` can fail.
     static var allowRealQuit = false
 
+    /// True when this process is only hosting the unit tests.
+    static let isHostingTests: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestConfigurationFilePath"] != nil || env["XCTestBundlePath"] != nil
+    }()
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
     }
@@ -22,6 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// window at all (at login, or relaunched after quitting to the menu bar),
     /// and the background timers and store-page handler are needed either way.
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A test run launches the app only to host the tests. Bootstrapping
+        // would check the license, fetch from npm and register the login
+        // item, reaching the network and changing the real app's settings.
+        // With no launch answer the window just shows LaunchGateView.
+        guard !Self.isHostingTests else { return }
         ViaductApp.bootstrap()
     }
 
