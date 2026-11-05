@@ -77,6 +77,16 @@ if [ ${#MISSING_POLAR[@]} -gt 0 ]; then
   echo "WARNING: empty Polar values: ${MISSING_POLAR[*]}. This build can't sell licenses or check keys."
 fi
 
+# Conversions run on whatever lavaduct the latest viaduct carries; persist.mjs bundles the
+# pinned one. Persist's tests against npm latest are what keeps the two in step (spec 4.4).
+echo "==> Checking persist against npm latest lavaduct"
+# build-persist.sh skips without a persist checkout; a release must never ship that build.
+[ -f "$REL/Viaduct.app/Contents/Resources/firefox/persist.mjs" ] \
+  || { echo "FAILED: no persist.mjs in the app. Check out magicelk235/lavaduct-persist at ../c2f-persist or set PERSIST_DIR."; exit 1; }
+"${PERSIST_DIR:-$ROOT/../c2f-persist}/scripts/check-latest-lavaduct.sh" \
+  "$REL/Viaduct.app/Contents/Resources/bin/node" "$REL/Viaduct.app/Contents/Resources/firefox/persist.mjs" \
+  || { echo "FAILED: persist's tests fail against npm latest lavaduct; not releasing"; exit 1; }
+
 # Copy out of the iCloud-synced repo to /tmp, then sign there (see WORK note above).
 echo "==> Staging to $WORK for signing"
 rm -rf "$WORK" && mkdir -p "$WORK"
