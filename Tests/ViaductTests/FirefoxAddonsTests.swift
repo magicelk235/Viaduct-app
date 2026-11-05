@@ -190,6 +190,41 @@ final class FirefoxAddonsTests: XCTestCase {
         XCTAssertEqual(agent.unregisterCount, 1)
     }
 
+    // MARK: - App updates
+
+    func testAgentRestartAfterAnUpdate() {
+        XCTAssertTrue(FirefoxAddons.agentNeedsRestart(status: .enabled, startedBy: "1.4.0", appBuild: "1.5.0"))
+        XCTAssertTrue(FirefoxAddons.agentNeedsRestart(status: .enabled, startedBy: nil, appBuild: "1.5.0"))
+        XCTAssertFalse(FirefoxAddons.agentNeedsRestart(status: .enabled, startedBy: "1.5.0", appBuild: "1.5.0"))
+        XCTAssertFalse(FirefoxAddons.agentNeedsRestart(status: .notRegistered, startedBy: "1.4.0", appBuild: "1.5.0"))
+        XCTAssertFalse(FirefoxAddons.agentNeedsRestart(status: .requiresApproval, startedBy: "1.4.0", appBuild: "1.5.0"))
+    }
+
+    /// Registered by a build from before the app noted which build that was.
+    func testALaunchRestartsAnAgentWithNoBuildNoted() throws {
+        let (addons, _, _, events) = make(agent: .enabled)
+        try addons.restartAgentAfterUpdate()
+        XCTAssertEqual(events.events, ["unregister", "register"])
+    }
+
+    func testOnlyALaunchOfANewBuildRestartsTheAgent() async throws {
+        let events = FakeEvents()
+        let persist = FakePersist(log: events)
+        let agent = FakeAgent(log: events)
+        let defaults = TestDefaults.make()
+        func launch(_ build: String) -> FirefoxAddons {
+            FirefoxAddons(persist: persist, agent: agent, defaults: defaults, appBuild: build)
+        }
+
+        _ = try await install(launch("1.4.0"))
+        try launch("1.4.0").restartAgentAfterUpdate()
+        XCTAssertEqual(events.events, ["register", "install"])
+
+        try launch("1.5.0").restartAgentAfterUpdate()
+        try launch("1.5.0").restartAgentAfterUpdate()
+        XCTAssertEqual(events.events, ["register", "install", "unregister", "register"])
+    }
+
     func testErrorsReadAsTheirCopy() {
         XCTAssertEqual(FirefoxAddonsError.noProfile.localizedDescription,
                        "Open Firefox once so it can set up your profile, then try again.")

@@ -46,18 +46,23 @@ final class FirefoxAddons {
     static let profileKey = "firefoxProfilePath"
     /// When an install last came back pending, as seconds since 1970 per profile path.
     private static let pendingKey = "firefoxPendingSince"
+    /// The app build that last registered the agent.
+    private static let agentBuildKey = "firefoxAgentBuild"
 
     let persist: PersistClientProtocol
     private let agent: FirefoxAgentControlling
     private let defaults: UserDefaults
+    private let appBuild: String
     private var callsInFlight = 0
     /// An agent check was skipped while other calls ran, so the last one to end does it.
     private var agentCheckDeferred = false
 
-    init(persist: PersistClientProtocol, agent: FirefoxAgentControlling, defaults: UserDefaults) {
+    init(persist: PersistClientProtocol, agent: FirefoxAgentControlling, defaults: UserDefaults,
+         appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") {
         self.persist = persist
         self.agent = agent
         self.defaults = defaults
+        self.appBuild = appBuild
     }
 
     /// A persist install or uninstall is running.
@@ -108,6 +113,20 @@ final class FirefoxAddons {
         try ensureAgent()
     }
 
+    /// Restarts an agent that an earlier build of the app registered.
+    func restartAgentAfterUpdate() throws {
+        guard Self.agentNeedsRestart(status: agent.status, startedBy: defaults.string(forKey: Self.agentBuildKey),
+                                     appBuild: appBuild) else { return }
+        try restartAgent()
+    }
+
+    /// launchd keeps a registered agent running when an update replaces the
+    /// app, so it goes on running the old build's persist until it's restarted.
+    nonisolated static func agentNeedsRestart(status: SMAppService.Status, startedBy agentBuild: String?,
+                                              appBuild: String) -> Bool {
+        status == .enabled && agentBuild != appBuild
+    }
+
     /// The profile the next install goes into, and whether Firefox has it open
     /// in a way that needs the restart question.
     func target(firefox: FirefoxLocator.Install, preferring profilePath: String? = nil) async throws -> FirefoxTarget {
@@ -155,6 +174,8 @@ final class FirefoxAddons {
             throw FirefoxAddonsError.loginItemOff
         default:
             try agent.register()
+            // Whatever launchd starts from now on is this build's helper.
+            defaults.set(appBuild, forKey: Self.agentBuildKey)
             if agent.status == .requiresApproval { throw FirefoxAddonsError.loginItemOff }
         }
     }

@@ -269,6 +269,12 @@ final class ConverterViewModel: ObservableObject {
         refreshSigningTeams()
         refreshStoreButton()
         refreshFirefox()
+        // After an update the agent still runs the old build's persist.
+        do {
+            try FirefoxAddons.shared.restartAgentAfterUpdate()
+        } catch {
+            appendLog("⚠︎ Firefox agent restart failed: \(error.localizedDescription)")
+        }
         // Nothing is decided until the launch check has an answer. After that,
         // every change to what's unlimited can keep or sweep free-plan
         // extensions and switch store updates on or off.
