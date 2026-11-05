@@ -173,7 +173,7 @@ final class SetupFlow: ObservableObject {
         case .appleAccount: return account == .signedIn
         case .diskAccess:   return blockedBrowsers?.isEmpty == true
         case .storeButton:  return ConverterViewModel.shared.storeButtonEnabled == true
-        case .license:      return LicenseManager.shared.isLicensed
+        case .license:      return LicenseManager.shared.unlimited(.safari)
         }
     }
 }

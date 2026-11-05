@@ -271,40 +271,4 @@ final class LicenseManager: ObservableObject {
         guard let name = SCDynamicStoreCopyComputerName(nil, nil) as String?, !name.isEmpty else { return "Mac" }
         return name
     }
-
-    // MARK: - Single-license answers some views still use
-
-    var isLicensed: Bool { entitlements.safari }
-
-    enum State { case unknown, unlicensed, licensed, checking }
-
-    var state: State {
-        if isAddingKey { return .checking }
-        if !hasLaunchAnswer { return .unknown }
-        return entitlements.safari ? .licensed : .unlicensed
-    }
-
-    @Published var lastError: String?
-
-    func activate(key: String) {
-        lastError = nil
-        Task {
-            do {
-                try await addKey(key)
-            } catch {
-                lastError = (error as? LicenseError)?.errorDescription ?? error.localizedDescription
-            }
-        }
-    }
-
-    func deactivateAndClear() {
-        Task {
-            for key in keys { await removeKey(key) }
-        }
-    }
-
-    func checkoutURL(source: CheckoutSource, extensionCount: Int) -> URL {
-        checkoutURL(for: .safari, source: source, extensionCount: extensionCount)
-            ?? URL(string: "https://magicelklabs.com/viaduct/#pricing")!
-    }
 }

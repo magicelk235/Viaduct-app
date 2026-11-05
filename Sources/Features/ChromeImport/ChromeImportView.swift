@@ -197,8 +197,8 @@ struct ChromeImportView: View {
                 .keyboardShortcut(.cancelAction)
             Spacer()
             // Only when it changes the outcome: more ticked than the free tier covers.
-            if !license.isLicensed, count > left {
-                Text("\(left) free, \(count - left) need Pro")
+            if !license.unlimited(.safari), count > left {
+                Text("\(left) free, \(count - left) need a Safari license")
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.body)
             }

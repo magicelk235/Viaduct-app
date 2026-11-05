@@ -434,13 +434,13 @@ struct StatusMenu: View {
             }
         }
 
-        if !license.isLicensed {
+        if !license.unlimited(.safari) {
             Divider()
-            Button("Unlock with Pro") {
+            Button("Upgrade") {
                 NSApp.setActivationPolicy(.regular)
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
-                vm.presentPaywall(for: nil)
+                vm.presentPaywall(for: .safari)
             }
         }
 

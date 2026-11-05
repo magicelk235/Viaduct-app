@@ -84,11 +84,11 @@ struct UserModeView: View {
 
     // MARK: - Free-uses badge
 
-    /// Tells unlicensed users how many free conversions remain, so the paywall
-    /// isn't a surprise. Hidden entirely for licensed users and mid-convert.
+    /// Tells free-plan users how many free conversions remain, so the paywall
+    /// isn't a surprise. Hidden for anyone whose license covers Safari, and mid-convert.
     @ViewBuilder
     private var freeUsesBadge: some View {
-        if !license.isLicensed && showsHistory {
+        if !license.unlimited(.safari) && showsHistory {
             let left = license.freeConversionsRemaining
             Text(left > 0
                  ? "\(left) free conversion\(left == 1 ? "" : "s") left"

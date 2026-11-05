@@ -65,7 +65,7 @@ final class ConversionQueue: ObservableObject {
     static let shared = ConversionQueue()
 
     enum StopReason: Equatable {
-        case needsPro
+        case needsUpgrade(Browser)
         case needsXcode
         case cancelled
     }
@@ -186,9 +186,10 @@ final class ConversionQueue: ObservableObject {
         if vm.showPaywall {
             // The paywall is a sheet on the main window and can't open over the
             // queue's own sheet; the queue offers the upgrade instead.
+            let browser = vm.paywallBrowser ?? .safari
             vm.showPaywall = false
             items[index].status = .pending
-            finish(reason: .needsPro)
+            finish(reason: .needsUpgrade(browser))
         } else if vm.needsXcode {
             items[index].status = .failed(vm.failureSummary ?? "Xcode is required.")
             finish(reason: .needsXcode)
@@ -217,9 +218,10 @@ final class ConversionQueue: ObservableObject {
                     // handling as hitting it without the signing question.
                     self.phaseWatch = nil
                     self.expectingEnd = false
+                    let browser = vm.paywallBrowser ?? .safari
                     vm.showPaywall = false
                     self.items[index].status = .pending
-                    self.finish(reason: .needsPro)
+                    self.finish(reason: .needsUpgrade(browser))
                 } else if phase == .failed {
                     self.phaseWatch = nil
                     self.expectingEnd = false
@@ -250,10 +252,10 @@ final class ConversionQueue: ObservableObject {
         stopReason = reason
         let leftover: String
         switch reason {
-        case .needsPro:   leftover = "Needs Viaduct Pro"
-        case .needsXcode: leftover = "Needs Xcode"
-        case .cancelled:  leftover = "Cancelled"
-        case nil:         leftover = ""
+        case .needsUpgrade(let browser): leftover = "Needs a \(browser.displayName) license"
+        case .needsXcode:                leftover = "Needs Xcode"
+        case .cancelled:                 leftover = "Cancelled"
+        case nil:                        leftover = ""
         }
         for i in items.indices where !items[i].status.isFinished {
             items[i].status = .skipped(leftover)

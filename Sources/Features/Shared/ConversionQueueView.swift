@@ -44,10 +44,10 @@ struct ConversionQueueView: View {
             return "Converting \(n) of \(queue.items.count)"
         }
         switch queue.stopReason {
-        case .needsPro:   return "Free conversions used up"
-        case .needsXcode: return "Xcode is needed"
-        case .cancelled:  return "Stopped"
-        case nil:         return "Finished"
+        case .needsUpgrade: return "Free conversions used up"
+        case .needsXcode:   return "Xcode is needed"
+        case .cancelled:    return "Stopped"
+        case nil:           return "Finished"
         }
     }
 
@@ -60,8 +60,8 @@ struct ConversionQueueView: View {
         var parts = ["\(done) installed"]
         if failed > 0 { parts.append("\(failed) failed") }
         switch queue.stopReason {
-        case .needsPro:
-            parts.append("the rest need Viaduct Pro")
+        case .needsUpgrade(let browser):
+            parts.append("the rest need a \(browser.displayName) license")
         case .needsXcode:
             parts.append("install Xcode, then run the rest again")
         default:
@@ -84,11 +84,11 @@ struct ConversionQueueView: View {
                     .buttonStyle(.raycastGhost)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                if queue.stopReason == .needsPro {
-                    Button("Unlock Pro") {
+                if case .needsUpgrade(let browser) = queue.stopReason {
+                    Button("Upgrade") {
                         queue.dismiss()
                         // One sheet at a time per window: let this one leave first.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.presentPaywall(for: .safari) }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.presentPaywall(for: browser) }
                     }
                     .buttonStyle(.raycastPrimary)
                 } else if queue.doneCount > 0 {
