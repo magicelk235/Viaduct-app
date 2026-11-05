@@ -28,6 +28,17 @@ final class FirefoxConversionTests: XCTestCase {
         XCTAssertNil(FirefoxConversion.stagedExtension(in: out))
     }
 
+    // Firefox converts with --force, so only the check can stop a broken
+    // extension, and no verdict from a check that couldn't run proves nothing.
+    func testOnlyAVerdictStopsTheRunAndAnUncheckedOneIsCheckedAfterConverting() throws {
+        let verdict = try XCTUnwrap(CompatibilityVerdict(
+            blockingErrors: [BlockingError(category: "manifest", message: "background.js is missing")], browser: .firefox))
+        XCTAssertEqual(FirefoxConversion.checkStep(verdict: verdict, checked: true), .stop(verdict))
+        XCTAssertEqual(FirefoxConversion.checkStep(verdict: verdict, checked: false), .stop(verdict))
+        XCTAssertEqual(FirefoxConversion.checkStep(verdict: nil, checked: true), .convert)
+        XCTAssertEqual(FirefoxConversion.checkStep(verdict: nil, checked: false), .convertThenCheck)
+    }
+
     func testLocatorPrefersReleaseThenDeveloperEditionThenNightly() {
         let apps = ["org.mozilla.firefoxdeveloperedition": URL(fileURLWithPath: "/Applications/Firefox Developer Edition.app"),
                     "org.mozilla.nightly": URL(fileURLWithPath: "/Applications/Firefox Nightly.app")]

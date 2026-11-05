@@ -36,4 +36,24 @@ enum FirefoxConversion {
     static func clearOutput(_ outputDir: URL) {
         try? FileManager.default.removeItem(at: outputDir)
     }
+
+    /// What a run does with the compatibility check before converting.
+    /// Firefox always converts with --force, so the check is the only thing
+    /// that stops an extension Firefox won't load.
+    enum CheckStep: Equatable {
+        /// The check found mistakes Firefox won't accept.
+        case stop(CompatibilityVerdict)
+        case convert
+        /// No answer that counts yet, mostly because the engine can't analyze
+        /// for Firefox until the run updates it. The check runs after
+        /// converting, before anything goes into Firefox.
+        case convertThenCheck
+    }
+
+    /// `checked` is whether the check gave an answer that counts: no verdict
+    /// from an engine that couldn't analyze for Firefox proves nothing.
+    static func checkStep(verdict: CompatibilityVerdict?, checked: Bool) -> CheckStep {
+        if let verdict { return .stop(verdict) }
+        return checked ? .convert : .convertThenCheck
+    }
 }

@@ -9,7 +9,7 @@ final class ConverterViewModel: ObservableObject {
         didSet {
             // A verdict is for one browser, and so is a check still running.
             guard options.browser != oldValue.browser else { return }
-            compatibilityCheck?.cancel()
+            cancelCompatibilityCheck()
             compatibility = nil
         }
     }
@@ -52,7 +52,17 @@ final class ConverterViewModel: ObservableObject {
     /// the check that runs as soon as it's picked, or read off a conversion
     /// the CLI refused. Switching browsers clears it.
     @Published var compatibility: CompatibilityVerdict?
-    private var compatibilityCheck: Task<Void, Never>?
+    private var compatibilityCheck: PendingCheck?
+
+    /// The check for the picked extension, running or done.
+    private struct PendingCheck {
+        let path: String
+        let browser: Browser
+        /// The engine could analyze for `browser` when the check started. One
+        /// that couldn't gives no verdict, and that proves nothing.
+        let engineCouldCheck: Bool
+        let task: Task<CompatibilityVerdict?, Never>
+    }
 
     /// True when the conversion that just finished came out ad-hoc signed. The
     /// CLI rebuilds ad-hoc when the team it detected can't sign, so a run the
@@ -147,7 +157,8 @@ final class ConverterViewModel: ObservableObject {
     /// The last install only arrives the next time Firefox opens.
     @Published private(set) var firefoxInstallPending = false
     /// The profile Convert Again installs into, so the new install replaces the
-    /// one its record is for. The next Firefox run uses it up.
+    /// one its record is for. Set after the record's input is picked, since
+    /// picking an input drops it; the next Firefox run uses it up.
     var pendingFirefoxProfile: String?
     /// The run waiting on the restart notice.
     private var firefoxRestartAnswer: CheckedContinuation<Bool, Never>?
@@ -482,13 +493,9 @@ final class ConverterViewModel: ObservableObject {
         // on a Mac with a personal team and a paid one isn't the paid one.
         options.useTeam(signingTeam?.id)
 
-        installedAppPath = nil
-        failureSummary = nil
-        lastReachedTrackPhase = nil
-        lastBuildAdHoc = false
         // The run analyzes it anyway, and a refusal is read off its log.
-        compatibilityCheck?.cancel()
-        phase = .extracting
+        cancelCompatibilityCheck()
+        beginRun()
         var args = options.conversionArgs()
         // Ask the CLI to launch the host app hidden (it still registers with
         // Safari) so its window doesn't pop over the converting animation —
@@ -730,10 +737,11 @@ final class ConverterViewModel: ObservableObject {
         }
         resetUserFlow()
         // Same browser, and for Firefox the same profile, so the install this
-        // makes replaces the one the record is for.
+        // makes replaces the one the record is for. The profile goes with this
+        // input: picking another one drops it.
         options.browser = record.browser
-        pendingFirefoxProfile = record.profilePath
         selectInput(path: record.sourcePath)
+        pendingFirefoxProfile = record.profilePath
         userConvert()
     }
 
@@ -756,13 +764,25 @@ final class ConverterViewModel: ObservableObject {
         lastBuildAdHoc = false
         options.inputPath = ""
         options.browser = targetBrowser
-        compatibilityCheck?.cancel()
+        cancelCompatibilityCheck()
         compatibility = nil
         options.appName = ""
         // A store install that stopped early would otherwise stamp its id on
         // the next, unrelated conversion.
         pendingStoreId = nil
         pendingChromeId = nil
+    }
+
+    /// Clear what the last run left on the card, and start this one at
+    /// Unpacking.
+    private func beginRun() {
+        installedAppPath = nil
+        failureSummary = nil
+        lastReachedTrackPhase = nil
+        lastBuildAdHoc = false
+        firefoxInstallPending = false
+        firefoxGate = nil
+        phase = .extracting
     }
 
     /// The picker moved. The choice is saved for next launch, and the card
@@ -1049,9 +1069,30 @@ final class ConverterViewModel: ObservableObject {
         firefoxInstall = FirefoxLocator.find()
     }
 
-    /// Firefox's half: find Firefox, the profile and whether it has to
-    /// restart, convert, then hand the add-on to persist.
+    /// What a Firefox run carries from converting to installing.
+    private struct FirefoxRun {
+        let input: String
+        let outputDir: URL
+        let firefox: FirefoxLocator.Install
+        let target: FirefoxTarget
+        let restart: Bool
+        /// The check had no answer before converting, so it runs after, before
+        /// anything goes into Firefox.
+        let checkBeforeInstall: Bool
+    }
+
+    /// Firefox's half: make sure the check passed, find Firefox, the profile
+    /// and whether it has to restart, convert, then hand the add-on to persist.
     private func convertForFirefox() {
+        // Firefox always converts with --force, so a verdict the check already
+        // gave has to stop it here.
+        if let verdict = compatibility {
+            logVerdict(verdict)
+            failureSummary = verdict.message
+            phase = .failed
+            Feedback.failure()
+            return
+        }
         refreshFirefox()
         guard let firefox = firefoxInstall else { return stopAtGate(.notInstalled) }
         guard !FirefoxAddons.shared.agentNeedsApproval else { return stopAtGate(.loginItemOff) }
@@ -1062,21 +1103,23 @@ final class ConverterViewModel: ObservableObject {
             return
         }
 
-        installedAppPath = nil
-        failureSummary = nil
-        lastReachedTrackPhase = nil
-        lastBuildAdHoc = false
-        firefoxInstallPending = false
-        firefoxGate = nil
-        // The run analyzes it anyway, and a refusal is read off its log.
-        compatibilityCheck?.cancel()
-        phase = .extracting
+        // The compatibility check keeps going: the run waits for its answer.
+        beginRun()
         isRunning = true
         runGeneration += 1
         let generation = runGeneration
+        let input = options.inputPath
         let preferred = pendingFirefoxProfile
         pendingFirefoxProfile = nil
         Task {
+            let check = await firefoxCheck(path: input)
+            guard generation == runGeneration else { return }
+            let checkBeforeInstall: Bool
+            switch FirefoxConversion.checkStep(verdict: check.verdict, checked: check.checked) {
+            case .stop(let verdict): return refuseFirefoxRun(verdict)
+            case .convert: checkBeforeInstall = false
+            case .convertThenCheck: checkBeforeInstall = true
+            }
             let target: FirefoxTarget
             do {
                 target = try await FirefoxAddons.shared.target(firefox: firefox, preferring: preferred)
@@ -1093,19 +1136,34 @@ final class ConverterViewModel: ObservableObject {
             // A run that fails early leaves the last run's add-on in place, and
             // that mustn't pass for this run's.
             FirefoxConversion.clearOutput(out)
+            let run = FirefoxRun(input: input, outputDir: out, firefox: firefox, target: target,
+                                 restart: restart, checkBeforeInstall: checkBeforeInstall)
             // runCLI sets it again for the run itself.
             isRunning = false
-            runCLI(args: FirefoxConversion.convertArgs(input: options.inputPath, outputDir: out),
+            runCLI(args: FirefoxConversion.convertArgs(input: input, outputDir: out),
                    minimumEngine: FirefoxConversion.minimumEngine) { code in
-                self.firefoxRunExited(code: code, outputDir: out, firefox: firefox, target: target, restart: restart)
+                self.firefoxRunExited(code: code, run: run)
             }
         }
     }
 
-    /// The Firefox conversion ended. A good one goes to persist, and the
-    /// install decides whether the run worked.
-    private func firefoxRunExited(code: Int32, outputDir: URL, firefox: FirefoxLocator.Install,
-                                  target: FirefoxTarget, restart: Bool) {
+    /// The compatibility check's answer for converting `path` for Firefox:
+    /// from the check already running or done for it, else a fresh one.
+    /// `checked` is false when there's no answer that counts: no engine here
+    /// could analyze for Firefox, or the check was stopped.
+    private func firefoxCheck(path: String) async -> (verdict: CompatibilityVerdict?, checked: Bool) {
+        if let check = compatibilityCheck, check.path == path, check.browser == .firefox, check.engineCouldCheck {
+            let verdict = await check.task.value
+            // Stopped, it has no answer, which isn't a pass.
+            return (verdict, !check.task.isCancelled)
+        }
+        guard engineCanCheck(.firefox) else { return (nil, false) }
+        return (await CompatibilityCheck.run(path: path, browser: .firefox), true)
+    }
+
+    /// The Firefox conversion ended. A good one goes to persist, after the
+    /// check when it couldn't run before.
+    private func firefoxRunExited(code: Int32, run: FirefoxRun) {
         // runCLI started a run of its own after convertForFirefox, so the
         // count to compare against is the current one.
         let generation = runGeneration
@@ -1116,16 +1174,32 @@ final class ConverterViewModel: ObservableObject {
             applyPendingUpdate()
             return
         }
-        guard let staged = FirefoxConversion.stagedExtension(in: outputDir) else {
+        guard let staged = FirefoxConversion.stagedExtension(in: run.outputDir) else {
             return failRun("The conversion finished without making the Firefox add-on. Copy the log to see what happened, or report it.")
         }
+        if run.checkBeforeInstall {
+            // The run brought the engine up to date, so it can analyze now.
+            Task {
+                let verdict = await CompatibilityCheck.run(path: run.input, browser: .firefox)
+                guard generation == runGeneration else { return }
+                if let verdict { return refuseFirefoxRun(verdict) }
+                installFirefoxAddon(staged, run: run, generation: generation)
+            }
+        } else {
+            installFirefoxAddon(staged, run: run, generation: generation)
+        }
+    }
+
+    /// Hand the converted add-on to persist. The install decides whether the
+    /// run worked.
+    private func installFirefoxAddon(_ staged: URL, run: FirefoxRun, generation: Int) {
         reach(.installing)
         let draft = draftConversion()
         Task {
             do {
                 let result = try await FirefoxAddons.shared.install(
-                    staged: staged, profile: target.profilePath, firefox: firefox.appURL.path,
-                    restart: restart, launch: true)
+                    staged: staged, profile: run.target.profilePath, firefox: run.firefox.appURL.path,
+                    restart: run.restart, launch: true)
                 // The add-on is in Firefox now, so it's recorded even if the run
                 // was cancelled meanwhile.
                 record(draft, installedPath: nil, adHoc: nil, firefox: result)
@@ -1140,6 +1214,21 @@ final class ConverterViewModel: ObservableObject {
                 endFirefoxRun(error)
             }
         }
+    }
+
+    /// End a Firefox run over mistakes the check found, before anything goes
+    /// into Firefox: no record, and no free conversion spent.
+    private func refuseFirefoxRun(_ verdict: CompatibilityVerdict) {
+        compatibility = verdict
+        logVerdict(verdict)
+        failRun(verdict.message)
+    }
+
+    /// The analyzer's findings, in the log for Copy log and the issue report.
+    /// A forced run never prints them.
+    private func logVerdict(_ verdict: CompatibilityVerdict) {
+        appendLog("The \(verdict.browser.displayName) compatibility check found:")
+        for detail in verdict.details { appendLog("  • " + detail) }
     }
 
     /// Something Firefox needs, found before the run started. The card says
@@ -1297,6 +1386,8 @@ final class ConverterViewModel: ObservableObject {
     /// Set the input path, derive a default app name, and inspect for name + icon.
     func selectInput(path: String) {
         options.inputPath = path
+        // A Convert Again profile belongs to the input it came with.
+        pendingFirefoxProfile = nil
         if options.appName.isEmpty {
             options.appName = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
         }
@@ -1316,18 +1407,35 @@ final class ConverterViewModel: ObservableObject {
 
     /// Say up front when it can't work, before Xcode, signing or a free
     /// conversion come into it. A batch starts converting straight away and
-    /// gets the same answer from the run's log instead.
+    /// gets its answer from the run instead.
     private func startCompatibilityCheck(path: String) {
-        compatibilityCheck?.cancel()
+        cancelCompatibilityCheck()
         compatibility = nil
         guard !batchActive else { return }
         let browser = options.browser
-        compatibilityCheck = Task { [weak self] in
+        let engineCouldCheck = engineCanCheck(browser)
+        let task = Task { [weak self] () -> CompatibilityVerdict? in
             let verdict = await CompatibilityCheck.run(path: path, browser: browser)
-            guard !Task.isCancelled, let self, self.options.inputPath == path,
-                  self.options.browser == browser, self.phase == .idle else { return }
-            self.compatibility = verdict
+            if !Task.isCancelled, let self, self.options.inputPath == path,
+               self.options.browser == browser, self.phase == .idle {
+                self.compatibility = verdict
+            }
+            return verdict
         }
+        compatibilityCheck = PendingCheck(path: path, browser: browser,
+                                          engineCouldCheck: engineCouldCheck, task: task)
+    }
+
+    /// Stop the check for the picked extension and forget it.
+    private func cancelCompatibilityCheck() {
+        compatibilityCheck?.task.cancel()
+        compatibilityCheck = nil
+    }
+
+    /// Whether the installed engine can analyze for `browser`. One older than
+    /// Firefox's minimum doesn't know `--browser firefox`.
+    private func engineCanCheck(_ browser: Browser) -> Bool {
+        updater.isInstalled && (browser == .safari || !engineOlder(than: FirefoxConversion.minimumEngine))
     }
 
     /// `allowBatch` lets user mode pick several at once; more than one goes to
