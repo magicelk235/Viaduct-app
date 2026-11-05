@@ -61,25 +61,32 @@ final class ExtensionUpdater {
     /// Durable copy of converted sources, so a move to another Mac (and a
     /// rebuild) survives the user moving the original file or macOS purging
     /// the Caches-dir store download.
-    static var archiveDir: URL {
+    nonisolated static var archiveDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Viaduct/sources", isDirectory: true)
     }
 
-    /// Copy `path` into the archive, keyed by app name. Returns the archived path
-    /// (or nil on failure — caller then keeps the original path).
-    static func archiveSource(_ path: String, appName: String) -> String? {
+    /// Copy `path` into the archive, keyed by browser and app name. Returns the
+    /// archived path (or nil on failure — caller then keeps the original path).
+    static func archiveSource(_ path: String, appName: String, browser: Browser, root: URL = archiveDir) -> String? {
         let fm = FileManager.default
         guard fm.fileExists(atPath: path), !appName.isEmpty else { return nil }
         do {
-            try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
-            let ext = URL(fileURLWithPath: path).pathExtension
+            // Safari's copies stay at the top, where records from before
+            // Firefox point. Firefox gets a folder so the same name can't clash.
+            let dir = browser == .safari ? root : root.appendingPathComponent("firefox", isDirectory: true)
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let source = URL(fileURLWithPath: path)
+            let ext = source.pathExtension
             // One slot per app name; re-convert overwrites it. Dirs (unpacked)
             // and archives both handled by copyItem.
-            let dest = archiveDir.appendingPathComponent(appName)
+            let dest = dir.appendingPathComponent(appName)
                 .appendingPathExtension(ext.isEmpty ? "src" : ext)
+            // Convert Again converts the archived copy itself. Deleting the
+            // destination first would leave nothing to copy.
+            if source.standardizedFileURL.path == dest.standardizedFileURL.path { return dest.path }
             if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-            try fm.copyItem(at: URL(fileURLWithPath: path), to: dest)
+            try fm.copyItem(at: source, to: dest)
             return dest.path
         } catch { return nil }
     }
@@ -91,9 +98,10 @@ final class ExtensionUpdater {
     }
 
     /// Whether the weekly store update looks after this record: a store
-    /// install, under a license that covers it.
+    /// install in Safari, under a license that covers Safari. The update
+    /// rebuilds through the Safari conversion, so it can't take a Firefox one.
     nonisolated static func covers(_ rec: ConversionRecord, entitlements: Entitlements) -> Bool {
-        rec.storeId != nil && entitlements.safari
+        rec.storeId != nil && entitlements.safari && rec.browser == .safari
     }
 
     /// Store installs due for a weekly CWS version poll: covered by the license
@@ -139,7 +147,7 @@ final class ExtensionUpdater {
             return
         }
         // New version — archive the fresh source and rebuild from it.
-        let sourcePath = Self.archiveSource(crx.path, appName: rec.resolvedAppName) ?? crx.path
+        let sourcePath = Self.archiveSource(crx.path, appName: rec.resolvedAppName, browser: rec.browser) ?? crx.path
         history.updateSource(id: rec.id, path: sourcePath)
         let code = await rebuild(sourcePath: sourcePath, appName: rec.resolvedAppName)
         if code == 0 {

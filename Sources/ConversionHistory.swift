@@ -48,8 +48,40 @@ struct ConversionRecord: Codable, Identifiable {
     /// on every record the license covers.
     var freeRemovesAt: Date?
 
+    /// The browser it was converted for. Records from before Firefox have no
+    /// such key, and every one of them went to Safari.
+    var browser: Browser = .safari
+    /// The add-on id persist keeps it under. Firefox only.
+    var addonId: String?
+    /// The Firefox profile it went into. Firefox only.
+    var profilePath: String?
+
     /// Effective app name for rebuilds.
     var resolvedAppName: String { appName ?? name }
+}
+
+// Decoding lives in an extension so the struct keeps its memberwise initializer.
+extension ConversionRecord {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        sourcePath = try container.decode(String.self, forKey: .sourcePath)
+        appName = try container.decodeIfPresent(String.self, forKey: .appName)
+        installedPath = try container.decodeIfPresent(String.self, forKey: .installedPath)
+        date = try container.decode(Date.self, forKey: .date)
+        adHoc = try container.decodeIfPresent(Bool.self, forKey: .adHoc)
+        lastUpdateFailed = try container.decodeIfPresent(Bool.self, forKey: .lastUpdateFailed)
+        iconData = try container.decodeIfPresent(Data.self, forKey: .iconData)
+        storeId = try container.decodeIfPresent(String.self, forKey: .storeId)
+        chromeId = try container.decodeIfPresent(String.self, forKey: .chromeId)
+        version = try container.decodeIfPresent(String.self, forKey: .version)
+        lastUpdateCheck = try container.decodeIfPresent(Date.self, forKey: .lastUpdateCheck)
+        freeRemovesAt = try container.decodeIfPresent(Date.self, forKey: .freeRemovesAt)
+        browser = try container.decodeIfPresent(Browser.self, forKey: .browser) ?? .safari
+        addonId = try container.decodeIfPresent(String.self, forKey: .addonId)
+        profilePath = try container.decodeIfPresent(String.self, forKey: .profilePath)
+    }
 }
 
 /// Append-only history of converted extensions, backed by UserDefaults.
@@ -60,26 +92,41 @@ final class ConversionHistory: ObservableObject {
 
     private let key = "conversionHistory"
     private let defaults: UserDefaults
+    /// Installs and removes the Firefox records' add-ons.
+    private let firefox: FirefoxAddons
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, firefox: FirefoxAddons) {
         self.defaults = defaults
+        self.firefox = firefox
         load()
     }
 
-    func add(name: String, sourcePath: String, appName: String,
-             installedPath: String?, build: SigningAccount.Build,
-             iconData: Data?, storeId: String? = nil, chromeId: String? = nil,
-             version: String? = nil, freeRemovesAt: Date? = nil) {
+    /// For the app's own Firefox add-ons. Not a `= .shared` default: default
+    /// arguments are evaluated off the main actor.
+    convenience init(defaults: UserDefaults = .standard) {
+        self.init(defaults: defaults, firefox: .shared)
+    }
+
+    func add(browser: Browser, name: String, sourcePath: String, appName: String, installedPath: String?,
+             adHoc: Bool?, iconData: Data?, storeId: String? = nil, chromeId: String? = nil, version: String? = nil,
+             freeRemovesAt: Date? = nil, addonId: String? = nil, profilePath: String? = nil) {
         let now = Date()
         var record = ConversionRecord(name: name, sourcePath: sourcePath,
                                       appName: appName, installedPath: installedPath,
-                                      date: now, adHoc: build.adHoc,
+                                      date: now, adHoc: adHoc,
                                       iconData: iconData,
                                       storeId: storeId, chromeId: chromeId ?? storeId,
                                       version: version)
+        record.browser = browser
+        record.addonId = addonId
+        record.profilePath = profilePath
         record.freeRemovesAt = freeRemovesAt
-        // Re-converting the same app replaces its record instead of stacking duplicates.
-        records.removeAll { $0.resolvedAppName == appName }
+        // Re-converting the same app replaces its record instead of stacking
+        // duplicates. Each browser keeps its own, and so does each Firefox
+        // profile: dropping one profile's record would orphan its add-on.
+        records.removeAll {
+            $0.browser == browser && $0.resolvedAppName == appName && $0.profilePath == profilePath
+        }
         records.insert(record, at: 0)
         if records.count > 200 { records.removeLast(records.count - 200) }
         save()
@@ -174,21 +221,29 @@ final class ConversionHistory: ObservableObject {
         save()
     }
 
-    /// True if a store extension (by CWS id) is installed — a record exists and
-    /// its .app is still on disk. Drives the store page's Remove-vs-Add button.
-    func isInstalled(storeId: String) -> Bool {
+    /// Whether a record's install is still there. A Safari one needs its .app
+    /// on disk. A Firefox add-on lives with persist, so it counts until
+    /// pruning finds persist dropped it.
+    func isPresent(_ rec: ConversionRecord) -> Bool {
+        switch rec.browser {
+        case .safari: return rec.installedPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
+        case .firefox: return true
+        }
+    }
+
+    /// True if a store extension (by CWS id) is installed in `browser`.
+    /// Drives the store page's Remove-vs-Add button.
+    func isInstalled(storeId: String, browser: Browser) -> Bool {
         records.contains { rec in
-            rec.storeId == storeId
-                && (rec.installedPath.map { FileManager.default.fileExists(atPath: $0) } ?? false)
+            rec.storeId == storeId && rec.browser == browser && isPresent(rec)
         }
     }
 
     /// Same check keyed on the Chrome id, for sources that didn't come from
     /// the store (Edge/Opera profiles, unpacked folders).
-    func isInstalled(chromeId: String) -> Bool {
+    func isInstalled(chromeId: String, browser: Browser) -> Bool {
         records.contains { rec in
-            (rec.chromeId ?? rec.storeId) == chromeId
-                && (rec.installedPath.map { FileManager.default.fileExists(atPath: $0) } ?? false)
+            (rec.chromeId ?? rec.storeId) == chromeId && rec.browser == browser && isPresent(rec)
         }
     }
 

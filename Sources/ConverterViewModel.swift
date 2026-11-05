@@ -459,15 +459,16 @@ final class ConverterViewModel: ObservableObject {
         // Stash a durable copy of the source so it can be rebuilt or moved to
         // another Mac even if the user moves/deletes the original (or the cached
         // store .crx is purged).
-        let archived = ExtensionUpdater.archiveSource(options.inputPath, appName: options.appName)
+        let archived = ExtensionUpdater.archiveSource(options.inputPath, appName: options.appName,
+                                                      browser: options.browser)
         // Read the artifact, because a run can succeed and still have come out
         // ad-hoc.
         let build = SigningAccount.inspectBuild(installedAppPath: installedAppPath)
         lastBuildAdHoc = build.adHoc
-        history.add(name: name, sourcePath: archived ?? options.inputPath,
+        history.add(browser: options.browser, name: name, sourcePath: archived ?? options.inputPath,
                     appName: options.appName,
                     installedPath: installedAppPath,
-                    build: build,
+                    adHoc: build.adHoc,
                     iconData: extInfo?.icon?.pngData(),
                     storeId: pendingStoreId,
                     chromeId: pendingChromeId ?? pendingStoreId

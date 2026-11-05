@@ -20,6 +20,7 @@
 		1E38CDD8DD767ACBFDF5D7D3 /* LicenseManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA7519856F44CED6893C97FF /* LicenseManagerTests.swift */; };
 		1EE76700C7DC11A36FAEE4BC /* ConvertAnimations.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD24BC2D7FBDC2959615B2BD /* ConvertAnimations.swift */; };
 		1F2ED729945FC8BB99702E9D /* HelperAgentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F58194969B90E5FFB81596 /* HelperAgentTests.swift */; };
+		24EFA3D4D3E42B9B3D3B3878 /* ConversionHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4069D5979D285640F694A243 /* ConversionHistoryTests.swift */; };
 		25A51F768620F606EA512489 /* com.magicelk235.viaduct.firefox-agent.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = CBE2D807D2A345EC253E0160 /* com.magicelk235.viaduct.firefox-agent.plist */; };
 		27836C82234B10EB11BB69B7 /* ConversionQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1A9AF75C432F6ED0056157 /* ConversionQueueView.swift */; };
 		2C0D631AEA9C03746231EE69 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1086B824609E8B420E80D68F /* main.swift */; };
@@ -184,6 +185,7 @@
 		3842807AAA6FB565FA7B44DF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		38866ACCB31D891DBAA75D76 /* ChromeImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeImportView.swift; sourceTree = "<group>"; };
 		3F6C8FC3D64DCF465F07D706 /* PolarClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarClient.swift; sourceTree = "<group>"; };
+		4069D5979D285640F694A243 /* ConversionHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionHistoryTests.swift; sourceTree = "<group>"; };
 		43A71C568254C0C273B3114B /* FirefoxFakes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxFakes.swift; sourceTree = "<group>"; };
 		4423589F579371E2932603DA /* LevelDBReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelDBReader.swift; sourceTree = "<group>"; };
 		46A0D6A732F9ADA35FA28A8D /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
@@ -308,6 +310,7 @@
 			isa = PBXGroup;
 			children = (
 				85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */,
+				4069D5979D285640F694A243 /* ConversionHistoryTests.swift */,
 				0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */,
 				8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */,
 				E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */,
@@ -781,6 +784,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */,
+				24EFA3D4D3E42B9B3D3B3878 /* ConversionHistoryTests.swift in Sources */,
 				3EF6C94AE2E9349FA45B1B68 /* FirefoxAddonsTests.swift in Sources */,
 				140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */,
 				45F547D0F8C46C918FE5C0DE /* FirefoxFakes.swift in Sources */,

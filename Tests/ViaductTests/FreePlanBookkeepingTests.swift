@@ -8,8 +8,8 @@ final class FreePlanBookkeepingTests: XCTestCase {
     func testKeepingFreeExtensionsTouchesOnlyMatchingRecords() {
         let history = ConversionHistory(defaults: TestDefaults.make())
         for name in ["Kept", "Swept"] {
-            history.add(name: name, sourcePath: "/tmp/\(name)", appName: name, installedPath: nil,
-                        build: SigningAccount.Build(adHoc: false), iconData: nil,
+            history.add(browser: .safari, name: name, sourcePath: "/tmp/\(name)", appName: name, installedPath: nil,
+                        adHoc: false, iconData: nil,
                         freeRemovesAt: now.addingTimeInterval(7 * 86_400))
         }
         history.keepFreeExtensions(where: { $0.name == "Kept" })

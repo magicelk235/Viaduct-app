@@ -8,6 +8,9 @@ struct ConvertOptions {
     /// Apple team id to sign with, or "auto" to let the CLI detect one.
     var team: String = "auto"
     var force: Bool = false              // --force
+    /// Which browser the conversion is for. `conversionArgs()` only builds
+    /// Safari's; Firefox's come from `FirefoxConversion.convertArgs`.
+    var browser: Browser = .safari
 
     /// Build argv (excluding the leading cli.js path) for a conversion.
     func conversionArgs() -> [String] {

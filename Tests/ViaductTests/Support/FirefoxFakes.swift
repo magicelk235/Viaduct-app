@@ -30,7 +30,8 @@ final class FakeEvents { var events: [String] = [] }
         if case .success(let result) = installResult {
             kept.removeAll { $0.id == result.id && $0.profilePath == result.profilePath }
             kept.append(PersistAddon(id: result.id, name: result.name, version: result.version,
-                                     profilePath: result.profilePath, dir: "/state/\(result.id)", firefox: firefox))
+                                     profilePath: result.profilePath, dir: "/state/\(result.id)",
+                                     firefox: FirefoxFixtures.binary(of: firefox)))
         }
         await onInstall?()
         return try installResult.get()
@@ -69,9 +70,15 @@ final class FakeAgent: FirefoxAgentControlling {
 
 /// Dark Reader in the default profile of /Applications/Firefox.app, unless a test says otherwise.
 enum FirefoxFixtures {
+    /// What persist records as a kept add-on's Firefox: the binary inside the
+    /// app `--firefox` named, not the app itself.
+    static func binary(of app: String = "/Applications/Firefox.app") -> String {
+        URL(fileURLWithPath: app).appendingPathComponent("Contents/MacOS/firefox").path
+    }
+
     static func addon(id: String = "darkreader@viaduct", profilePath: String = "/profiles/a", version: String = "4.9.99") -> PersistAddon {
         PersistAddon(id: id, name: "Dark Reader", version: version, profilePath: profilePath,
-                     dir: "/state/\(id)", firefox: "/Applications/Firefox.app")
+                     dir: "/state/\(id)", firefox: binary())
     }
 
     static func result(id: String = "darkreader@viaduct", profilePath: String = "/profiles/a", pending: Bool = false) -> PersistResult {

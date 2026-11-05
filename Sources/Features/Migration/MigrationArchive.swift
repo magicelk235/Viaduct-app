@@ -183,7 +183,7 @@ struct MigrationSection: View {
             HStack {
                 Button("Export") { exportAll() }
                     .buttonStyle(.raycastTertiary)
-                    .disabled(work.isBusy || history.records.isEmpty)
+                    .disabled(work.isBusy || !history.records.contains { $0.browser == .safari })
                 Button("Import") { importArchive() }
                     .buttonStyle(.raycastTertiary)
                     .disabled(work.isBusy || vm.isRunning || queue.isRunning)
@@ -204,7 +204,9 @@ struct MigrationSection: View {
         panel.nameFieldStringValue = "Viaduct extensions.zip"
         panel.allowedContentTypes = [.zip]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let records = history.records
+        // The archive has no browser field, so a Firefox record would come
+        // back on the other Mac as a Safari conversion.
+        let records = history.records.filter { $0.browser == .safari }
         work.isBusy = true
         status = "Exporting…"
         Task { @MainActor in

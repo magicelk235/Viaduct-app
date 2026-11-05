@@ -246,7 +246,7 @@ struct ChromeImportView: View {
     }
 
     private func alreadyInSafari(_ ext: InstalledBrowserExtension) -> Bool {
-        vm.history.isInstalled(chromeId: ext.chromeId)
+        vm.history.isInstalled(chromeId: ext.chromeId, browser: .safari)
     }
 
     private func orderedProfiles(_ list: [InstalledBrowserExtension]) -> [BrowserProfile] {

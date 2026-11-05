@@ -287,7 +287,7 @@ struct ViaductApp: App {
         // yes/no for the single id they queried.
         if let queryId {
             dict["forId"] = queryId
-            dict["installed"] = vm?.history.isInstalled(storeId: queryId) ?? false
+            dict["installed"] = vm?.history.isInstalled(storeId: queryId, browser: .safari) ?? false
         }
         return dict
     }

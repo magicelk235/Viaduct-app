@@ -34,26 +34,31 @@ struct QueueItem: Identifiable {
     var chromeId: String?
     /// The browser profile to take settings from; nil searches every profile.
     var settingsProfile: BrowserProfile?
+    /// The browser it gets converted for.
+    var browser: Browser
     var status: Status = .pending
     var note: String?
     var installedPath: String?
 
     init(name: String, iconPNG: Data? = nil, storeId: String? = nil, chromeId: String? = nil,
-         settingsProfile: BrowserProfile? = nil, prepare: @escaping () async throws -> URL) {
+         settingsProfile: BrowserProfile? = nil, browser: Browser = .safari,
+         prepare: @escaping () async throws -> URL) {
         self.name = name
         self.iconPNG = iconPNG
         self.storeId = storeId
         self.chromeId = chromeId
         self.settingsProfile = settingsProfile
+        self.browser = browser
         self.prepare = prepare
     }
 
     /// A file already on disk.
-    static func file(_ url: URL) -> QueueItem {
+    static func file(_ url: URL, browser: Browser = .safari) -> QueueItem {
         let info = ExtensionInspector.inspectSync(path: url.path)
         return QueueItem(name: info?.name ?? url.deletingPathExtension().lastPathComponent,
                          iconPNG: info?.icon?.pngData(),
-                         chromeId: ExtensionIdentity.chromeId(forSource: url.path)) { url }
+                         chromeId: ExtensionIdentity.chromeId(forSource: url.path),
+                         browser: browser) { url }
     }
 }
 
@@ -165,6 +170,8 @@ final class ConversionQueue: ObservableObject {
     private func convert(index: Int, path: String) {
         guard let vm else { return }
         vm.resetUserFlow()
+        // Each item converts for its own browser, whatever the window last used.
+        vm.options.browser = items[index].browser
         vm.selectInput(path: path)
         // A folder copied out of a browser profile is named after the
         // extension id, which is no name for an app.
