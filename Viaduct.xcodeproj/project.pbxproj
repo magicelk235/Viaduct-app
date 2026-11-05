@@ -12,6 +12,7 @@
 		08ACA19DDF0FDE70CFD912DC /* FreePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71BC154785D7907203EFAB37 /* FreePlan.swift */; };
 		08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC67CD1790FCD1A2DBD5B113 /* Updater.swift */; };
 		0FDD2E2220E7EE7313DC98A8 /* MigrationArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB47406C1BC6E1DFBB936ED /* MigrationArchive.swift */; };
+		140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */; };
 		149CA37E3C610C997E55ABF5 /* BrowserExtensionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F238F28D6B436BEA1FDEC7 /* BrowserExtensionScanner.swift */; };
 		1544867A5FC80B3E139ABA48 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7543601C995152BCD979C617 /* SettingsWindowController.swift */; };
 		1B68851345B7CC2A2A2408A4 /* StagedFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84F3BA2696BE27D24D8A251 /* StagedFolder.swift */; };
@@ -71,7 +72,9 @@
 		D2C6610DC6BC0907F9112FD9 /* ExtensionUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173C3928435A6B646D91DF6E /* ExtensionUpdater.swift */; };
 		D3AB5400B1B95E0D24350EC5 /* PaywallTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */; };
 		D498F700B216CEF067756D6A /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 614D8805DDE093D020F1D0D7 /* Theme.swift */; };
+		D5D0BA5259537D6F1AD903A0 /* FirefoxConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8503480A8E86A3A47E4F9FD8 /* FirefoxConversion.swift */; };
 		D927B6BDE50444AC288DEDDB /* GumroadClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 189162E0C18399C5A150EAEB /* GumroadClientTests.swift */; };
+		D99F97B0816982437791A229 /* FirefoxLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65391241F2B43D3FC8BB7A08 /* FirefoxLocator.swift */; };
 		E0077D70C9E11D959B5EB4E7 /* LicenseFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C05D702FBDB0409D178D944 /* LicenseFixtures.swift */; };
 		E200E4056A21FDD6CCE1D87F /* CLIUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6E1B55880A88354EC17F8F /* CLIUpdater.swift */; };
 		E827408EA78A95108D5F62D2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2B7969794EF0B93CC897FE /* SettingsView.swift */; };
@@ -153,6 +156,7 @@
 		5B3B349223B937D244E01611 /* bin */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bin; path = Resources/bin; sourceTree = SOURCE_ROOT; };
 		612B08CDDA73C028EA1B893A /* BatchConvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchConvert.swift; sourceTree = "<group>"; };
 		614D8805DDE093D020F1D0D7 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		65391241F2B43D3FC8BB7A08 /* FirefoxLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxLocator.swift; sourceTree = "<group>"; };
 		67C81E124A88D934C226864B /* UpdatePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatePolicy.swift; sourceTree = "<group>"; };
 		69A3660E251D8D05219E55FB /* CompatibilityCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatibilityCheck.swift; sourceTree = "<group>"; };
 		6DA2AA9A7141526C03A24FD3 /* icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = icon.png; sourceTree = "<group>"; };
@@ -164,8 +168,10 @@
 		79D4BA4CDEFC3C07C5CC3CDE /* SigningAccountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SigningAccountTests.swift; sourceTree = "<group>"; };
 		79DF44B127A97253CEBE0C02 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
 		82D961B10C9B4F47A1DDCD97 /* TestDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestDefaults.swift; sourceTree = "<group>"; };
+		8503480A8E86A3A47E4F9FD8 /* FirefoxConversion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxConversion.swift; sourceTree = "<group>"; };
 		85135CE31BAB02A65A5A2872 /* LicenseStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseStoreTests.swift; sourceTree = "<group>"; };
 		85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserTests.swift; sourceTree = "<group>"; };
+		8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxConversionTests.swift; sourceTree = "<group>"; };
 		8CB47406C1BC6E1DFBB936ED /* MigrationArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationArchive.swift; sourceTree = "<group>"; };
 		949941983A97023BD3198B70 /* IssueReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueReport.swift; sourceTree = "<group>"; };
 		96F1ADB5A0FE75373E14B3EE /* ConversionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionHistory.swift; sourceTree = "<group>"; };
@@ -233,6 +239,8 @@
 		24B1F1D8E6CFBD5488C20405 /* Firefox */ = {
 			isa = PBXGroup;
 			children = (
+				8503480A8E86A3A47E4F9FD8 /* FirefoxConversion.swift */,
+				65391241F2B43D3FC8BB7A08 /* FirefoxLocator.swift */,
 				04E0DC146811DD698771FEBF /* PersistClient.swift */,
 			);
 			path = Firefox;
@@ -250,6 +258,7 @@
 			isa = PBXGroup;
 			children = (
 				85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */,
+				8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */,
 				E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */,
 				189162E0C18399C5A150EAEB /* GumroadClientTests.swift */,
 				BA7519856F44CED6893C97FF /* LicenseManagerTests.swift */,
@@ -675,6 +684,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */,
+				140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */,
 				89771B5CF0FF41D056780341 /* FreePlanBookkeepingTests.swift in Sources */,
 				D927B6BDE50444AC288DEDDB /* GumroadClientTests.swift in Sources */,
 				E0077D70C9E11D959B5EB4E7 /* LicenseFixtures.swift in Sources */,
@@ -719,6 +729,8 @@
 				36E822185EE0836D63626FB3 /* ExtensionSettingsTransfer.swift in Sources */,
 				D2C6610DC6BC0907F9112FD9 /* ExtensionUpdater.swift in Sources */,
 				743656629FCBFFDD7754637B /* Feedback.swift in Sources */,
+				D5D0BA5259537D6F1AD903A0 /* FirefoxConversion.swift in Sources */,
+				D99F97B0816982437791A229 /* FirefoxLocator.swift in Sources */,
 				08ACA19DDF0FDE70CFD912DC /* FreePlan.swift in Sources */,
 				6E359B723C1792C2BEE83D6A /* GumroadClient.swift in Sources */,
 				C41913DBE7F2011934E416F7 /* InstallProgressBridge.swift in Sources */,
