@@ -430,7 +430,7 @@ struct StatusMenu: View {
             Section("Extensions") {
                 ForEach(sortedRecords.prefix(8)) { rec in
                     if let removesAt = rec.freeRemovesAt {
-                        Text("\(rec.name): removed \(removesAt.formatted(.relative(presentation: .numeric)))")
+                        Text(Self.removalLine(name: rec.name, removesAt: removesAt))
                     } else if rec.lastUpdateFailed == true {
                         Text("⚠︎ \(rec.name): update failed")
                     } else {
@@ -465,6 +465,14 @@ struct StatusMenu: View {
             AppDelegate.allowRealQuit = true
             NSApp.terminate(nil)
         }
+    }
+
+    /// The menu line for an extension the free plan removes. A removal that
+    /// didn't go through, say because Firefox held on to the add-on, keeps its
+    /// date until the next try.
+    nonisolated static func removalLine(name: String, removesAt: Date, now: Date = Date()) -> String {
+        guard removesAt > now else { return "\(name): removal pending" }
+        return "\(name): removed \(removesAt.formatted(.relative(presentation: .numeric)))"
     }
 }
 

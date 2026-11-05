@@ -34,6 +34,14 @@ final class FreePlanFirefoxTests: XCTestCase {
         XCTAssertEqual(history.records.first?.freeRemovesAt, now.addingTimeInterval(-60))
     }
 
+    /// A removal Firefox held up keeps its date, which has passed by then.
+    func testTheMenuCallsARemovalPastItsDatePending() {
+        XCTAssertEqual(StatusMenu.removalLine(name: "Dark Reader", removesAt: now.addingTimeInterval(-3600), now: now),
+                       "Dark Reader: removal pending")
+        XCTAssertTrue(StatusMenu.removalLine(name: "Dark Reader", removesAt: Date().addingTimeInterval(3 * 86_400))
+            .hasPrefix("Dark Reader: removed "))
+    }
+
     func testNextSweepDate() {
         XCTAssertEqual(FreePlan.nextSweepDate(removalDates: [now.addingTimeInterval(-60)], now: now), now.addingTimeInterval(3600))
         XCTAssertEqual(FreePlan.nextSweepDate(removalDates: [now.addingTimeInterval(7200), now.addingTimeInterval(60)], now: now), now.addingTimeInterval(60))
