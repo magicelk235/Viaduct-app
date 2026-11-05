@@ -1,16 +1,20 @@
+// Everything that differs between browsers (button labels, how requests reach
+// the app, the copy under the progress card) comes from viaductTransport,
+// which the browser's own transport script defines before this one runs.
+const ADD_LABEL = `Add to ${viaductTransport.browser}`;
+const REMOVE_LABEL = `Remove from ${viaductTransport.browser}`;
+
 function installViaduct(extId, name, btn) {
-  let url = `viaduct://install?id=${extId}`;
-  if (name) url += `&name=${encodeURIComponent(name)}`;
-  window.location.href = url;
+  viaductTransport.install(extId, name);
   // The app converts headless (no Viaduct window); the button becomes the UI.
   startProgressPolling(btn, extId);
 }
 
 // ---- Installed state ------------------------------------------------------
-// Whether each store extension (by CWS id) is installed in Safari, so the page
-// can show "Remove from Safari" instead of "Add to Safari". Filled lazily by
-// asking the app (content -> background -> native handler -> app); a resolved
-// answer that changes state re-runs apply() to repaint the button.
+// Whether each store extension (by CWS id) is installed in the browser, so the
+// page can show our Remove button instead of our Add button. Filled lazily by
+// asking the app through the transport; a resolved answer that changes state
+// re-runs apply() to repaint the button.
 const installedById = new Map();      // id -> boolean (definitive answers only)
 const installedInFlight = new Set();  // ids with a query in progress
 const installedTried = new Map();     // id -> last attempt ms (backoff)
@@ -26,7 +30,7 @@ function isInstalledNow() {
 }
 
 function desiredLabel() {
-  return isInstalledNow() ? 'Remove from Safari' : 'Add to Safari';
+  return isInstalledNow() ? REMOVE_LABEL : ADD_LABEL;
 }
 
 // Teal = add (dark text), red = remove (white text).
@@ -50,7 +54,7 @@ const CTA_JSNAME_SEL = 'button[jsname="wQO0od"]';
 // Buttons we've already relabelled or injected, so a state flip repaints them.
 function isOurLabel(text) {
   const t = (text || '').toLowerCase().trim();
-  return t.includes('add to safari') || t.includes('remove from safari');
+  return t.includes(ADD_LABEL.toLowerCase()) || t.includes(REMOVE_LABEL.toLowerCase());
 }
 
 function isStoreCta(btn) {
@@ -88,7 +92,7 @@ function refreshInstalled(id) {
   if (now - (installedTried.get(id) || 0) < 1500) return; // backoff if app asleep
   installedTried.set(id, now);
   installedInFlight.add(id);
-  browser.runtime.sendMessage({ type: 'viaduct-installed', id }).then(
+  viaductTransport.installed(id).then(
     (res) => {
       installedInFlight.delete(id);
       if (res && typeof res.installed === 'boolean') {
@@ -96,27 +100,27 @@ function refreshInstalled(id) {
         apply(); // repaint with the real state
       }
       // No definitive answer (app unreachable): leave uncached so a later tick
-      // retries. The button stays "Add to Safari" until then.
+      // retries. The button stays our Add button until then.
     },
     () => { installedInFlight.delete(id); }
   );
 }
 
-// "Remove from Safari" click: ask the app to delete the installed .app, then
-// confirm by polling installed-state. The app reports no removal phases, so we
-// verify the result instead of streaming progress.
+// Our Remove button's click: ask the app to remove the installed extension,
+// then confirm by polling installed-state. The app reports no removal phases,
+// so we verify the result instead of streaming progress.
 function removeViaduct(id, btn) {
-  window.location.href = `viaduct://remove?id=${id}`;
+  viaductTransport.remove(id);
   const gen = ++pollGen;
   installState = { path: window.location.pathname, id };
-  setState('Removing…', 'Deleting the Safari app', 0.5, '#B23B32');
+  setState('Removing…', viaductTransport.removingMessage, 0.5, '#B23B32');
   if (btn) renderProgress(btn);
   const startedAt = Date.now();
   const tick = async () => {
     if (gen !== pollGen) return;
     let installed = null;
     try {
-      const req = browser.runtime.sendMessage({ type: 'viaduct-installed', id });
+      const req = viaductTransport.installed(id);
       req.catch(() => {});
       const res = await Promise.race([
         req, new Promise(resolve => setTimeout(() => resolve(null), 2000)),
@@ -126,12 +130,12 @@ function removeViaduct(id, btn) {
     if (gen !== pollGen) return;
     if (installed === false) {
       installedById.set(id, false);
-      setState('Removed ✓', 'Gone from Safari', 1, '#B23B32');
-      // Return the card to an "Add to Safari" button shortly.
+      setState('Removed ✓', viaductTransport.removedMessage, 1, '#B23B32');
+      // Return the card to our Add button shortly.
       setTimeout(() => { if (gen === pollGen) dismissProgress(); }, 1200);
       return;
     }
-    if (Date.now() - startedAt > 15000) {
+    if (Date.now() - startedAt > viaductTransport.removeTimeoutMs) {
       setState('Remove failed', 'Open Viaduct to remove it.', 1, '#F87171');
       return;
     }
@@ -348,7 +352,7 @@ function queueApply() {
   };
   // rAF alone stalls forever in a tab that isn't visible: the callback never
   // runs, `applyQueued` stays latched, and every later mutation is swallowed —
-  // the page keeps the promo banner and never gets an Add to Safari button,
+  // the page keeps the promo banner and never gets our Add button,
   // even after the user switches to it. The timer keeps firing there, so
   // whichever wins does the pass and the other one no-ops.
   requestAnimationFrame(run);
@@ -415,7 +419,7 @@ document.addEventListener('click', (e) => {
   if (!match) return;
   e.preventDefault();
   e.stopPropagation();
-  if (text.includes('remove from safari')) {
+  if (text.includes(REMOVE_LABEL.toLowerCase())) {
     removeViaduct(match[2], btn);
     return;
   }
@@ -432,10 +436,10 @@ document.addEventListener('click', (e) => {
 }, true);
 
 // ---- In-place install progress card ---------------------------------------
-// The Viaduct app runs the conversion hidden; we poll it (content -> background
-// -> native handler -> app) and render a progress card IN PLACE of the install
-// button. The store SPA can re-render the button node mid-install, so all state
-// lives in `installState` and enableInstallButton() re-adopts any reset button.
+// The Viaduct app runs the conversion hidden; we poll it through the transport
+// and render a progress card IN PLACE of the install button. The store SPA can
+// re-render the button node mid-install, so all state lives in `installState`
+// and enableInstallButton() re-adopts any reset button.
 
 let installState = null; // { path, title, sub, fraction, color }
 let pollGen = 0; // bumping cancels any in-flight polling loop
@@ -495,7 +499,7 @@ function renderProgress(btn) {
   bar.style.background = installState.color;
 }
 
-// Put the button back to its "Add to Safari" self (✕ clicked).
+// Put the button back to our Add button (✕ clicked).
 function dismissProgress() {
   stopProgressPolling();
   installState = null;
@@ -505,12 +509,12 @@ function dismissProgress() {
     const saved = origMarkup.get(btn);
     if (saved != null) {
       // Google's own spans back in place — original font included. The saved
-      // markup already reads "Add to Safari" (we relabel before any click).
+      // markup already reads as our Add button (we relabel before any click).
       btn.innerHTML = saved;
       origMarkup.delete(btn);
     } else {
       // SPA replaced the node mid-install; no saved markup for this one.
-      btn.textContent = 'Add to Safari';
+      btn.textContent = ADD_LABEL;
     }
     if (btn.classList.contains('vd-install')) {
       // Our injected button has no store CSS classes — inline styles are all
@@ -524,7 +528,7 @@ function dismissProgress() {
     btn.style.setProperty('border-color', '#4A9DAD', 'important');
   });
   // Reconcile the just-restored button(s) with the current install state: after
-  // an install/remove the desired label may be "Remove from Safari", not "Add".
+  // an install/remove the desired label may be our Remove label, not Add.
   apply();
 }
 
@@ -558,10 +562,10 @@ function startProgressPolling(btn, id) {
     if (gen !== pollGen) return;
     let state = null;
     try {
-      // Race a timeout: if anything along content -> background -> native ->
-      // app stalls, sendMessage's promise may never settle, and an await with
-      // no timeout would wedge the loop at "Contacting…" forever.
-      const req = browser.runtime.sendMessage({ type: 'viaduct-progress' });
+      // Race a timeout: if anything between here and the app stalls, the
+      // transport's promise may never settle, and an await with no timeout
+      // would wedge the loop at "Contacting…" forever.
+      const req = viaductTransport.progress();
       req.catch(() => {});
       state = await Promise.race([
         req,
@@ -579,7 +583,7 @@ function startProgressPolling(btn, id) {
                Math.max(0.04, state.fraction || 0), '#4A9DAD');
     } else if (s === 'done' && sawActivity) {
       if (id) installedById.set(id, true);
-      setState('Installed ✓', 'Enable it in Safari → Settings → Extensions', 1, '#4A9DAD');
+      setState('Installed ✓', viaductTransport.doneMessage(state), 1, '#4A9DAD');
       // Let the success message land, then close the card on its own.
       setTimeout(() => { if (gen === pollGen) dismissProgress(); }, 2500);
       return;
