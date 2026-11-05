@@ -121,7 +121,8 @@ struct SettingsView: View {
                     licenseCard
                 case .extensions:
                     storeCard
-                    FirefoxSection()
+                    // A build without Firefox support has nothing to set here.
+                    if BrowserPicker.firefoxAvailable { FirefoxSection() }
                     MigrationSection(vm: vm, history: history)
                     // Kept last: the list grows with every conversion, so it
                     // shouldn't push the other sections down.

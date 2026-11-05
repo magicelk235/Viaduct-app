@@ -72,6 +72,8 @@ struct FirefoxAgentSection: View {
     @State private var loaded = false
     @State private var profiles: [PersistProfiles.Profile] = []
     @State private var firefox = FirefoxLocator.find()
+    /// Why the last Restart Agent didn't go through.
+    @State private var restartError: String?
 
     init(history: ConversionHistory) {
         self.history = history
@@ -88,6 +90,11 @@ struct FirefoxAgentSection: View {
                 }
             }
             .task { await load() }
+            .alert("Couldn't restart the Firefox agent",
+                   isPresented: Binding(get: { restartError != nil }, set: { if !$0 { restartError = nil } }),
+                   presenting: restartError) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { Text($0) }
         }
     }
 
@@ -138,7 +145,11 @@ struct FirefoxAgentSection: View {
     }
 
     private func restart() {
-        try? FirefoxAddons.shared.restartAgent()
+        do {
+            try FirefoxAddons.shared.restartAgent()
+        } catch {
+            restartError = error.localizedDescription
+        }
         Task {
             // launchd takes a moment to start it again.
             try? await Task.sleep(nanoseconds: 1_000_000_000)
