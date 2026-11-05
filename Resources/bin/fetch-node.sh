@@ -15,8 +15,9 @@
 # the right version). The result, Resources/bin/node, is gitignored and produced at build.
 set -euo pipefail
 
-# Pin an LTS. Bump deliberately; the CLI needs >=18 (package.json engines).
-NODE_VER="${VIADUCT_NODE_VERSION:-v20.18.1}"
+# Pin an LTS. Bump deliberately: persist and lavaduct need >=22.13 (their package.json
+# engines); the Safari CLI needs >=18.
+NODE_VER="${VIADUCT_NODE_VERSION:-v22.23.4}"
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 DEST="$DIR/node"
