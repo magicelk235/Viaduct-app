@@ -44,6 +44,7 @@
 		88FF27AFCBE2D89DE8E568D9 /* ViaductExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 58D150FB914882216A502FBE /* ViaductExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		89771B5CF0FF41D056780341 /* FreePlanBookkeepingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */; };
 		8B6F88ECF6AB3CD9A48222F5 /* Snappy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207CDF62051713E9E3FD1CC3 /* Snappy.swift */; };
+		8B85101378FB310D5D267691 /* PersistClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04E0DC146811DD698771FEBF /* PersistClient.swift */; };
 		925D294EAE84D135730B82E9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 330566E75A535162514BBFA6 /* AppIcon.icon */; };
 		9592998665FD64231D84ED72 /* SigningAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4CA23E222C7922E7D3DCB0 /* SigningAccount.swift */; };
 		96088A25F5F39F22811DB915 /* ChromeImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38866ACCB31D891DBAA75D76 /* ChromeImportView.swift */; };
@@ -64,6 +65,7 @@
 		C7FD3FC9C1738DB9ECA307B6 /* LicenseError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26EBC0782C878793066DBEA5 /* LicenseError.swift */; };
 		C8166273B730DDD088D8F714 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = BFBEBF47F3929776DC55B329 /* background.js */; };
 		C850A04CC643BEC3FF0A109D /* ExtensionIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 216A0409EC1C4E06AB21B317 /* ExtensionIdentity.swift */; };
+		C924CF2113FC167AA09DB79D /* PersistClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E8C813EE69850CABF1BD4C /* PersistClientTests.swift */; };
 		CBA72BAC72BC33E0C7C7B79D /* ConverterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBFE922AB1245ED752C9321 /* ConverterViewModel.swift */; };
 		CF9E5B2660414FF8CE4910D0 /* LicenseTierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F117C84E304CC6FEDEDAC0C /* LicenseTierTests.swift */; };
 		D2C6610DC6BC0907F9112FD9 /* ExtensionUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 173C3928435A6B646D91DF6E /* ExtensionUpdater.swift */; };
@@ -118,6 +120,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		04E0DC146811DD698771FEBF /* PersistClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistClient.swift; sourceTree = "<group>"; };
 		07D4467430B46DE5DA552B34 /* ExtensionSettingsTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSettingsTransfer.swift; sourceTree = "<group>"; };
 		09BE5C61C57681BCE4413B57 /* CLIRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIRunner.swift; sourceTree = "<group>"; };
 		0D7F56E305526E4B35D84338 /* TempDir.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempDir.swift; sourceTree = "<group>"; };
@@ -183,6 +186,7 @@
 		BFBEBF47F3929776DC55B329 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
 		C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallTests.swift; sourceTree = "<group>"; };
 		C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionInfo.swift; sourceTree = "<group>"; };
+		C8E8C813EE69850CABF1BD4C /* PersistClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistClientTests.swift; sourceTree = "<group>"; };
 		CBA59D7B65A758FCE5E2BC03 /* firefox */ = {isa = PBXFileReference; lastKnownFileType = folder; name = firefox; path = Resources/firefox; sourceTree = SOURCE_ROOT; };
 		CD1A9AF75C432F6ED0056157 /* ConversionQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionQueueView.swift; sourceTree = "<group>"; };
 		CD24BC2D7FBDC2959615B2BD /* ConvertAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertAnimations.swift; sourceTree = "<group>"; };
@@ -226,6 +230,14 @@
 			);
 			sourceTree = "<group>";
 		};
+		24B1F1D8E6CFBD5488C20405 /* Firefox */ = {
+			isa = PBXGroup;
+			children = (
+				04E0DC146811DD698771FEBF /* PersistClient.swift */,
+			);
+			path = Firefox;
+			sourceTree = "<group>";
+		};
 		24E2A75312AB580FA0A5D280 /* Migration */ = {
 			isa = PBXGroup;
 			children = (
@@ -245,6 +257,7 @@
 				F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */,
 				0F117C84E304CC6FEDEDAC0C /* LicenseTierTests.swift */,
 				C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */,
+				C8E8C813EE69850CABF1BD4C /* PersistClientTests.swift */,
 				AA5CF4DC01BA0568CED14285 /* PolarClientTests.swift */,
 				79D4BA4CDEFC3C07C5CC3CDE /* SigningAccountTests.swift */,
 				D2648119E24965D5CD09DFA5 /* UpdatePolicyTests.swift */,
@@ -362,6 +375,7 @@
 				F2DD69C2EE97313D1A3C4922 /* BatchConvert */,
 				2EEBDBE0E861A54C46746FCF /* ChromeImport */,
 				F3E095D54DE969406ABC66F7 /* CompatibilityCheck */,
+				24B1F1D8E6CFBD5488C20405 /* Firefox */,
 				B7528DC53F44ECD80863EB0A /* IssueReports */,
 				C73CFA8708CF3D81B1B74EDA /* KeepSettings */,
 				24E2A75312AB580FA0A5D280 /* Migration */,
@@ -669,6 +683,7 @@
 				FD86E0B02A60934111227EA5 /* LicenseSummaryTests.swift in Sources */,
 				CF9E5B2660414FF8CE4910D0 /* LicenseTierTests.swift in Sources */,
 				D3AB5400B1B95E0D24350EC5 /* PaywallTests.swift in Sources */,
+				C924CF2113FC167AA09DB79D /* PersistClientTests.swift in Sources */,
 				4C4B67ED30410DC03D26A229 /* PolarClientTests.swift in Sources */,
 				3E92FA139E6A8D9E55B78116 /* SigningAccountTests.swift in Sources */,
 				A26DAD8E42D40137C1D2A80A /* TempDir.swift in Sources */,
@@ -716,6 +731,7 @@
 				BA5DF236A87B8316C5CE8ADD /* LicenseViews.swift in Sources */,
 				0FDD2E2220E7EE7313DC98A8 /* MigrationArchive.swift in Sources */,
 				6AC0943E25CBED69FA757C4B /* OfficialVersionNotice.swift in Sources */,
+				8B85101378FB310D5D267691 /* PersistClient.swift in Sources */,
 				544B0B9830373177FFF2F3CC /* PolarClient.swift in Sources */,
 				E82A54C74E2D91060A9950F7 /* SafariAlternatives.swift in Sources */,
 				9C252960654554A92B56BE6A /* SettingsCarryOver.swift in Sources */,
