@@ -40,6 +40,12 @@ targets:
       - path: Resources/bin
         type: folder
         buildPhase: resources
+      # Firefox's helpers, built by the "Build Persist" phase. Optional because a
+      # fresh checkout doesn't have the folder until the first build makes it.
+      - path: Resources/firefox
+        type: folder
+        buildPhase: resources
+        optional: true
     dependencies:
       - target: ViaductExtension
         embed: true
@@ -101,6 +107,12 @@ targets:
         # shipped .app carries its own runtime on either chip — the user never
         # installs Node. Idempotent.
         script: "\"$SRCROOT/Resources/bin/fetch-node.sh\""
+        basedOnDependencyAnalysis: false
+      - name: Build Persist
+        # Bundle persist (PERSIST_DIR, default ../c2f-persist) and the lavaduct modules it imports into
+        # Resources/firefox/persist.mjs for the bundled node. Needs npm on the
+        # build machine. Skips when the bundle is newer than its sources.
+        script: "\"$SRCROOT/Resources/bin/build-persist.sh\""
         basedOnDependencyAnalysis: false
 
   ViaductExtension:

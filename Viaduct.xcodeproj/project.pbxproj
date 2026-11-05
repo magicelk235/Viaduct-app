@@ -40,6 +40,7 @@
 		6F22E359967E24989CBFA394 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 79DF44B127A97253CEBE0C02 /* manifest.json */; };
 		743656629FCBFFDD7754637B /* Feedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD6684D69AFF320AB76FBFD8 /* Feedback.swift */; };
 		7974A26A5768F2BB83B9F07C /* ConvertOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2A0A414CC85860A87063B5 /* ConvertOptions.swift */; };
+		7D9576B0A7C6AA761D157642 /* firefox in Resources */ = {isa = PBXBuildFile; fileRef = CBA59D7B65A758FCE5E2BC03 /* firefox */; };
 		88FF27AFCBE2D89DE8E568D9 /* ViaductExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 58D150FB914882216A502FBE /* ViaductExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		89771B5CF0FF41D056780341 /* FreePlanBookkeepingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */; };
 		8B6F88ECF6AB3CD9A48222F5 /* Snappy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207CDF62051713E9E3FD1CC3 /* Snappy.swift */; };
@@ -182,6 +183,7 @@
 		BFBEBF47F3929776DC55B329 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
 		C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallTests.swift; sourceTree = "<group>"; };
 		C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionInfo.swift; sourceTree = "<group>"; };
+		CBA59D7B65A758FCE5E2BC03 /* firefox */ = {isa = PBXFileReference; lastKnownFileType = folder; name = firefox; path = Resources/firefox; sourceTree = SOURCE_ROOT; };
 		CD1A9AF75C432F6ED0056157 /* ConversionQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionQueueView.swift; sourceTree = "<group>"; };
 		CD24BC2D7FBDC2959615B2BD /* ConvertAnimations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertAnimations.swift; sourceTree = "<group>"; };
 		CD6684D69AFF320AB76FBFD8 /* Feedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feedback.swift; sourceTree = "<group>"; };
@@ -451,6 +453,7 @@
 			isa = PBXGroup;
 			children = (
 				5B3B349223B937D244E01611 /* bin */,
+				CBA59D7B65A758FCE5E2BC03 /* firefox */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -500,6 +503,7 @@
 			buildConfigurationList = 30E438FE7382C7E659C371C1 /* Build configuration list for PBXNativeTarget "Viaduct" */;
 			buildPhases = (
 				FC2CE8C82374EA97715A4004 /* Fetch Node */,
+				582419ADB52178443E2916EA /* Build Persist */,
 				8447CB9A519BE4019124E3E9 /* Sources */,
 				2734418A22F3D57141CDDA1B /* Resources */,
 				B348EB69DD66972884C1D0F9 /* Frameworks */,
@@ -573,6 +577,7 @@
 				925D294EAE84D135730B82E9 /* AppIcon.icon in Resources */,
 				FC1A937DDF2BE791C6955099 /* Assets.xcassets in Resources */,
 				EB7FA085A32BE26506778407 /* bin in Resources */,
+				7D9576B0A7C6AA761D157642 /* firefox in Resources */,
 				5CFB2E5454F3B4826AD9EAC2 /* icon.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -591,6 +596,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		582419ADB52178443E2916EA /* Build Persist */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Persist";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/Resources/bin/build-persist.sh\"";
+		};
 		E3B03C0BC0F74DAB629BDB2C /* Stamp manifest version */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
