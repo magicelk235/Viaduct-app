@@ -68,8 +68,9 @@ protocol PersistClientProtocol: Sendable {
 struct PersistClient: PersistClientProtocol {
     private let log: @Sendable (String) -> Void
 
-    /// `log` gets persist's stderr lines during install and uninstall,
-    /// on a background thread.
+    /// `log` gets persist's stderr lines during an install, on a background
+    /// thread. An uninstall's stay out: removals run on their own, the free
+    /// plan's included, and the log belongs to the conversion on screen.
     init(log: @escaping @Sendable (String) -> Void = { _ in }) {
         self.log = log
     }
@@ -180,7 +181,7 @@ struct PersistClient: PersistClientProtocol {
 
     func uninstall(id: String, profile: String?, restart: Bool) async throws -> PersistResult {
         let args = Self.uninstallArguments(id: id, profile: profile, restart: restart)
-        return try Self.decodeOutcome(try await run(args, streamLog: true).stdout)
+        return try Self.decodeOutcome(try await run(args, streamLog: false).stdout)
     }
 
     func list() async throws -> [PersistAddon] {
