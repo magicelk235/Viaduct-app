@@ -25,6 +25,11 @@ final class StoreRequestTests: XCTestCase {
         XCTAssertNil(StoreRequest(url: URL(string: "viaduct://install?id=\(id)&browser=Firefox")!))
     }
 
+    func test_browserWithoutAValueIsIgnoredNotSafari() {
+        XCTAssertNil(StoreRequest(url: URL(string: "viaduct://install?id=\(id)&browser")!))
+        XCTAssertNil(StoreRequest(url: URL(string: "viaduct://remove?id=\(id)&browser=")!))
+    }
+
     func test_rejectsMalformed() {
         for s in ["https://install?id=\(id)", "viaduct://open?id=\(id)", "viaduct://install",
                   "viaduct://install?id=abc", "viaduct://remove?id=../\(id)"] {

@@ -28,8 +28,8 @@ struct StoreRequest: Equatable {
               let storeId = items.first(where: { $0.name == "id" })?.value,
               ExtensionIdentity.isChromeId(storeId) else { return nil }
         let browser: Browser
-        if let raw = items.first(where: { $0.name == "browser" })?.value {
-            guard let named = Browser(rawValue: raw) else { return nil }
+        if let item = items.first(where: { $0.name == "browser" }) {
+            guard let named = item.value.flatMap(Browser.init(rawValue:)) else { return nil }
             browser = named
         } else {
             browser = .safari
