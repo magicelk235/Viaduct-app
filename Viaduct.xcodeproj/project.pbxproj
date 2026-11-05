@@ -31,7 +31,9 @@
 		380DF86B2C777A78CFE2122E /* CLIRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BE5C61C57681BCE4413B57 /* CLIRunner.swift */; };
 		3A8C9656B82FFAC4C53FB652 /* SetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97C09A5F420084725E01F809 /* SetupFlow.swift */; };
 		3E92FA139E6A8D9E55B78116 /* SigningAccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D4BA4CDEFC3C07C5CC3CDE /* SigningAccountTests.swift */; };
+		3EF6C94AE2E9349FA45B1B68 /* FirefoxAddonsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */; };
 		415890B6951DB7C0CDAF8652 /* LicenseStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85135CE31BAB02A65A5A2872 /* LicenseStoreTests.swift */; };
+		45F547D0F8C46C918FE5C0DE /* FirefoxFakes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A71C568254C0C273B3114B /* FirefoxFakes.swift */; };
 		45FA411398B88953C1F15878 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F87C69746F349EE36E0488A6 /* SafariWebExtensionHandler.swift */; };
 		4C4B67ED30410DC03D26A229 /* PolarClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5CF4DC01BA0568CED14285 /* PolarClientTests.swift */; };
 		544A439C6481249E7C287FE7 /* ActivationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B65E78309624F2ED7F17DB /* ActivationView.swift */; };
@@ -55,6 +57,7 @@
 		925D294EAE84D135730B82E9 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 330566E75A535162514BBFA6 /* AppIcon.icon */; };
 		9592998665FD64231D84ED72 /* SigningAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4CA23E222C7922E7D3DCB0 /* SigningAccount.swift */; };
 		96088A25F5F39F22811DB915 /* ChromeImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38866ACCB31D891DBAA75D76 /* ChromeImportView.swift */; };
+		9B420D598F23447A0DE0DC0C /* FirefoxAddons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369EB76B56E947D292A330C1 /* FirefoxAddons.swift */; };
 		9C252960654554A92B56BE6A /* SettingsCarryOver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD704CBD63E252269BE0B96 /* SettingsCarryOver.swift */; };
 		A063620048EB32269B27CFF7 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4BBDE50D6EB0F2D7309CE9 /* SetupView.swift */; };
 		A1AE1D69D35417B1BF648D63 /* ConversionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B821C2B773F3666C36EAF5E3 /* ConversionQueue.swift */; };
@@ -158,6 +161,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxAddonsTests.swift; sourceTree = "<group>"; };
 		04E0DC146811DD698771FEBF /* PersistClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistClient.swift; sourceTree = "<group>"; };
 		07D4467430B46DE5DA552B34 /* ExtensionSettingsTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSettingsTransfer.swift; sourceTree = "<group>"; };
 		09BE5C61C57681BCE4413B57 /* CLIRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIRunner.swift; sourceTree = "<group>"; };
@@ -176,9 +180,11 @@
 		2E37691F42D860EFAB46DA1B /* LicenseViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseViews.swift; sourceTree = "<group>"; };
 		330566E75A535162514BBFA6 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		35BF1999828B1064D26A9212 /* StoreButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreButton.swift; sourceTree = "<group>"; };
+		369EB76B56E947D292A330C1 /* FirefoxAddons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxAddons.swift; sourceTree = "<group>"; };
 		3842807AAA6FB565FA7B44DF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		38866ACCB31D891DBAA75D76 /* ChromeImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeImportView.swift; sourceTree = "<group>"; };
 		3F6C8FC3D64DCF465F07D706 /* PolarClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarClient.swift; sourceTree = "<group>"; };
+		43A71C568254C0C273B3114B /* FirefoxFakes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxFakes.swift; sourceTree = "<group>"; };
 		4423589F579371E2932603DA /* LevelDBReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelDBReader.swift; sourceTree = "<group>"; };
 		46A0D6A732F9ADA35FA28A8D /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
 		4706037E93DBAA4A3F086E94 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -281,6 +287,7 @@
 		24B1F1D8E6CFBD5488C20405 /* Firefox */ = {
 			isa = PBXGroup;
 			children = (
+				369EB76B56E947D292A330C1 /* FirefoxAddons.swift */,
 				4F6C2EDE51EFD41F45415DBF /* FirefoxAgent.swift */,
 				8503480A8E86A3A47E4F9FD8 /* FirefoxConversion.swift */,
 				65391241F2B43D3FC8BB7A08 /* FirefoxLocator.swift */,
@@ -301,6 +308,7 @@
 			isa = PBXGroup;
 			children = (
 				85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */,
+				0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */,
 				8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */,
 				E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */,
 				189162E0C18399C5A150EAEB /* GumroadClientTests.swift */,
@@ -372,6 +380,7 @@
 		60814F367A291247BE4AA570 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				43A71C568254C0C273B3114B /* FirefoxFakes.swift */,
 				4C05D702FBDB0409D178D944 /* LicenseFixtures.swift */,
 				0D7F56E305526E4B35D84338 /* TempDir.swift */,
 				82D961B10C9B4F47A1DDCD97 /* TestDefaults.swift */,
@@ -772,7 +781,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */,
+				3EF6C94AE2E9349FA45B1B68 /* FirefoxAddonsTests.swift in Sources */,
 				140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */,
+				45F547D0F8C46C918FE5C0DE /* FirefoxFakes.swift in Sources */,
 				89771B5CF0FF41D056780341 /* FreePlanBookkeepingTests.swift in Sources */,
 				D927B6BDE50444AC288DEDDB /* GumroadClientTests.swift in Sources */,
 				8305D547CB19BFDB37A9B391 /* HelperAgent.swift in Sources */,
@@ -828,6 +839,7 @@
 				36E822185EE0836D63626FB3 /* ExtensionSettingsTransfer.swift in Sources */,
 				D2C6610DC6BC0907F9112FD9 /* ExtensionUpdater.swift in Sources */,
 				743656629FCBFFDD7754637B /* Feedback.swift in Sources */,
+				9B420D598F23447A0DE0DC0C /* FirefoxAddons.swift in Sources */,
 				0B40C6E7278A0B07295EF71E /* FirefoxAgent.swift in Sources */,
 				D5D0BA5259537D6F1AD903A0 /* FirefoxConversion.swift in Sources */,
 				D99F97B0816982437791A229 /* FirefoxLocator.swift in Sources */,
