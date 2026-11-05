@@ -127,10 +127,12 @@ struct ViaductApp: App {
             }
             // If the Xcode gate is up, a finished download / component install /
             // toolchain switch usually happens while the user is away in the App
-            // Store or Xcode. Re-diagnose on focus so the card clears itself.
+            // Store or Xcode. Re-diagnose on focus so the card clears itself. The
+            // same goes for Firefox: installed, opened, or let into Login Items.
             .onReceive(NotificationCenter.default.publisher(
                 for: NSApplication.didBecomeActiveNotification)) { _ in
                 vm.recheckXcode()
+                vm.recheckFirefox(resume: false)
             }
             // Pre-convert warning: no Apple account in Xcode means ad-hoc
             // signing, which Safari disables on every quit. "Convert Anyway" is
@@ -181,6 +183,9 @@ struct ViaductApp: App {
                 → Apple Account is a different thing and won't work.
                 """)
             }
+            // The Firefox disclosure and restart notice, on the main window for
+            // the same reason as the signing alert.
+            .firefoxPrompts(vm: vm)
             // Paywall: shown when a browser runs out of free conversions, and
             // from the menu bar. It closes once a key covers the browser that
             // hit the limit, or, opened without one, once any key goes in.
@@ -302,7 +307,8 @@ struct ViaductApp: App {
             // state. The full reason shows only in the app window.
             return ["state": "failed", "message": "Open Viaduct to continue."]
         }
-        if vm.showAdhocWarning || OfficialVersionPrompt.shared.question != nil {
+        if vm.showAdhocWarning || vm.showFirefoxDisclosure || vm.showFirefoxRestartPrompt
+            || OfficialVersionPrompt.shared.question != nil {
             return ["state": "active", "fraction": 0.04,
                     "title": "Needs your answer",
                     "subtitle": "Open Viaduct to continue"]
@@ -359,6 +365,8 @@ struct ViaductApp: App {
                     // stops before the convert phases start (e.g. ad-hoc alert).
                     InstallProgressBridge.shared.downloading = false
                     vm.resetUserFlow()
+                    // The store button is Safari's, whatever the window has picked.
+                    vm.options.browser = .safari
                     if let settingsNote { vm.appendLog("→ \(settingsNote)") }
                     vm.selectInput(path: finalURL.path)
                     // Store name beats the manifest's __MSG_ key / the .crx filename.
@@ -435,13 +443,13 @@ struct StatusMenu: View {
             }
         }
 
-        if !license.unlimited(.safari) {
+        if !license.unlimited(vm.targetBrowser) {
             Divider()
             Button("Upgrade") {
                 NSApp.setActivationPolicy(.regular)
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
-                vm.presentPaywall(for: .safari)
+                vm.presentPaywall(for: vm.targetBrowser)
             }
         }
 

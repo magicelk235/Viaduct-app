@@ -4,8 +4,9 @@ import UniformTypeIdentifiers
 
 /// Clean, card-centric User surface: one glass drop-zone card holds the whole
 /// flow — drop/browse, then the extension's icon + name, then live phase text
-/// while converting. A single morphing CTA below drives convert → open Safari.
-/// No arrow, no aurora; flat near-black canvas, Raycast glass.
+/// while converting. A single morphing CTA below drives convert → open the
+/// result in Safari or Firefox. No arrow, no aurora; flat near-black canvas,
+/// Raycast glass.
 struct UserModeView: View {
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject private var license = LicenseManager.shared
@@ -30,6 +31,10 @@ struct UserModeView: View {
             VStack(spacing: Theme.Space.lg) {
                 Spacer(minLength: Theme.Space.xl)
                 header
+                // Held while a run is going, the finishing animation included:
+                // the run keeps its browser through to the done card.
+                BrowserPicker(selection: $vm.targetBrowser)
+                    .disabled(vm.isRunning || vm.phase.isFinishing)
                 dropCard
                 ctaBlock
                 freeUsesBadge
@@ -79,16 +84,17 @@ struct UserModeView: View {
     // MARK: - Header
 
     private var header: some View {
-        BrandLockup(subtitle: "Run Chrome extensions in Safari.")
+        BrandLockup(subtitle: "Run Chrome extensions in Safari and Firefox.")
     }
 
     // MARK: - Free-uses badge
 
     /// Tells free-plan users how many free conversions remain, so the paywall
-    /// isn't a surprise. Hidden for anyone whose license covers Safari, and mid-convert.
+    /// isn't a surprise. Hidden for anyone whose license covers the picked
+    /// browser, and mid-convert.
     @ViewBuilder
     private var freeUsesBadge: some View {
-        if !license.unlimited(.safari) && showsHistory {
+        if !license.unlimited(vm.targetBrowser) && showsHistory {
             let left = license.freeConversionsRemaining
             Text(left > 0
                  ? "\(left) free conversion\(left == 1 ? "" : "s") left"
@@ -207,7 +213,13 @@ struct UserModeView: View {
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1).truncationMode(.middle)
                 if vm.phase == .done {
-                    DoneBadge()
+                    DoneBadge(browser: vm.options.browser)
+                    if vm.firefoxInstallPending {
+                        Text("Arrives the next time you open Firefox.")
+                            .font(Theme.Font.caption())
+                            .foregroundStyle(Theme.Colors.mute)
+                            .multilineTextAlignment(.center)
+                    }
                     // A run can succeed and still come out ad-hoc: the CLI
                     // rebuilds that way when the team it found can't sign.
                     // Safari then refuses the extension outright until the
@@ -227,7 +239,11 @@ struct UserModeView: View {
                             .font(Theme.Font.caption())
                             .foregroundStyle(Theme.Colors.mute)
                     }
-                    OfficialVersionBanner(path: vm.options.inputPath, storeId: vm.pendingStoreId)
+                    // It points at an official Safari version, so it's no help
+                    // for Firefox.
+                    if vm.options.browser == .safari {
+                        OfficialVersionBanner(path: vm.options.inputPath, storeId: vm.pendingStoreId)
+                    }
                 }
             }
             .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -261,8 +277,8 @@ struct UserModeView: View {
 
             Button("Cancel") { vm.cancel(); vm.resetUserFlow() }
                 .buttonStyle(.raycastGhost)
-                .disabled(vm.phase.isFinishing)
-                .opacity(vm.phase.isFinishing ? 0.4 : 1)
+                .disabled(vm.cancelDisabled)
+                .opacity(vm.cancelDisabled ? 0.4 : 1)
         }
     }
 
@@ -302,6 +318,7 @@ struct UserModeView: View {
     /// Name the step that failed, pulled from how far `phase` advanced before
     /// the CLI bailed. Falls back to a generic headline.
     private var failedHeadline: String {
+        if let gate = vm.firefoxGate { return gate.headline }
         if let verdict = vm.compatibility { return verdict.title }
         if vm.needsXcode {
             switch vm.xcodeStatus {
@@ -325,7 +342,8 @@ struct UserModeView: View {
     private var ctaBlock: some View {
         switch vm.phase {
         case .idle where vm.options.inputPath.isEmpty:
-            Button("Choose extension") { vm.pickInput(allowBatch: true) }
+            // Firefox takes one extension at a time for now.
+            Button("Choose extension") { vm.pickInput(allowBatch: vm.options.browser == .safari) }
                 .buttonStyle(.raycastPrimary)
                 .frame(maxWidth: .infinity)
 
@@ -335,7 +353,7 @@ struct UserModeView: View {
             VStack(spacing: Theme.Space.sm) {
                 Button {
                     vm.resetUserFlow()
-                    vm.pickInput(allowBatch: true)
+                    vm.pickInput(allowBatch: vm.options.browser == .safari)
                 } label: {
                     Text("Choose another extension")
                         .frame(maxWidth: .infinity)
@@ -344,6 +362,14 @@ struct UserModeView: View {
                 Button("Think this is wrong? Report it") { NSWorkspace.shared.open(failureReportURL) }
                     .buttonStyle(.raycastTertiary)
             }
+
+        // Converting for Firefox needs Firefox on this Mac first.
+        case .idle where vm.options.browser == .firefox && vm.firefoxInstall == nil:
+            Button { FirefoxGate.notInstalled.perform() } label: {
+                Text(FirefoxGate.notInstalled.actionTitle)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.raycastPrimary)
 
         case .idle:
             Button { vm.userConvert() } label: {
@@ -357,14 +383,32 @@ struct UserModeView: View {
             VStack(spacing: Theme.Space.sm) {
                 Button {
                     Feedback.haptic(.generic)
-                    vm.openConvertedApp()
+                    vm.openResult()
                 } label: {
-                    Text("Open extension")
+                    Text(vm.options.browser == .firefox ? "Open Firefox" : "Open extension")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.raycastPrimary)
                 Button("Convert another") { vm.resetUserFlow() }
                     .buttonStyle(.raycastGhost)
+            }
+
+        // A Firefox gate: its one fix, then a recheck that picks the
+        // conversion back up once the fix took.
+        case .failed where vm.needsFirefox:
+            if let gate = vm.firefoxGate {
+                VStack(spacing: Theme.Space.sm) {
+                    Button {
+                        Feedback.haptic(.generic)
+                        gate.perform()
+                    } label: {
+                        Text(gate.actionTitle)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.raycastPrimary)
+                    Button("Try Again") { vm.recheckFirefox(resume: true) }
+                        .buttonStyle(.raycastTertiary)
+                }
             }
 
         case .failed where vm.needsXcode:
@@ -453,7 +497,7 @@ struct UserModeView: View {
     private func reselect() {
         if vm.isRunning { vm.cancel() }
         vm.resetUserFlow()
-        vm.pickInput(allowBatch: true)
+        vm.pickInput(allowBatch: vm.options.browser == .safari)
     }
 
     /// Label for a one-click Xcode fix. `-runFirstLaunch` installs packages and
@@ -511,6 +555,8 @@ struct UserModeView: View {
         guard vm.phase == .idle || vm.phase == .done || vm.phase == .failed else { return false }
         guard !providers.isEmpty else { return false }
         if providers.count > 1 {
+            // A batch converts for Safari, and Firefox takes one at a time for now.
+            guard vm.targetBrowser == .safari else { return false }
             BatchConvert.loadURLs(from: providers) { urls in
                 if vm.phase != .idle { vm.resetUserFlow() }
                 BatchConvert.start(urls, vm: vm)
@@ -598,8 +644,8 @@ struct RecentConversions: View {
 }
 
 /// Detail sheet for one past conversion: big icon + name + when, the source
-/// path, and the three things you'd actually want — re-open in Safari, convert
-/// it again, reveal in Finder — plus a destructive remove.
+/// path, and what you'd want next: reveal the Safari app in Finder or open
+/// Firefox, convert it again, or remove it.
 struct HistoryDetailSheet: View {
     let record: ConversionRecord
     let vm: ConverterViewModel
@@ -652,6 +698,16 @@ struct HistoryDetailSheet: View {
                     }
                     .buttonStyle(.raycastPrimary)
                 }
+                if record.browser == .firefox, let firefox = FirefoxLocator.find() {
+                    Button {
+                        FirefoxLocator.open(firefox)
+                        dismiss()
+                    } label: {
+                        Label("Open Firefox", systemImage: "arrow.up.forward.app")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.raycastPrimary)
+                }
                 Button {
                     vm.reconvert(record)
                     dismiss()
@@ -680,7 +736,7 @@ struct HistoryDetailSheet: View {
                             extensionName: record.name, version: record.version, storeId: record.storeId))
                     }
                     .buttonStyle(.raycastGhost)
-                    .help("It installed but doesn't work right in Safari")
+                    .help("It installed but doesn't work right in \(record.browser.displayName)")
                     Spacer()
                     Button("Close") { dismiss() }
                         .buttonStyle(.raycastGhost)
@@ -831,8 +887,10 @@ struct ExtensionIcon: View {
 /// The success label for a finished conversion. Solid green pill + white text so
 /// it stays legible on the neutral glass card in both light and dark themes.
 struct DoneBadge: View {
+    let browser: Browser
+
     var body: some View {
-        Label("Installed in Safari", systemImage: "checkmark.circle.fill")
+        Label("Installed in \(browser.displayName)", systemImage: "checkmark.circle.fill")
             .font(Theme.Font.caption())
             .foregroundStyle(.white)
             .padding(.horizontal, Theme.Space.sm).padding(.vertical, 3)

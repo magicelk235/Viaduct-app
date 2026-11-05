@@ -34,4 +34,22 @@ extension View {
             Text(FirefoxRestartPrompt.message)
         })
     }
+
+    /// Both Firefox questions a conversion can stop on, wired to the view model.
+    func firefoxPrompts(vm: ConverterViewModel) -> some View {
+        modifier(FirefoxPromptsHost(vm: vm))
+    }
+}
+
+private struct FirefoxPromptsHost: ViewModifier {
+    @ObservedObject var vm: ConverterViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .firefoxDisclosureAlert(isPresented: $vm.showFirefoxDisclosure,
+                                    onContinue: { vm.acceptFirefoxDisclosure() },
+                                    onCancel: { vm.declineFirefoxDisclosure() })
+            .firefoxRestartAlert(isPresented: $vm.showFirefoxRestartPrompt,
+                                 onAnswer: { vm.answerFirefoxRestart(restartNow: $0) })
+    }
 }

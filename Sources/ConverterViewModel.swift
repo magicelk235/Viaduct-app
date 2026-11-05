@@ -13,6 +13,16 @@ final class ConverterViewModel: ObservableObject {
             compatibility = nil
         }
     }
+    /// The browser the window converts for: the picker above the drop card,
+    /// remembered between launches. The run in flight goes by
+    /// `options.browser`, which Convert Again and a batch can set otherwise.
+    @Published var targetBrowser = BrowserPicker.storedBrowser(
+        UserDefaults.standard.string(forKey: ConverterViewModel.targetBrowserKey),
+        firefoxAvailable: BrowserPicker.firefoxAvailable
+    ) {
+        didSet { if targetBrowser != oldValue { browserChanged() } }
+    }
+    private static let targetBrowserKey = "targetBrowser"
     @Published var logLines: [String] = []
     @Published var isRunning = false
 
@@ -124,6 +134,24 @@ final class ConverterViewModel: ObservableObject {
     /// on the next launch.
     private var adhocBypassOnce = false
 
+    /// The Firefox that installs go into. Nil on a Mac without one, where the
+    /// Firefox CTA is Get Firefox.
+    @Published private(set) var firefoxInstall: FirefoxLocator.Install?
+    /// What stopped a Firefox install, shown on the failed card with its fix.
+    @Published var firefoxGate: FirefoxGate?
+    var needsFirefox: Bool { firefoxGate != nil }
+    /// The disclosure the user accepts once, before the first Firefox install.
+    @Published var showFirefoxDisclosure = false
+    /// The restart notice. The run waits for the answer before converting.
+    @Published var showFirefoxRestartPrompt = false
+    /// The last install only arrives the next time Firefox opens.
+    @Published private(set) var firefoxInstallPending = false
+    /// The profile Convert Again installs into, so the new install replaces the
+    /// one its record is for. The next Firefox run uses it up.
+    var pendingFirefoxProfile: String?
+    /// The run waiting on the restart notice.
+    private var firefoxRestartAnswer: CheckedContinuation<Bool, Never>?
+
     /// Chrome Web Store id of the install in flight (store flow only). Stamped
     /// onto the history record so auto-update can re-download it by id.
     var pendingStoreId: String?
@@ -139,6 +167,8 @@ final class ConverterViewModel: ObservableObject {
     /// extensions asks about signing once rather than nine times. The queue
     /// clears it when the batch ends.
     var signingWarningAnsweredForBatch = false
+    /// The restart notice answered once for a whole batch. Nil asks.
+    var firefoxRestartAnsweredForBatch: Bool?
     var batchActive = false
 
     /// The one view model the app runs on. Shared rather than owned by the
@@ -198,6 +228,8 @@ final class ConverterViewModel: ObservableObject {
 
     private init() {
         installedVersion = updater.installedVersion ?? "not installed"
+        options.browser = targetBrowser
+        refreshFirefox()
         // The store-button heartbeat: the appex relays the extension's hello
         // over the distributed bus whenever Safari starts its worker. Stamp it
         // and flip the flag, so an open "turn it on" popup stands down live.
@@ -225,6 +257,7 @@ final class ConverterViewModel: ObservableObject {
         Task { await history.pruneDeleted() }
         refreshSigningTeams()
         refreshStoreButton()
+        refreshFirefox()
         // Nothing is decided until the launch check has an answer. After that,
         // every change to what's unlimited can keep or sweep free-plan
         // extensions and switch store updates on or off.
@@ -330,9 +363,12 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
-    /// Something holds the CLI: a user conversion or a background update. The
-    /// CLI folder mustn't be swapped and the app mustn't relaunch under either.
-    var isBusy: Bool { isRunning || runner.isRunning || extensionUpdater.isRunning }
+    /// Something is running that a CLI swap or an app relaunch would break: a
+    /// user conversion, a background update, or persist adding or removing a
+    /// Firefox add-on.
+    var isBusy: Bool {
+        isRunning || runner.isRunning || extensionUpdater.isRunning || FirefoxAddons.shared.isWorking
+    }
 
     /// Register/unregister the app as a login item for whatever needs it
     /// running. SMAppService.mainApp — no separate helper bundle/plist to maintain.
@@ -374,7 +410,7 @@ final class ConverterViewModel: ObservableObject {
 
     // MARK: - Convert
 
-    /// Convert + install + register with Safari. Drives `phase` for the
+    /// Convert and install for `options.browser`. Drives `phase` for the
     /// animated UI instead of exposing the raw log.
     func userConvert() {
         guard !isRunning else { return }
@@ -384,14 +420,31 @@ final class ConverterViewModel: ObservableObject {
             phase = .failed
             return
         }
-        // The freemium gate is enforced in runCLI, the choke point every
-        // conversion path (single, batch, store page, Shortcuts) goes through.
 
         if options.appName.isEmpty {
             options.appName = URL(fileURLWithPath: options.inputPath)
                 .deletingPathExtension().lastPathComponent
         }
 
+        // The free-plan gate. Every conversion (single, batch, store page,
+        // Shortcuts) starts here, and the gate goes first so neither browser
+        // asks the user anything for a conversion the plan won't allow.
+        guard LicenseManager.shared.canConvert(options.browser) else {
+            presentPaywall(for: options.browser)
+            appendLog("✗ Free conversion limit reached.")
+            phase = .idle
+            return
+        }
+
+        switch options.browser {
+        case .safari: convertForSafari()
+        case .firefox: convertForFirefox()
+        }
+    }
+
+    /// Safari's half: the Xcode gate, the signing question, then the CLI
+    /// builds, signs and installs the app.
+    private func convertForSafari() {
         // Full Xcode is required to package + sign the extension (Apple ships the
         // Safari packager only with Xcode). Detect it up front and explain, rather
         // than letting the run die deep inside xcodebuild with a cryptic log.
@@ -444,7 +497,7 @@ final class ConverterViewModel: ObservableObject {
         if let v = updater.installedVersion, !CLIUpdater.semverLess(v, "1.11.8") {
             args.append("--background-launch")
         }
-        runCLI(args: args)
+        runCLI(args: args) { [weak self] in self?.safariRunExited(args: args, code: $0) }
     }
 
     /// "Convert Anyway" on the signing warning: run this one conversion without
@@ -456,8 +509,22 @@ final class ConverterViewModel: ObservableObject {
         userConvert()
     }
 
-    /// Save the just-finished conversion to history.
-    private func recordConversion() {
+    /// What a finished conversion gets recorded as. Taken when its run ends,
+    /// because a Firefox install can outlast the flow that started it.
+    private struct ConversionDraft {
+        let browser: Browser
+        let name: String
+        let inputPath: String
+        let appName: String
+        let iconData: Data?
+        let storeId: String?
+        let chromeId: String?
+        let version: String?
+    }
+
+    /// Read the record for the run that just ended off the flow, and clear the
+    /// store and Chrome ids so they can't carry over to the next conversion.
+    private func draftConversion() -> ConversionDraft {
         // Manifest name unless it's an unresolved __MSG_ i18n key; then the store
         // display name (appName), then the filename — which for store installs is
         // the random-looking extension id, so it's the last resort.
@@ -466,29 +533,49 @@ final class ConverterViewModel: ObservableObject {
             : (!options.appName.isEmpty
                 ? options.appName
                 : URL(fileURLWithPath: options.inputPath).deletingPathExtension().lastPathComponent)
+        let draft = ConversionDraft(
+            browser: options.browser, name: name, inputPath: options.inputPath, appName: options.appName,
+            iconData: extInfo?.icon?.pngData(),
+            storeId: pendingStoreId,
+            chromeId: pendingChromeId ?? pendingStoreId ?? ExtensionIdentity.chromeId(forSource: options.inputPath),
+            version: extInfo?.version)
+        pendingStoreId = nil
+        pendingChromeId = nil
+        return draft
+    }
+
+    /// Save a finished conversion to history and count it against the free
+    /// plan. `firefox` is persist's answer for a Firefox install.
+    private func record(_ draft: ConversionDraft, installedPath: String?, adHoc: Bool?, firefox: PersistResult?) {
         // Stash a durable copy of the source so it can be rebuilt or moved to
         // another Mac even if the user moves/deletes the original (or the cached
         // store .crx is purged).
-        let archived = ExtensionUpdater.archiveSource(options.inputPath, appName: options.appName,
-                                                      browser: options.browser)
+        let archived = ExtensionUpdater.archiveSource(draft.inputPath, appName: draft.appName,
+                                                      browser: draft.browser)
+        let license = LicenseManager.shared
+        history.add(browser: draft.browser, name: draft.name, sourcePath: archived ?? draft.inputPath,
+                    appName: draft.appName,
+                    installedPath: installedPath,
+                    adHoc: adHoc,
+                    iconData: draft.iconData,
+                    storeId: draft.storeId,
+                    chromeId: draft.chromeId,
+                    version: draft.version ?? firefox?.version,
+                    freeRemovesAt: FreePlan.removalDate(unlimited: license.unlimited(draft.browser)),
+                    addonId: firefox?.id,
+                    profilePath: firefox?.profilePath)
+        // Does nothing once the browser is unlimited.
+        license.recordFreeConversion(draft.browser)
+    }
+
+    /// Save the Safari conversion that just finished.
+    private func recordConversion() {
+        let draft = draftConversion()
         // Read the artifact, because a run can succeed and still have come out
         // ad-hoc.
         let build = SigningAccount.inspectBuild(installedAppPath: installedAppPath)
         lastBuildAdHoc = build.adHoc
-        history.add(browser: options.browser, name: name, sourcePath: archived ?? options.inputPath,
-                    appName: options.appName,
-                    installedPath: installedAppPath,
-                    adHoc: build.adHoc,
-                    iconData: extInfo?.icon?.pngData(),
-                    storeId: pendingStoreId,
-                    chromeId: pendingChromeId ?? pendingStoreId
-                        ?? ExtensionIdentity.chromeId(forSource: options.inputPath),
-                    version: extInfo?.version,
-                    freeRemovesAt: FreePlan.removalDate(unlimited: LicenseManager.shared.unlimited(.safari)))
-        pendingStoreId = nil
-        pendingChromeId = nil
-        // Count this against the free quota (does nothing once Safari is unlimited).
-        LicenseManager.shared.recordFreeConversion(.safari)
+        record(draft, installedPath: installedAppPath, adHoc: build.adHoc, firefox: nil)
     }
 
     /// Honest, per-state guidance for the Xcode gate. Each case names exactly
@@ -642,6 +729,10 @@ final class ConverterViewModel: ObservableObject {
             return
         }
         resetUserFlow()
+        // Same browser, and for Firefox the same profile, so the install this
+        // makes replaces the one the record is for.
+        options.browser = record.browser
+        pendingFirefoxProfile = record.profilePath
         selectInput(path: record.sourcePath)
         userConvert()
     }
@@ -659,8 +750,12 @@ final class ConverterViewModel: ObservableObject {
         extInfo = nil
         needsXcode = false
         needsAppleAccount = false
+        firefoxGate = nil
+        firefoxInstallPending = false
+        pendingFirefoxProfile = nil
         lastBuildAdHoc = false
         options.inputPath = ""
+        options.browser = targetBrowser
         compatibilityCheck?.cancel()
         compatibility = nil
         options.appName = ""
@@ -670,17 +765,44 @@ final class ConverterViewModel: ObservableObject {
         pendingChromeId = nil
     }
 
-    private func runCLI(args: [String]) {
+    /// The picker moved. The choice is saved for next launch, and the card
+    /// follows it, except while a run is going: that one keeps its browser
+    /// through to the done card.
+    private func browserChanged() {
+        UserDefaults.standard.set(targetBrowser.rawValue, forKey: Self.targetBrowserKey)
+        guard !isRunning, !phase.isFinishing else { return }
+        options.browser = targetBrowser
+        if targetBrowser == .firefox { refreshFirefox() }
+        // Each of these is about the browser that raised it.
+        needsXcode = false
+        needsAppleAccount = false
+        firefoxGate = nil
+        // A finished or failed run was for the other browser. Back to ready,
+        // with the same extension still picked.
+        if phase == .done || phase == .failed {
+            phase = .idle
+            failureSummary = nil
+            installedAppPath = nil
+            firefoxInstallPending = false
+            lastBuildAdHoc = false
+        }
+        // Switching browsers dropped the old verdict, so check this one.
+        if !options.inputPath.isEmpty, phase == .idle {
+            startCompatibilityCheck(path: options.inputPath)
+        }
+    }
+
+    /// Run the CLI for the conversion in flight. `minimumEngine` is the oldest
+    /// engine the run works with; an older one is updated first. `onExit` gets
+    /// the exit code, unless the run was cancelled.
+    private func runCLI(args: [String], minimumEngine: String? = nil, onExit: @escaping (Int32) -> Void) {
         if let err = options.validationError() {
             appendLog("✗ \(err)")
             failureSummary = err
             phase = .failed
-            return
-        }
-        if !LicenseManager.shared.canConvert(.safari) {
-            presentPaywall(for: .safari)
-            appendLog("✗ Free conversion limit reached.")
-            phase = .idle
+            // A Firefox run gets here after an await, where the queue's check
+            // right after userConvert() can't see it.
+            userRunEnded?(false)
             return
         }
         // No engine yet (first launch, or the launch fetch hasn't landed): get it,
@@ -703,7 +825,7 @@ final class ConverterViewModel: ObservableObject {
                     userRunEnded?(false)
                     return
                 }
-                runCLI(args: args)
+                runCLI(args: args, minimumEngine: minimumEngine, onExit: onExit)
             }
             return
         }
@@ -720,7 +842,27 @@ final class ConverterViewModel: ObservableObject {
                 }
                 guard isRunning, runGeneration == generation else { return }
                 isRunning = false
-                runCLI(args: args)
+                runCLI(args: args, minimumEngine: minimumEngine, onExit: onExit)
+            }
+            return
+        }
+        // An engine too old for this run gets one update. Offline, a second
+        // try would only fail the same way, so a run still short of it stops.
+        if let floor = minimumEngine, engineOlder(than: floor) {
+            isRunning = true
+            runGeneration += 1
+            let generation = runGeneration
+            Task {
+                await applyUpdate()
+                guard isRunning, runGeneration == generation else { return }
+                isRunning = false
+                guard !engineOlder(than: floor) else {
+                    failureSummary = "Firefox needs a newer converter, and Viaduct couldn't download it. Check your internet connection and try again."
+                    phase = .failed
+                    userRunEnded?(false)
+                    return
+                }
+                runCLI(args: args, minimumEngine: minimumEngine, onExit: onExit)
             }
             return
         }
@@ -741,25 +883,8 @@ final class ConverterViewModel: ObservableObject {
                 self.advancePhase(from: clean)
             }, onExit: { [weak self] code in
                 guard let self, self.runGeneration == generation else { return }
-                self.isRunning = false
                 self.appendLog(code == 0 ? "✓ Done." : "✗ Exit \(code).")
-                // Refused only for being a webRequest content blocker: it still
-                // installs and its element hiding works, so convert it anyway.
-                if code != 0, !args.contains("--force"),
-                   let refused = CompatibilityCheck.refusal(inLog: self.logLines),
-                   !refused.isEmpty, refused.allSatisfy(\.isContentBlocker) {
-                    self.runCLI(args: args + ["--force"])
-                    return
-                }
-                if code == 0 { self.recordConversion() }
-                self.finishUserPhase(code: code)
-                self.userRunEnded?(code == 0)
-                // Pick up an update the check had to skip while this run held
-                // the CLI. Swapping now is safe: nothing is executing it.
-                if self.updatePendingAfterRun {
-                    self.updatePendingAfterRun = false
-                    Task { await self.applyUpdate() }
-                }
+                onExit(code)
             })
         } catch {
             isRunning = false
@@ -770,15 +895,53 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
-    /// Move `phase` forward (never backward) based on a CLI line; capture the
-    /// Safari app's install path. A Firefox run installs through persist instead.
+    /// Whether the installed engine is older than `version`. An engine with no
+    /// version on record counts as older.
+    private func engineOlder(than version: String) -> Bool {
+        CLIUpdater.semverLess(updater.installedVersion ?? "0", version)
+    }
+
+    /// A Safari run ended: retry a content blocker with --force, otherwise
+    /// record it and hand the result on.
+    private func safariRunExited(args: [String], code: Int32) {
+        isRunning = false
+        // Refused only for being a webRequest content blocker: it still
+        // installs and its element hiding works, so convert it anyway.
+        if code != 0, !args.contains("--force"),
+           let refused = CompatibilityCheck.refusal(inLog: logLines),
+           !refused.isEmpty, refused.allSatisfy(\.isContentBlocker) {
+            let forced = args + ["--force"]
+            runCLI(args: forced) { [weak self] in self?.safariRunExited(args: forced, code: $0) }
+            return
+        }
+        if code == 0 { recordConversion() }
+        finishUserPhase(code: code)
+        userRunEnded?(code == 0)
+        applyPendingUpdate()
+    }
+
+    /// Pick up an update the check had to skip while this run held the CLI.
+    /// Swapping now is safe: nothing is executing it.
+    private func applyPendingUpdate() {
+        guard updatePendingAfterRun else { return }
+        updatePendingAfterRun = false
+        Task { await applyUpdate() }
+    }
+
+    /// Move `phase` forward based on a CLI line; capture the Safari app's
+    /// install path. A Firefox run installs through persist instead.
     private func advancePhase(from line: String) {
         if options.browser == .safari, let installed = installedPath(from: line) { installedAppPath = installed }
-        if let next = ConvertPhase.detect(from: line, browser: options.browser), next.rawValue > phase.rawValue {
-            phase = next
-            if ConvertPhase.track.contains(next) { lastReachedTrackPhase = next }
-            Feedback.step()
-        }
+        if let next = ConvertPhase.detect(from: line, browser: options.browser) { reach(next) }
+    }
+
+    /// Move `phase` forward, never back, and remember how far the run got so
+    /// the failure card can name the step that broke.
+    private func reach(_ next: ConvertPhase) {
+        guard next.rawValue > phase.rawValue else { return }
+        phase = next
+        if ConvertPhase.track.contains(next) { lastReachedTrackPhase = next }
+        Feedback.step()
     }
 
     /// The CLI's own failure text, recognised by the `✗` it prefixes errors with.
@@ -795,7 +958,7 @@ final class ConverterViewModel: ObservableObject {
         if code == 0 {
             // CLI is done, but let the orbit absorb its last satellites first.
             // `completeFinishing()` (fired after the final absorption lands)
-            // flips to .done, which surfaces the "Open extension" button.
+            // flips to .done, which surfaces the button that opens the result.
             phase = .finishing
         } else {
             if let verdict = CompatibilityCheck.verdict(fromLog: logLines, browser: options.browser) {
@@ -811,16 +974,28 @@ final class ConverterViewModel: ObservableObject {
     }
 
     /// Called by the conversion orbit once everything is absorbed during
-    /// `.finishing`. Marks the flow done and opens the converted extension app
-    /// so its enable-in-Safari window appears — after the animation, never over
-    /// it (the CLI's own install launch is hidden via --background-launch).
+    /// `.finishing`. Marks the flow done and opens the result, after the
+    /// animation and never over it (the CLI's own install launch is hidden via
+    /// --background-launch).
     func completeFinishing() {
         guard phase == .finishing else { return }
         phase = .done
         Feedback.success()
         // A batch opens Safari's settings once at the end instead of launching
-        // every converted app over the queue.
-        if !batchActive { openConvertedApp() }
+        // every converted app over the queue. An add-on that waits for
+        // Firefox's next start has nothing to show yet.
+        if !batchActive && !firefoxInstallPending { openResult() }
+    }
+
+    /// Show what the run made: the Safari app's enable window, or Firefox
+    /// with the add-on in it.
+    func openResult() {
+        switch options.browser {
+        case .safari:
+            openConvertedApp()
+        case .firefox:
+            if let firefox = firefoxInstall { FirefoxLocator.open(firefox) }
+        }
     }
 
     /// Launch the freshly-built Safari Web Extension host app so its enable
@@ -854,6 +1029,218 @@ final class ConverterViewModel: ObservableObject {
         runner.cancel()
         appendLog("⚠︎ Cancelled.")
         isRunning = false
+        // A run waiting on the restart notice stops there, and Firefox is
+        // left as it is.
+        showFirefoxRestartPrompt = false
+        resumeFirefoxRestart(false)
+    }
+
+    /// Stopping persist halfway through an install could leave Firefox half
+    /// changed, and the finishing animation is past the point of stopping.
+    var cancelDisabled: Bool {
+        phase.isFinishing || (options.browser == .firefox && phase == .installing)
+    }
+
+    // MARK: - Firefox
+
+    /// Look for Firefox again. Runs whenever it may have come or gone: launch,
+    /// a switch to Firefox, the app coming back to the front.
+    func refreshFirefox() {
+        firefoxInstall = FirefoxLocator.find()
+    }
+
+    /// Firefox's half: find Firefox, the profile and whether it has to
+    /// restart, convert, then hand the add-on to persist.
+    private func convertForFirefox() {
+        refreshFirefox()
+        guard let firefox = firefoxInstall else { return stopAtGate(.notInstalled) }
+        guard !FirefoxAddons.shared.agentNeedsApproval else { return stopAtGate(.loginItemOff) }
+        guard FirefoxDisclosure.isAccepted() else {
+            // The alert lives on the main window, which may be closed.
+            MainWindow.show()
+            showFirefoxDisclosure = true
+            return
+        }
+
+        installedAppPath = nil
+        failureSummary = nil
+        lastReachedTrackPhase = nil
+        lastBuildAdHoc = false
+        firefoxInstallPending = false
+        firefoxGate = nil
+        // The run analyzes it anyway, and a refusal is read off its log.
+        compatibilityCheck?.cancel()
+        phase = .extracting
+        isRunning = true
+        runGeneration += 1
+        let generation = runGeneration
+        let preferred = pendingFirefoxProfile
+        pendingFirefoxProfile = nil
+        Task {
+            let target: FirefoxTarget
+            do {
+                target = try await FirefoxAddons.shared.target(firefox: firefox, preferring: preferred)
+            } catch {
+                if generation == runGeneration { endFirefoxRun(error) }
+                return
+            }
+            guard generation == runGeneration else { return }
+            // Firefox only restarts when the user was asked and said yes.
+            let restart: Bool
+            if target.askRestart { restart = await askFirefoxRestart() } else { restart = false }
+            guard generation == runGeneration else { return }
+            let out = FirefoxConversion.outputDir(appName: options.appName)
+            // A run that fails early leaves the last run's add-on in place, and
+            // that mustn't pass for this run's.
+            FirefoxConversion.clearOutput(out)
+            // runCLI sets it again for the run itself.
+            isRunning = false
+            runCLI(args: FirefoxConversion.convertArgs(input: options.inputPath, outputDir: out),
+                   minimumEngine: FirefoxConversion.minimumEngine) { code in
+                self.firefoxRunExited(code: code, outputDir: out, firefox: firefox, target: target, restart: restart)
+            }
+        }
+    }
+
+    /// The Firefox conversion ended. A good one goes to persist, and the
+    /// install decides whether the run worked.
+    private func firefoxRunExited(code: Int32, outputDir: URL, firefox: FirefoxLocator.Install,
+                                  target: FirefoxTarget, restart: Bool) {
+        // runCLI started a run of its own after convertForFirefox, so the
+        // count to compare against is the current one.
+        let generation = runGeneration
+        guard code == 0 else {
+            isRunning = false
+            finishUserPhase(code: code)
+            userRunEnded?(false)
+            applyPendingUpdate()
+            return
+        }
+        guard let staged = FirefoxConversion.stagedExtension(in: outputDir) else {
+            return failRun("The conversion finished without making the Firefox add-on. Copy the log to see what happened, or report it.")
+        }
+        reach(.installing)
+        let draft = draftConversion()
+        Task {
+            do {
+                let result = try await FirefoxAddons.shared.install(
+                    staged: staged, profile: target.profilePath, firefox: firefox.appURL.path,
+                    restart: restart, launch: true)
+                // The add-on is in Firefox now, so it's recorded even if the run
+                // was cancelled meanwhile.
+                record(draft, installedPath: nil, adHoc: nil, firefox: result)
+                guard generation == runGeneration else { return }
+                firefoxInstallPending = result.pending
+                isRunning = false
+                finishUserPhase(code: 0)
+                userRunEnded?(true)
+                applyPendingUpdate()
+            } catch {
+                guard generation == runGeneration else { return }
+                endFirefoxRun(error)
+            }
+        }
+    }
+
+    /// Something Firefox needs, found before the run started. The card says
+    /// what and offers the fix, the same as the Xcode gate.
+    private func stopAtGate(_ gate: FirefoxGate) {
+        firefoxGate = gate
+        failureSummary = gate.message
+        phase = .failed
+        Feedback.failure()
+    }
+
+    /// A Firefox run that started ends without an install. No profile, or the
+    /// agent off in Login Items, is a gate with a fix; anything else is a
+    /// plain failure with persist's own words.
+    private func endFirefoxRun(_ error: Error) {
+        let gate: FirefoxGate?
+        switch error as? FirefoxAddonsError {
+        case .noProfile?: gate = .noProfile
+        case .loginItemOff?: gate = .loginItemOff
+        case nil: gate = nil
+        }
+        // Set before the run ends, so whoever hears about it sees the gate.
+        firefoxGate = gate
+        failRun(gate?.message ?? error.localizedDescription)
+    }
+
+    /// End a Firefox run that had started, with `reason` on the card and in
+    /// the log.
+    private func failRun(_ reason: String) {
+        isRunning = false
+        appendLog("✗ " + reason)
+        failureSummary = reason
+        phase = .failed
+        Feedback.failure()
+        userRunEnded?(false)
+        applyPendingUpdate()
+    }
+
+    /// Whether Firefox may restart for this install. A batch asks once.
+    private func askFirefoxRestart() async -> Bool {
+        if let answer = firefoxRestartAnsweredForBatch { return answer }
+        // The alert lives on the main window, which may be closed.
+        MainWindow.show()
+        showFirefoxRestartPrompt = true
+        return await withCheckedContinuation { firefoxRestartAnswer = $0 }
+    }
+
+    func answerFirefoxRestart(restartNow: Bool) {
+        showFirefoxRestartPrompt = false
+        if batchActive { firefoxRestartAnsweredForBatch = restartNow }
+        resumeFirefoxRestart(restartNow)
+    }
+
+    /// Hand the answer to the run waiting on it. Only the first answer counts.
+    private func resumeFirefoxRestart(_ restartNow: Bool) {
+        firefoxRestartAnswer?.resume(returning: restartNow)
+        firefoxRestartAnswer = nil
+    }
+
+    /// Continue on the disclosure: it's remembered, and the conversion it
+    /// stopped goes ahead.
+    func acceptFirefoxDisclosure() {
+        FirefoxDisclosure.accept()
+        showFirefoxDisclosure = false
+        userConvert()
+    }
+
+    /// Cancel on the disclosure ends the conversion, like Cancel on the
+    /// signing alert.
+    func declineFirefoxDisclosure() {
+        showFirefoxDisclosure = false
+        failureSummary = "Install cancelled."
+        phase = .failed
+    }
+
+    /// Look for Firefox again, and drop a Firefox gate the user has fixed
+    /// meanwhile. With `resume`, the conversion it stopped goes ahead.
+    func recheckFirefox(resume: Bool) {
+        refreshFirefox()
+        guard let gate = firefoxGate else { return }
+        switch gate {
+        case .notInstalled:
+            if firefoxInstall != nil { clearFirefoxGate(resume: resume) }
+        case .loginItemOff:
+            if !FirefoxAddons.shared.agentNeedsApproval { clearFirefoxGate(resume: resume) }
+        case .noProfile:
+            guard let firefox = firefoxInstall else { return }
+            Task {
+                let found = try? await FirefoxAddons.shared.persist.profiles(firefox: firefox.appURL.path)
+                // The user may have moved on while persist looked.
+                guard found?.profiles.isEmpty == false, firefoxGate == .noProfile else { return }
+                clearFirefoxGate(resume: resume)
+            }
+        }
+    }
+
+    private func clearFirefoxGate(resume: Bool) {
+        firefoxGate = nil
+        failureSummary = nil
+        if phase == .failed { phase = .idle }
+        if resume, !options.inputPath.isEmpty { userConvert() }
     }
 
     // MARK: - Update
@@ -924,9 +1311,13 @@ final class ConverterViewModel: ObservableObject {
                 self.options.appName = n
             }
         }
-        // Say up front when it can't work, before Xcode, signing or a free
-        // conversion come into it. A batch starts converting straight away and
-        // gets the same answer from the run's log instead.
+        startCompatibilityCheck(path: path)
+    }
+
+    /// Say up front when it can't work, before Xcode, signing or a free
+    /// conversion come into it. A batch starts converting straight away and
+    /// gets the same answer from the run's log instead.
+    private func startCompatibilityCheck(path: String) {
         compatibilityCheck?.cancel()
         compatibility = nil
         guard !batchActive else { return }
