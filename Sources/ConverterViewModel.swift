@@ -5,7 +5,14 @@ import Combine
 
 @MainActor
 final class ConverterViewModel: ObservableObject {
-    @Published var options = ConvertOptions()
+    @Published var options = ConvertOptions() {
+        didSet {
+            // A verdict is for one browser, and so is a check still running.
+            guard options.browser != oldValue.browser else { return }
+            compatibilityCheck?.cancel()
+            compatibility = nil
+        }
+    }
     @Published var logLines: [String] = []
     @Published var isRunning = false
 
@@ -31,8 +38,9 @@ final class ConverterViewModel: ObservableObject {
     /// Highest real track phase reached this run — survives the flip to `.failed`
     /// so the failure card can name the step that broke.
     @Published var lastReachedTrackPhase: ConvertPhase? = nil
-    /// Set when the picked extension can't work in Safari: by the check that
-    /// runs as soon as it's picked, or read off a conversion the CLI refused.
+    /// Set when the picked extension can't work in the browser it's for: by
+    /// the check that runs as soon as it's picked, or read off a conversion
+    /// the CLI refused. Switching browsers clears it.
     @Published var compatibility: CompatibilityVerdict?
     private var compatibilityCheck: Task<Void, Never>?
 
@@ -926,7 +934,7 @@ final class ConverterViewModel: ObservableObject {
         compatibilityCheck = Task { [weak self] in
             let verdict = await CompatibilityCheck.run(path: path, browser: browser)
             guard !Task.isCancelled, let self, self.options.inputPath == path,
-                  self.phase == .idle else { return }
+                  self.options.browser == browser, self.phase == .idle else { return }
             self.compatibility = verdict
         }
     }

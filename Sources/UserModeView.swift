@@ -725,7 +725,8 @@ struct RemovalFailure {
         needsFirefoxRestart = (error as? PersistError)?.needsFirefoxRestart ?? false
         // Persist's message for this names a profile path and a command-line
         // flag, so the alert shows the restart notice instead.
-        message = needsFirefoxRestart ? "Firefox will restart once. Your tabs come back." : error.localizedDescription
+        message = needsFirefoxRestart ? "\(FirefoxRestartPrompt.title). \(FirefoxRestartPrompt.message)"
+                                      : error.localizedDescription
     }
 
     var title: String { "Couldn't remove \(record.name)" }
@@ -742,7 +743,7 @@ extension View {
                                    set: { if !$0 { failure.wrappedValue = nil } }),
               presenting: failure.wrappedValue) { shown in
             if shown.needsFirefoxRestart {
-                Button("Restart Firefox") { restart(shown.record) }
+                Button(FirefoxRestartPrompt.restartButton) { restart(shown.record) }
                 Button("Not Now", role: .cancel) {}
             } else {
                 Button("OK", role: .cancel) {}
