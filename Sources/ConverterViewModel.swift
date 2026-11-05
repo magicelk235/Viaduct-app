@@ -63,9 +63,8 @@ final class ConverterViewModel: ObservableObject {
     /// Free-plan extensions Viaduct removed that the user hasn't been told
     /// about in the window yet. Saved, because the removal usually happens
     /// while the window is closed, and the message waits for the next open.
-    @Published var removedOnFreePlan: [String] =
-        UserDefaults.standard.stringArray(forKey: "freePlanRemoved") ?? [] {
-        didSet { UserDefaults.standard.set(removedOnFreePlan, forKey: "freePlanRemoved") }
+    @Published var removedOnFreePlan: [FreePlan.RemovedExtension] = FreePlan.RemovedExtension.saved(in: .standard) {
+        didSet { FreePlan.RemovedExtension.save(removedOnFreePlan, in: .standard) }
     }
 
     /// Whether the bundled Safari extension (the Add-to-Safari button on
@@ -167,7 +166,7 @@ final class ConverterViewModel: ObservableObject {
     private lazy var freePlan: FreePlan = {
         let plan = FreePlan(history: history)
         plan.onRemoved = { [weak self] removed in
-            self?.removedOnFreePlan += removed.map(\.name)
+            self?.removedOnFreePlan += removed.map { FreePlan.RemovedExtension(name: $0.name, browser: $0.browser) }
         }
         return plan
     }()
@@ -213,8 +212,9 @@ final class ConverterViewModel: ObservableObject {
             // the engine is there before the user drops anything on the window.
             Task { await ensureCLIInstalled() }
         }
-        // Forget extensions the user deleted from Finder.
-        history.pruneDeleted()
+        // Forget extensions the user deleted from Finder, and Firefox add-ons
+        // persist no longer keeps.
+        Task { await history.pruneDeleted() }
         refreshSigningTeams()
         refreshStoreButton()
         // Nothing is decided until the launch check has an answer. After that,
@@ -227,12 +227,14 @@ final class ConverterViewModel: ObservableObject {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] entitlements in
-                // Free-plan removals first: a license clears the ones it
-                // covers, and the login item below has to know whether any
-                // are left.
+                // Free-plan removals: a license keeps the ones it covers. That
+                // changes the list, and the history watch below then brings
+                // the login item in line.
                 self?.freePlan.sync()
-                // Bought after the fact: nothing left to upsell.
-                if entitlements.safari { self?.removedOnFreePlan = [] }
+                // Bought after the fact: nothing left to upsell for a browser
+                // that's now unlimited. A Safari key still has something to
+                // offer someone whose Firefox add-on was removed.
+                self?.removedOnFreePlan.removeAll { entitlements.unlimited($0.browser) }
                 self?.startAutoUpdate()
             }
         // Any change to the list (a conversion, a removal from Settings or the

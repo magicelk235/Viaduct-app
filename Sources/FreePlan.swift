@@ -7,6 +7,10 @@ import SwiftUI
 @MainActor
 final class FreePlan {
     static let keepFor: TimeInterval = 7 * 24 * 3600
+    /// How long a removal that didn't go through waits for its next try.
+    /// Firefox can hold on to an add-on until it quits, so trying again at
+    /// once would only fail again.
+    static let retryAfterFailure: TimeInterval = 3600
     /// Days before the removal that a free user gets warned. Few on purpose:
     /// a notification every day trains people to switch them off, and then
     /// the one that matters doesn't arrive.
@@ -16,15 +20,34 @@ final class FreePlan {
     nonisolated static let notificationPrefix = "free-plan-"
     private nonisolated static let reminderPrefix = notificationPrefix + "removal-"
 
+    /// The time removals go by. A debug build adds the `freePlanClockOffset`
+    /// default, in seconds, so a removal can be tried without waiting a week.
+    nonisolated static var clock: () -> Date {
+        #if DEBUG
+        return { Date().addingTimeInterval(UserDefaults.standard.double(forKey: "freePlanClockOffset")) }
+        #else
+        return { Date() }
+        #endif
+    }
+
     private let history: ConversionHistory
     private let license: LicenseManager
+    private let now: () -> Date
+    /// Nil posts nothing, which keeps tests quiet.
+    private let notifications: UNUserNotificationCenter?
     private var timer: Timer?
+    private var sweeping = false
+    /// Another sync came in while a sweep was running.
+    private var sweepAgain = false
     /// Told about every extension this removes, so the window can say so.
     var onRemoved: ([ConversionRecord]) -> Void = { _ in }
 
-    init(history: ConversionHistory, license: LicenseManager) {
+    init(history: ConversionHistory, license: LicenseManager, now: @escaping () -> Date = FreePlan.clock,
+         notifications: UNUserNotificationCenter? = .current()) {
         self.history = history
         self.license = license
+        self.now = now
+        self.notifications = notifications
     }
 
     /// For the app's own license. Not a `= .shared` default: default
@@ -39,26 +62,62 @@ final class FreePlan {
     }
 
     /// Bring removals, reminders and the timer in line with the license. Safe
-    /// to call as often as anything changes. Does nothing until the license
-    /// check has an answer, so a paying user is never swept while it's running.
+    /// to call as often as anything changes.
     func sync() {
-        guard license.hasLaunchAnswer else { return }
-        history.keepFreeExtensions(where: { _ in license.unlimited(.safari) })
-        let removed = history.removeExpiredFreeExtensions()
+        Task { await runSync() }
+    }
+
+    /// What `sync` runs, returning the extensions it removed. Does nothing
+    /// until the license check has an answer, so a paying user is never swept
+    /// while it's running. A call while a sweep runs makes that sweep go once
+    /// more instead of starting a second one.
+    @discardableResult
+    func runSync() async -> [ConversionRecord] {
+        guard license.hasLaunchAnswer else { return [] }
+        guard !sweeping else {
+            sweepAgain = true
+            return []
+        }
+        sweeping = true
+        var removed: [ConversionRecord] = []
+        repeat {
+            sweepAgain = false
+            history.keepFreeExtensions(where: { license.unlimited($0.browser) })
+            removed += await history.removeExpiredFreeExtensions(now: now())
+        } while sweepAgain
+        sweeping = false
         removed.forEach(notifyRemoved)
         if !removed.isEmpty { onRemoved(removed) }
         reconcileReminders()
         scheduleNextSweep()
+        return removed
     }
 
     // MARK: - Timing
 
-    /// Wake for the next removal due. Re-armed on every sync.
+    /// When the next sweep is due: the first removal still ahead, or a retry
+    /// for one whose time came but that didn't go through.
+    static func nextSweepDate(removalDates: [Date], now: Date) -> Date? {
+        removalDates.map { $0 > now ? $0 : now.addingTimeInterval(retryAfterFailure) }.min()
+    }
+
+    /// The record a reminder warns about, read from its identifier.
+    nonisolated static func recordID(inReminder identifier: String) -> UUID? {
+        guard identifier.hasPrefix(reminderPrefix) else { return nil }
+        // <prefix><uuid>-<days>: the UUID has dashes of its own, so cut at the last one.
+        let rest = identifier.dropFirst(reminderPrefix.count)
+        guard let dash = rest.lastIndex(of: "-") else { return nil }
+        return UUID(uuidString: String(rest[..<dash]))
+    }
+
+    /// Wake for the next sweep due. Re-armed on every sync.
     private func scheduleNextSweep() {
         timer?.invalidate()
         timer = nil
-        guard let next = history.pendingFreeRemovals.compactMap(\.freeRemovesAt).min() else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: max(1, next.timeIntervalSinceNow + 1),
+        let now = self.now()
+        guard let next = Self.nextSweepDate(removalDates: history.pendingFreeRemovals.compactMap(\.freeRemovesAt),
+                                            now: now) else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: max(1, next.timeIntervalSince(now) + 1),
                                      repeats: false) { [weak self] _ in
             Task { @MainActor in self?.sync() }
         }
@@ -71,7 +130,8 @@ final class FreePlan {
     /// go. A warning whose time has already passed is skipped rather than sent
     /// late, so a sync never fires a burst of them at once.
     private func reconcileReminders() {
-        let now = Date()
+        guard let center = notifications else { return }
+        let now = self.now()
         var wanted: [String: (name: String, daysLeft: Int, fireAt: Date)] = [:]
         for rec in history.pendingFreeRemovals {
             guard let removesAt = rec.freeRemovesAt else { continue }
@@ -82,7 +142,6 @@ final class FreePlan {
                     (rec.name, days, fireAt)
             }
         }
-        let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { requests in
             let scheduled = Set(requests.map(\.identifier))
             let stale = scheduled.filter { $0.hasPrefix(Self.reminderPrefix) && wanted[$0] == nil }
@@ -99,7 +158,7 @@ final class FreePlan {
                     content.body = "Upgrade to keep it."
                     content.sound = .default
                     let trigger = UNTimeIntervalNotificationTrigger(
-                        timeInterval: max(60, warning.fireAt.timeIntervalSinceNow), repeats: false)
+                        timeInterval: max(60, warning.fireAt.timeIntervalSince(now)), repeats: false)
                     center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
                 }
             }
@@ -107,7 +166,7 @@ final class FreePlan {
     }
 
     private func notifyRemoved(_ rec: ConversionRecord) {
-        let center = UNUserNotificationCenter.current()
+        guard let center = notifications else { return }
         let name = rec.name
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
@@ -117,6 +176,36 @@ final class FreePlan {
             content.sound = .default
             center.add(UNNotificationRequest(identifier: Self.notificationPrefix + "removed-\(rec.id.uuidString)",
                                              content: content, trigger: nil))
+        }
+    }
+}
+
+extension FreePlan {
+    /// An extension the free plan removed, kept until the window has said
+    /// so. Its browser picks the licenses Upgrade points at.
+    struct RemovedExtension: Codable, Equatable {
+        let name: String
+        let browser: Browser
+
+        private static let key = "freePlanRemoved"
+
+        /// Names saved before Firefox are plain strings, and every one of
+        /// them was a Safari extension.
+        static func saved(in defaults: UserDefaults) -> [RemovedExtension] {
+            if let data = defaults.data(forKey: key) {
+                return (try? JSONDecoder().decode([RemovedExtension].self, from: data)) ?? []
+            }
+            return defaults.stringArray(forKey: key)?.map { RemovedExtension(name: $0, browser: .safari) } ?? []
+        }
+
+        static func save(_ removed: [RemovedExtension], in defaults: UserDefaults) {
+            defaults.set(try? JSONEncoder().encode(removed), forKey: key)
+        }
+
+        /// The browser they all went from, or nil when they're mixed.
+        static func browser(of removed: [RemovedExtension]) -> Browser? {
+            let browsers = Set(removed.map(\.browser))
+            return browsers.count == 1 ? browsers.first : nil
         }
     }
 }
@@ -139,10 +228,19 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.identifier
         let warning = id.hasPrefix(FreePlan.notificationPrefix + "removal-")
+        let warnedAbout = FreePlan.recordID(inReminder: id)
         DispatchQueue.main.async {
             MainWindow.show()
-            if warning, !LicenseManager.shared.unlimited(.safari) {
-                ConverterViewModel.shared.presentPaywall(for: .safari)
+            if warning {
+                let vm = ConverterViewModel.shared
+                let license = LicenseManager.shared
+                // The record can be gone by now (removed, or converted again
+                // under a new id), and then the paywall offers every license.
+                if let browser = vm.history.records.first(where: { $0.id == warnedAbout })?.browser {
+                    if !license.unlimited(browser) { vm.presentPaywall(for: browser) }
+                } else if !Browser.allCases.allSatisfy({ license.unlimited($0) }) {
+                    vm.presentPaywall(for: nil)
+                }
             }
             completionHandler()
         }
@@ -169,11 +267,12 @@ private struct FreePlanRemovedNotice: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content.alert(Self.title(for: vm.removedOnFreePlan), isPresented: showing) {
+        content.alert(Self.title(for: vm.removedOnFreePlan.map(\.name)), isPresented: showing) {
             Button("Upgrade") {
+                let browser = FreePlan.RemovedExtension.browser(of: vm.removedOnFreePlan)
                 vm.removedOnFreePlan = []
                 // One modal at a time per window: let the alert leave first.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.presentPaywall(for: .safari) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.presentPaywall(for: browser) }
             }
             Button("Not Now", role: .cancel) { vm.removedOnFreePlan = [] }
         } message: {

@@ -122,13 +122,11 @@ final class ExtensionUpdater {
     /// enablement is checked by the caller (ConverterViewModel).
     func updateIfNeeded() {
         guard !running, !runner.isRunning, CLIRunner.resolveCLIScript() != nil else { return }
-        history.pruneDeleted()
-        let due = dueForUpdateCheck()
-        guard !due.isEmpty else { return }
         running = true
         Task { @MainActor in
             defer { running = false }
-            for rec in due { await update(rec) }
+            await history.pruneDeleted()
+            for rec in dueForUpdateCheck() { await update(rec) }
         }
     }
 

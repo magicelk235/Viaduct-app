@@ -46,6 +46,14 @@ enum PersistError: LocalizedError, Equatable {
             return raw.isEmpty ? sentence : sentence + "\n" + raw
         }
     }
+
+    /// Persist refused because Firefox has the profile open and would have to
+    /// restart, which `--no-firefox-restart` ruled out. Its message is the
+    /// only sign of that.
+    var needsFirefoxRestart: Bool {
+        guard case .failed(let message) = self else { return false }
+        return message.contains("has to restart")
+    }
 }
 
 protocol PersistClientProtocol: Sendable {

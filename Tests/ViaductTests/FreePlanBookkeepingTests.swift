@@ -34,4 +34,11 @@ final class FreePlanBookkeepingTests: XCTestCase {
         XCTAssertFalse(ExtensionUpdater.isUnlocked(by: LicenseTier.firefox.entitlements))
         XCTAssertFalse(ExtensionUpdater.isUnlocked(by: .none))
     }
+
+    func testWeeklyUpdatesLeaveFirefoxStoreInstallsAlone() {
+        var rec = ConversionRecord(name: "Store", sourcePath: "/tmp/s", date: now, storeId: "abcdefghijklmnopabcdefghijklmnop")
+        XCTAssertTrue(ExtensionUpdater.covers(rec, entitlements: LicenseTier.safari.entitlements))
+        rec.browser = .firefox
+        XCTAssertFalse(ExtensionUpdater.covers(rec, entitlements: LicenseTier.safari.entitlements))
+    }
 }

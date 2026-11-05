@@ -16,6 +16,18 @@ final class ConversionHistoryTests: XCTestCase {
                     version: version, freeRemovesAt: freeRemovesAt, addonId: id, profilePath: profile)
     }
 
+    /// One archived Dark Reader source, with a Firefox record for each of two
+    /// profiles pointing at it.
+    func addToTwoProfiles(_ history: ConversionHistory) throws -> String {
+        let crx = TempDir.make().appendingPathComponent("x.crx"); try Data("crx".utf8).write(to: crx)
+        let source = try XCTUnwrap(ExtensionUpdater.archiveSource(crx.path, appName: "Dark Reader", browser: .firefox, root: TempDir.make()))
+        for profile in ["/profiles/a", "/profiles/b"] {
+            history.add(browser: .firefox, name: "Dark Reader", sourcePath: source, appName: "Dark Reader", installedPath: nil,
+                        adHoc: nil, iconData: nil, addonId: "darkreader@viaduct", profilePath: profile)
+        }
+        return source
+    }
+
     func testRecordsWrittenBeforeFirefoxDecodeAsSafari() throws {
         let json = #"[{"id":"5C1F9E9A-0B5D-4E8B-9C59-3F2A1D7E6B10","name":"Dark Reader","sourcePath":"/sources/Dark Reader.crx","appName":"Dark Reader","installedPath":"/Applications/Dark Reader.app","date":783820800,"adHoc":false,"lastUpdateFailed":true,"iconData":"iVBORw0KGgo=","storeId":"eimadpbcbfnmbkopoojfekhnkhdbieeh","chromeId":"eimadpbcbfnmbkopoojfekhnkhdbieeh","version":"4.9.99","lastUpdateCheck":783907200,"freeRemovesAt":784425600}]"#
         let defaults = TestDefaults.make()
@@ -74,5 +86,83 @@ final class ConversionHistoryTests: XCTestCase {
         let first = try XCTUnwrap(ExtensionUpdater.archiveSource(crx.path, appName: "Dark Reader", browser: .firefox, root: root))
         XCTAssertEqual(ExtensionUpdater.archiveSource(first, appName: "Dark Reader", browser: .firefox, root: root), first)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: first)), Data("crx".utf8))
+    }
+
+    func testRemovingAFirefoxRecordUninstallsItThroughPersist() async throws {
+        let (history, persist) = makeHistory(kept: [FirefoxFixtures.addon()])
+        addFirefox(history)
+        try await history.remove(history.records[0])
+        // A plain Remove never restarts Firefox. Only the alert's Restart Firefox does.
+        XCTAssertEqual(persist.uninstalls, [.init(id: "darkreader@viaduct", profile: "/profiles/a", restart: false)])
+        XCTAssertTrue(history.records.isEmpty)
+    }
+
+    func testAFirefoxRecordStaysWhenFirefoxRefusesTheRemoval() async {
+        let (history, persist) = makeHistory(kept: [FirefoxFixtures.addon()])
+        addFirefox(history); persist.uninstallError = .failed("Firefox is busy")
+        do { try await history.remove(history.records[0]); XCTFail("no error") } catch {}
+        XCTAssertEqual(history.records.count, 1)
+    }
+
+    func testRestartFirefoxIsOfferedOnlyWhenFirefoxHasToRestart() async throws {
+        let (history, persist) = makeHistory(kept: [FirefoxFixtures.addon()])
+        addFirefox(history)
+        let rec = history.records[0]
+        let busy = RemovalFailure(record: rec, error: PersistError.failed("Firefox is busy"))
+        XCTAssertFalse(busy.needsFirefoxRestart)
+        XCTAssertEqual(busy.message, "Firefox is busy")
+
+        persist.uninstallError = .failed("Firefox has /profiles/a open and has to restart before the add-on's data can be removed. Quit it first, or drop --no-firefox-restart.")
+        var failure: RemovalFailure?
+        do { try await history.remove(rec) } catch { failure = RemovalFailure(record: rec, error: error) }
+        XCTAssertEqual(failure?.title, "Couldn't remove Dark Reader")
+        XCTAssertEqual(failure?.needsFirefoxRestart, true)
+        XCTAssertEqual(failure?.message, "Firefox will restart once. Your tabs come back.")
+        XCTAssertEqual(history.records.count, 1)
+
+        persist.uninstallError = nil                                   // what Restart Firefox runs
+        try await history.remove(rec, restartFirefox: true)
+        XCTAssertEqual(persist.uninstalls.map(\.restart), [false, true])
+        XCTAssertTrue(history.records.isEmpty)
+    }
+
+    func testRemovingOneProfilesAddonKeepsTheSourceTheOtherProfileUses() async throws {
+        let (history, _) = makeHistory(kept: [FirefoxFixtures.addon(profilePath: "/profiles/a"),
+                                               FirefoxFixtures.addon(profilePath: "/profiles/b")])
+        let source = try addToTwoProfiles(history)
+        try await history.remove(history.records[0])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source))
+        try await history.remove(history.records[0])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source))
+    }
+
+    func testPruneKeepsASourceAnotherProfileStillUses() async throws {
+        let (history, _) = makeHistory(kept: [FirefoxFixtures.addon(profilePath: "/profiles/b")])
+        let source = try addToTwoProfiles(history)
+        await history.pruneDeleted()
+        XCTAssertEqual(history.records.map(\.profilePath), ["/profiles/b"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source))
+    }
+
+    func testPruneDropsFirefoxRecordsPersistNoLongerKeeps() async {
+        let (history, _) = makeHistory(kept: [FirefoxFixtures.addon(id: "kept@viaduct")])
+        addFirefox(history, name: "Kept", id: "kept@viaduct")
+        addFirefox(history, name: "Gone", id: "gone@viaduct")
+        await history.pruneDeleted()
+        XCTAssertEqual(history.records.map(\.name), ["Kept"])
+    }
+
+    func testPruneKeepsFirefoxRecordsWhenPersistCantBeAsked() async {
+        let (history, persist) = makeHistory()
+        addFirefox(history); persist.listError = .failed("node: bad option: --experimental")
+        await history.pruneDeleted()
+        XCTAssertEqual(history.records.count, 1)
+    }
+
+    func testARecordAddedWhileThePruneAsksPersistSurvives() async {
+        let (history, persist) = makeHistory()
+        persist.onList = { [unowned self] in self.addFirefox(history, name: "New", id: "new@viaduct") }
+        await history.pruneDeleted()
+        XCTAssertEqual(history.records.map(\.name), ["New"])
     }
 }

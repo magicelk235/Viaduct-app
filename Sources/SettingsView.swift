@@ -42,6 +42,10 @@ struct SettingsView: View {
     @State private var keyToRemove: StoredKey?
     /// Keys whose Remove is talking to Polar, so it can't be clicked twice.
     @State private var keysBeingRemoved: Set<String> = []
+    /// Extensions whose trash is waiting on the uninstall, so it can't be clicked twice.
+    @State private var recordsBeingRemoved: Set<ConversionRecord.ID> = []
+    /// The removal that didn't go through, while its alert is up.
+    @State private var removalFailure: RemovalFailure?
     /// "Up to date" confirmation after a manual CLI check, cleared on a timer so
     /// it doesn't linger as permanent chrome.
     @State private var cliUpToDate = false
@@ -85,6 +89,7 @@ struct SettingsView: View {
         // Settings can be the first window a menu-bar-resident launch ever
         // shows, so the store-button state can't rely on the launch hook.
         .task { vm.refreshStoreButton() }
+        .removalFailureAlert($removalFailure) { remove($0, restartingFirefox: true) }
     }
 
     private var sidebar: some View {
@@ -447,18 +452,35 @@ struct SettingsView: View {
                 .help("Reveal in Finder")
             }
             Button {
-                history.remove(rec)
+                remove(rec)
             } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(Color.red)
+                if recordsBeingRemoved.contains(rec.id) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "trash")
+                        .foregroundStyle(Color.red)
+                }
             }
             .buttonStyle(.raycastGhost)
+            .disabled(recordsBeingRemoved.contains(rec.id))
             .help("Remove this extension")
         }
         .padding(.vertical, Theme.Space.xs)
         .padding(.horizontal, Theme.Space.sm)
         .background(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
             .fill(Theme.Colors.surfaceElevated))
+    }
+
+    private func remove(_ rec: ConversionRecord, restartingFirefox: Bool = false) {
+        recordsBeingRemoved.insert(rec.id)
+        Task {
+            do {
+                try await history.remove(rec, restartFirefox: restartingFirefox)
+            } catch {
+                removalFailure = RemovalFailure(record: rec, error: error)
+            }
+            recordsBeingRemoved.remove(rec.id)
+        }
     }
 }
 

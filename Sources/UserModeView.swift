@@ -600,6 +600,9 @@ struct HistoryDetailSheet: View {
     let vm: ConverterViewModel
     @ObservedObject var history: ConversionHistory
     let dismiss: () -> Void
+    /// Remove is waiting on the uninstall, which for Firefox takes a moment.
+    @State private var removing = false
+    @State private var removalFailure: RemovalFailure?
 
     private var sourceExists: Bool {
         FileManager.default.fileExists(atPath: record.sourcePath)
@@ -652,15 +655,21 @@ struct HistoryDetailSheet: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.raycastTertiary)
-                .disabled(!sourceExists)
+                // Converting it again while it's being removed would lose the source.
+                .disabled(!sourceExists || removing)
                 .help(sourceExists ? "" : "The original file has moved or been deleted")
 
                 HStack {
-                    Button("Remove") {
-                        history.remove(record)
-                        dismiss()
+                    Button {
+                        remove()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if removing { ProgressView().controlSize(.small) }
+                            Text("Remove")
+                        }
                     }
                     .buttonStyle(.raycastGhost)
+                    .disabled(removing)
                     Button("Report a Problem") {
                         NSWorkspace.shared.open(IssueReport.convertedButBroken(
                             extensionName: record.name, version: record.version, storeId: record.storeId))
@@ -677,6 +686,61 @@ struct HistoryDetailSheet: View {
         .padding(Theme.Space.lg)
         .frame(width: 340)
         .background(AmbientBackground())
+        .removalFailureAlert($removalFailure) { _ in remove(restartingFirefox: true) }
+    }
+
+    private func remove(restartingFirefox: Bool = false) {
+        removing = true
+        Task {
+            do {
+                try await history.remove(record, restartFirefox: restartingFirefox)
+                dismiss()
+            } catch {
+                removalFailure = RemovalFailure(record: record, error: error)
+            }
+            removing = false
+        }
+    }
+}
+
+/// A Remove that didn't go through, as its alert shows it.
+struct RemovalFailure {
+    let record: ConversionRecord
+    /// Firefox has the add-on's profile open and only lets go of it by
+    /// restarting, which waits for the user to agree.
+    let needsFirefoxRestart: Bool
+    let message: String
+
+    init(record: ConversionRecord, error: Error) {
+        self.record = record
+        needsFirefoxRestart = (error as? PersistError)?.needsFirefoxRestart ?? false
+        // Persist's message for this names a profile path and a command-line
+        // flag, so the alert shows the restart notice instead.
+        message = needsFirefoxRestart ? "Firefox will restart once. Your tabs come back." : error.localizedDescription
+    }
+
+    var title: String { "Couldn't remove \(record.name)" }
+}
+
+extension View {
+    /// The alert for a Remove that didn't go through. When Firefox has to
+    /// restart to let the add-on go, it offers Restart Firefox, and `restart`
+    /// tries again with the restart allowed.
+    func removalFailureAlert(_ failure: Binding<RemovalFailure?>,
+                             restart: @escaping (ConversionRecord) -> Void) -> some View {
+        alert(failure.wrappedValue?.title ?? "",
+              isPresented: Binding(get: { failure.wrappedValue != nil },
+                                   set: { if !$0 { failure.wrappedValue = nil } }),
+              presenting: failure.wrappedValue) { shown in
+            if shown.needsFirefoxRestart {
+                Button("Restart Firefox") { restart(shown.record) }
+                Button("Not Now", role: .cancel) {}
+            } else {
+                Button("OK", role: .cancel) {}
+            }
+        } message: { shown in
+            Text(shown.message)
+        }
     }
 }
 

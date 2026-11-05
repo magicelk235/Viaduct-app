@@ -270,7 +270,7 @@ struct ViaductApp: App {
             // Store-page "Remove from Safari": delete every install for this CWS
             // id (its .app + archived source + history record). Headless like
             // install — the page confirms the result by re-polling installed state.
-            if let id { vm.history.removeByStoreId(id) }
+            if let id { Task { await vm.history.removeByStoreId(id, browser: .safari) } }
         default:
             break
         }

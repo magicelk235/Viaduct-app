@@ -151,11 +151,23 @@ final class ConversionHistory: ObservableObject {
         save()
     }
 
-    /// Remove the free-plan extensions whose time is up. Returns what went.
-    func removeExpiredFreeExtensions(now: Date = Date()) -> [ConversionRecord] {
-        let due = records.filter { ($0.freeRemovesAt ?? .distantFuture) <= now }
-        due.forEach { remove($0) }
-        return due
+    /// Remove the free-plan extensions whose time is up, and return the ones
+    /// that went. A removal that fails, such as an add-on Firefox only lets go
+    /// of by restarting, keeps its record and date so the next sweep retries it.
+    func removeExpiredFreeExtensions(now: Date) async -> [ConversionRecord] {
+        let due = records.filter { ($0.freeRemovesAt ?? .distantFuture) <= now }.map(\.id)
+        var removed: [ConversionRecord] = []
+        for id in due {
+            // Each removal can wait on Firefox. Meanwhile a license can keep
+            // the rest, or the user can remove one, so go by the record as it is now.
+            guard let rec = records.first(where: { $0.id == id }),
+                  (rec.freeRemovesAt ?? .distantFuture) <= now else { continue }
+            do {
+                try await remove(rec)
+                removed.append(rec)
+            } catch {}
+        }
+        return removed
     }
 
     /// Stamp a record after a successful auto-update: new upstream version built.
@@ -195,29 +207,50 @@ final class ConversionHistory: ObservableObject {
 
     func clear() { records.removeAll(); save() }
 
-    /// Drop records whose installed .app the user deleted from Finder, and clean
-    /// their archived source — so auto-update won't rebuild an app they removed.
-    func pruneDeleted() {
+    /// Drop records whose install is gone, and clean their archived sources,
+    /// so auto-update won't rebuild them: a Safari .app the user deleted in
+    /// Finder, or a Firefox add-on persist no longer keeps.
+    func pruneDeleted() async {
         let fm = FileManager.default
-        let gone = records.filter { rec in
-            guard let p = rec.installedPath else { return false }
+        drop(records.filter { rec in
+            guard rec.browser == .safari, let p = rec.installedPath else { return false }
             return !fm.fileExists(atPath: p)
-        }
-        guard !gone.isEmpty else { return }
-        for rec in gone { try? fm.removeItem(atPath: rec.sourcePath) }
-        let goneIDs = Set(gone.map(\.id))
-        records.removeAll { goneIDs.contains($0.id) }
-        save()
+        })
+
+        // A record added while persist answers can be newer than its list, so
+        // only older ones are judged. A list that fails says nothing.
+        let asked = Date()
+        guard let kept = try? await firefox.persist.list() else { return }
+        drop(records.filter { rec in
+            rec.browser == .firefox && rec.date < asked
+                && !kept.contains { $0.id == rec.addonId && $0.profilePath == rec.profilePath }
+        })
     }
 
-    /// Drop a record AND delete its archived source + installed .app, so
-    /// auto-update can never rebuild it. Best-effort
-    /// on the file deletes — a stale .app left on disk is harmless.
-    func remove(_ record: ConversionRecord) {
-        let fm = FileManager.default
-        try? fm.removeItem(atPath: record.sourcePath)
-        if let p = record.installedPath { try? fm.removeItem(atPath: p) }
-        records.removeAll { $0.id == record.id }
+    /// Remove an extension for good: uninstall a Firefox add-on through
+    /// persist or delete a Safari .app, then drop the record and its archived
+    /// source, so auto-update can't rebuild it. When persist can't uninstall,
+    /// this throws and keeps the record. Firefox restarts for this only with
+    /// `restartFirefox`, which callers pass after the user saw the restart notice.
+    func remove(_ record: ConversionRecord, restartFirefox: Bool = false) async throws {
+        if record.browser == .firefox, let id = record.addonId {
+            try await firefox.uninstall(id: id, profile: record.profilePath, restart: restartFirefox)
+        }
+        // Best-effort: a stale .app left on disk is harmless.
+        if let p = record.installedPath { try? FileManager.default.removeItem(atPath: p) }
+        drop([record])
+    }
+
+    /// Drop records and delete their archived sources, except a source another
+    /// record still uses: an add-on kept in two Firefox profiles has one.
+    private func drop(_ gone: [ConversionRecord]) {
+        guard !gone.isEmpty else { return }
+        let ids = Set(gone.map(\.id))
+        records.removeAll { ids.contains($0.id) }
+        let inUse = Set(records.map(\.sourcePath))
+        for path in Set(gone.map(\.sourcePath)) where !inUse.contains(path) {
+            try? FileManager.default.removeItem(atPath: path)
+        }
         save()
     }
 
@@ -247,12 +280,13 @@ final class ConversionHistory: ObservableObject {
         }
     }
 
-    /// Remove every install for a CWS store id (the store-page uninstall path):
-    /// deletes each build's .app + archived source and drops the record.
+    /// Remove every install of a CWS store id in `browser` (the store-page
+    /// Remove). One that doesn't go through stays, and the page keeps showing
+    /// it as installed.
     @discardableResult
-    func removeByStoreId(_ storeId: String) -> Bool {
-        let matches = records.filter { $0.storeId == storeId }
-        matches.forEach { remove($0) }
+    func removeByStoreId(_ storeId: String, browser: Browser) async -> Bool {
+        let matches = records.filter { $0.storeId == storeId && $0.browser == browser }
+        for rec in matches { try? await remove(rec) }
         return !matches.isEmpty
     }
 
