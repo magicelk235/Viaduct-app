@@ -555,9 +555,9 @@ function startProgressPolling(btn, id) {
   let sawActivity = false;
   let lastError = '';
 
-  // Sequential loop, not setInterval: the native handler is spawned cold for
-  // every poll and can take well over a second end to end. Overlapping ticks
-  // with a tight race timeout read as "unreachable" even when the chain works.
+  // Sequential loop, not setInterval: the transport can take well over a
+  // second per poll. Overlapping ticks with a tight race timeout read as
+  // "unreachable" even when the chain works.
   const tick = async () => {
     if (gen !== pollGen) return;
     let state = null;
