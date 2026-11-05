@@ -1,6 +1,24 @@
 import AppKit
 import SwiftUI
 
+extension Entitlements {
+    /// The License page's first line: what's unlimited on this Mac, and how
+    /// many free conversions the other browser has left.
+    func summary(freeLeft: Int, quota: Int) -> String {
+        let unlimited = Browser.allCases.filter(unlimited).map(\.displayName)
+        let limited = Browser.allCases.filter { !self.unlimited($0) }.map(\.displayName)
+        let freeLine = "\(freeLeft) of \(quota) free conversions left."
+        if unlimited.isEmpty {
+            return "\(freeLine) On the free plan, Viaduct removes what you convert after 7 days."
+        }
+        if limited.isEmpty {
+            return "\(unlimited.joined(separator: " and ")) are unlimited on this Mac."
+        }
+        return "\(unlimited.joined(separator: " and ")) is unlimited on this Mac. "
+            + "\(limited.joined(separator: " and ")) has \(freeLine)"
+    }
+}
+
 /// What's typed into a license key field, and why the last try failed. Each
 /// field has its own, so an error only shows under the field its key was
 /// typed into.
@@ -96,6 +114,8 @@ struct TierRow: View {
             Text("Buy").frame(minWidth: 32)
         }
         .disabled(buyURL == nil)
+        // Every row's button says Buy, so VoiceOver needs the tier too.
+        .accessibilityLabel("Buy \(tier.displayName)")
         if highlighted {
             buy.buttonStyle(.raycastPrimary)
         } else {

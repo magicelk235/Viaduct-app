@@ -37,8 +37,9 @@ struct SettingsView: View {
     @ObservedObject private var license = LicenseManager.shared
     @ObservedObject private var updater = Updater.shared
     @ObservedObject private var navigation = SettingsNavigation.shared
-    @State private var showDeactivateConfirm = false
-    @State private var licenseKey = ""
+    @StateObject private var keyEntry = KeyEntry()
+    /// The key whose Remove was clicked, while its confirmation is up.
+    @State private var keyToRemove: StoredKey?
     /// "Up to date" confirmation after a manual CLI check, cleared on a timer so
     /// it doesn't linger as permanent chrome.
     @State private var cliUpToDate = false
@@ -215,65 +216,83 @@ struct SettingsView: View {
     }
 
     private var licenseCard: some View {
-        SettingsSection {
-            if license.isLicensed {
-                HStack {
-                    Text("Viaduct Pro is active on this Mac.")
-                        .font(Theme.Font.body())
-                        .foregroundStyle(Theme.Colors.body)
-                    Spacer()
-                    ProBadge(color: Theme.Colors.accentGreen)
-                }
-                Button("Deactivate on this Mac") { showDeactivateConfirm = true }
-                    .buttonStyle(.raycastTertiary)
-                    .confirmationDialog("Viaduct will go back to the free tier on this Mac",
-                                        isPresented: $showDeactivateConfirm) {
-                        Button("Deactivate", role: .destructive) {
-                            license.deactivateAndClear()
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Frees up the seat for another Mac. You'll need your key to activate again.")
-                    }
-            } else {
-                Text("\(license.freeConversionsRemaining) of \(license.freeQuota) free conversions left. A license removes the limit and keeps your extensions. On the free plan, Viaduct removes them after 7 days.")
+        let upgrades = LicenseTier.upgrades(from: license.entitlements)
+        return SettingsSection {
+            Text(license.entitlements.summary(freeLeft: license.freeConversionsRemaining,
+                                              quota: license.freeQuota))
+                .font(Theme.Font.body())
+                .foregroundStyle(Theme.Colors.body)
+            if let problem = license.problem {
+                Text(problem)
+                    .tracked()
                     .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.mute)
+                    .foregroundStyle(Theme.Colors.accentRed)
+            }
 
-                // Key entry lives here so a user who already bought can activate
-                // WITHOUT first spending their free conversions to trigger the
-                // paywall sheet (the only other place the key field appeared).
-                TextField("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX", text: $licenseKey)
-                    .textFieldStyle(.glass)
-                    .disabled(license.state == .checking)
-                    .onSubmit(activate)
+            if !license.keys.isEmpty {
+                ForEach(license.keys) { keyRow($0) }
+                Divider().overlay(Theme.Colors.hairlineSoft)
+            }
 
-                if let err = license.lastError {
-                    Text(err)
-                        .font(Theme.Font.caption())
-                        .foregroundStyle(Theme.Colors.accentRed)
-                }
-
-                HStack {
-                    Button {
-                        activate()
-                    } label: {
-                        HStack(spacing: 6) {
-                            if license.state == .checking { ProgressView().controlSize(.small) }
-                            Text(license.state == .checking ? "Activating…" : "Activate")
-                        }
-                    }
-                    .buttonStyle(.raycastPrimary)
-                    .disabled(license.state == .checking
-                              || licenseKey.trimmingCharacters(in: .whitespaces).isEmpty)
-                    Spacer()
-                    Link("Buy a license",
-                         destination: license.checkoutURL(source: .settings,
-                                                          extensionCount: history.records.count))
-                        .font(Theme.Font.caption())
-                        .foregroundStyle(Theme.Colors.accentBlue)
+            // Key entry lives here so a user who already bought can activate
+            // WITHOUT first spending their free conversions to trigger the
+            // paywall sheet.
+            TextField("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX", text: $keyEntry.text)
+                .textFieldStyle(.glass)
+                .disabled(license.isAddingKey)
+                .accessibilityLabel("License key")
+                .onSubmit { Task { await keyEntry.submit(to: license) } }
+            KeyErrorText(error: keyEntry.error)
+            Button {
+                Task { await keyEntry.submit(to: license) }
+            } label: {
+                HStack(spacing: 6) {
+                    if license.isAddingKey { ProgressView().controlSize(.small) }
+                    Text(license.isAddingKey ? "Activating…" : "Activate")
                 }
             }
+            .buttonStyle(.raycastPrimary)
+            .disabled(!keyEntry.hasText || license.isAddingKey)
+
+            if !upgrades.isEmpty {
+                Divider().overlay(Theme.Colors.hairlineSoft)
+                VStack(spacing: Theme.Space.sm) {
+                    ForEach(upgrades) { tier in
+                        TierRow(tier: tier, highlighted: false, owned: false,
+                                buyURL: license.checkoutURL(for: tier, source: .settings,
+                                                            extensionCount: history.records.count))
+                    }
+                }
+            }
+        }
+        .confirmationDialog(keyToRemove.map { "Remove the \($0.tier.displayName) license from this Mac?" } ?? "",
+                            isPresented: Binding(get: { keyToRemove != nil },
+                                                 set: { if !$0 { keyToRemove = nil } }),
+                            presenting: keyToRemove) { key in
+            Button("Remove", role: .destructive) {
+                Task { await license.removeKey(key) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { key in
+            switch key.provider {
+            case .polar: Text("This frees it for another Mac. You'll need the key to add it again.")
+            case .gumroad: Text("You'll need the key to add it again.")
+            }
+        }
+    }
+
+    /// A key on this Mac: the license it is, enough of the key to tell it
+    /// apart, and Remove.
+    private func keyRow(_ key: StoredKey) -> some View {
+        HStack(spacing: Theme.Space.sm) {
+            TierBadge(tier: key.tier, color: Theme.Colors.accentGreen)
+            Text(key.maskedKey)
+                .font(Theme.Font.mono())
+                .foregroundStyle(Theme.Colors.body)
+            Spacer()
+            Button("Remove") { keyToRemove = key }
+                .buttonStyle(.raycastTertiary)
+                .accessibilityLabel("Remove the \(key.tier.displayName) license")
         }
     }
 
@@ -297,7 +316,7 @@ struct SettingsView: View {
     /// permanent home: state, the switch, and (once on) a store shortcut.
     private var storeCard: some View {
         let enabled = vm.storeButtonEnabled == true
-        let licensed = license.isLicensed
+        let unlocked = ExtensionUpdater.isUnlocked(by: license.entitlements)
         return SettingsSection(title: "Chrome Web Store", symbol: "safari") {
             if enabled {
                 StatusBadge(text: "ON", color: Theme.Colors.accentGreen)
@@ -312,17 +331,17 @@ struct SettingsView: View {
             }
             Divider().overlay(Theme.Colors.hairlineSoft)
 
-            // Free users always see (and get) OFF: the binding reads false and
-            // ignores writes. Licensed users get the real stored toggle.
+            // Without the license it needs, the toggle always reads (and
+            // stays) off: the binding ignores writes.
             Toggle("Update Chrome Web Store extensions weekly",
-                   isOn: licensed ? $vm.autoUpdate : .constant(false))
+                   isOn: unlocked ? $vm.autoUpdate : .constant(false))
                 .toggleStyle(.glass)
-                .disabled(!licensed)
+                .disabled(!unlocked)
                 .onChange(of: vm.autoUpdate) { _ in vm.startAutoUpdate() }
-            if !licensed {
+            if !unlocked {
                 HStack(spacing: Theme.Space.sm) {
-                    ProBadge(color: Theme.Colors.accentBlue)
-                    // The License page has the key field and the Buy link.
+                    TierBadge(tier: .safari, color: Theme.Colors.accentBlue)
+                    // The License page has the key field and the Buy rows.
                     Button("Unlock with a license") { navigation.selectedTab = .license }
                         .buttonStyle(.plain)
                         .font(Theme.Font.caption())
@@ -429,10 +448,6 @@ struct SettingsView: View {
         .background(RoundedRectangle(cornerRadius: Theme.Radius.sm, style: .continuous)
             .fill(Theme.Colors.surfaceElevated))
     }
-
-    private func activate() {
-        license.activate(key: licenseKey)
-    }
 }
 
 /// A small capsule tag. White text on a solid accent fill — a same-hue text on a
@@ -449,10 +464,11 @@ struct StatusBadge: View {
     }
 }
 
-/// The "PRO" tag on cards that gate a paid feature.
-struct ProBadge: View {
+/// The tag naming the license a feature needs.
+struct TierBadge: View {
+    let tier: LicenseTier
     var color: Color
-    var body: some View { StatusBadge(text: "PRO", color: color) }
+    var body: some View { StatusBadge(text: tier.displayName.uppercased(), color: color) }
 }
 
 // MARK: - Settings building blocks

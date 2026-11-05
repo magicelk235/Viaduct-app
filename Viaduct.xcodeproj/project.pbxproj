@@ -82,6 +82,7 @@
 		FB447A2CB916C3211D0E4B8D /* ExtensionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */; };
 		FC1A937DDF2BE791C6955099 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3842807AAA6FB565FA7B44DF /* Assets.xcassets */; };
 		FC9EEA05C4DAF9978F1F732A /* CompatibilityNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34F4D6605E9CC563F29DACA /* CompatibilityNotice.swift */; };
+		FD86E0B02A60934111227EA5 /* LicenseSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -192,6 +193,7 @@
 		DF2B7969794EF0B93CC897FE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlanBookkeepingTests.swift; sourceTree = "<group>"; };
 		EE825678F91BF68F79CD25C3 /* LicenseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseStore.swift; sourceTree = "<group>"; };
+		F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseSummaryTests.swift; sourceTree = "<group>"; };
 		F87C69746F349EE36E0488A6 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		FC67CD1790FCD1A2DBD5B113 /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -238,6 +240,7 @@
 				189162E0C18399C5A150EAEB /* GumroadClientTests.swift */,
 				BA7519856F44CED6893C97FF /* LicenseManagerTests.swift */,
 				85135CE31BAB02A65A5A2872 /* LicenseStoreTests.swift */,
+				F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */,
 				0F117C84E304CC6FEDEDAC0C /* LicenseTierTests.swift */,
 				C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */,
 				AA5CF4DC01BA0568CED14285 /* PolarClientTests.swift */,
@@ -639,6 +642,7 @@
 				E0077D70C9E11D959B5EB4E7 /* LicenseFixtures.swift in Sources */,
 				1E38CDD8DD767ACBFDF5D7D3 /* LicenseManagerTests.swift in Sources */,
 				415890B6951DB7C0CDAF8652 /* LicenseStoreTests.swift in Sources */,
+				FD86E0B02A60934111227EA5 /* LicenseSummaryTests.swift in Sources */,
 				CF9E5B2660414FF8CE4910D0 /* LicenseTierTests.swift in Sources */,
 				D3AB5400B1B95E0D24350EC5 /* PaywallTests.swift in Sources */,
 				4C4B67ED30410DC03D26A229 /* PolarClientTests.swift in Sources */,
