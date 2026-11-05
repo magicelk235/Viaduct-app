@@ -50,6 +50,7 @@
 		6F22E359967E24989CBFA394 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = 79DF44B127A97253CEBE0C02 /* manifest.json */; };
 		743656629FCBFFDD7754637B /* Feedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD6684D69AFF320AB76FBFD8 /* Feedback.swift */; };
 		7974A26A5768F2BB83B9F07C /* ConvertOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2A0A414CC85860A87063B5 /* ConvertOptions.swift */; };
+		7BBEEE24261712E7252EC0D9 /* ConvertPhaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF9AA60CBACC4A5E939B9C1F /* ConvertPhaseTests.swift */; };
 		7D9576B0A7C6AA761D157642 /* firefox in Resources */ = {isa = PBXBuildFile; fileRef = CBA59D7B65A758FCE5E2BC03 /* firefox */; };
 		8305D547CB19BFDB37A9B391 /* HelperAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6507B1D31A509FB9B597D5DD /* HelperAgent.swift */; };
 		88FF27AFCBE2D89DE8E568D9 /* ViaductExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 58D150FB914882216A502FBE /* ViaductExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -61,6 +62,7 @@
 		96088A25F5F39F22811DB915 /* ChromeImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38866ACCB31D891DBAA75D76 /* ChromeImportView.swift */; };
 		9B420D598F23447A0DE0DC0C /* FirefoxAddons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369EB76B56E947D292A330C1 /* FirefoxAddons.swift */; };
 		9C252960654554A92B56BE6A /* SettingsCarryOver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD704CBD63E252269BE0B96 /* SettingsCarryOver.swift */; };
+		9CF4B739156F47352BEB7345 /* CompatibilityCheckTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E98F8FC7BC3BA1B2B9E87D /* CompatibilityCheckTests.swift */; };
 		A063620048EB32269B27CFF7 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4BBDE50D6EB0F2D7309CE9 /* SetupView.swift */; };
 		A1AE1D69D35417B1BF648D63 /* ConversionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B821C2B773F3666C36EAF5E3 /* ConversionQueue.swift */; };
 		A26DAD8E42D40137C1D2A80A /* TempDir.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7F56E305526E4B35D84338 /* TempDir.swift */; };
@@ -170,6 +172,7 @@
 		0D7F56E305526E4B35D84338 /* TempDir.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempDir.swift; sourceTree = "<group>"; };
 		0F117C84E304CC6FEDEDAC0C /* LicenseTierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseTierTests.swift; sourceTree = "<group>"; };
 		1086B824609E8B420E80D68F /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		10E98F8FC7BC3BA1B2B9E87D /* CompatibilityCheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatibilityCheckTests.swift; sourceTree = "<group>"; };
 		129FB30329F2C8050E59D618 /* ViaductExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ViaductExtension.entitlements; sourceTree = "<group>"; };
 		173C3928435A6B646D91DF6E /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		189162E0C18399C5A150EAEB /* GumroadClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GumroadClientTests.swift; sourceTree = "<group>"; };
@@ -237,6 +240,7 @@
 		B821C2B773F3666C36EAF5E3 /* ConversionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionQueue.swift; sourceTree = "<group>"; };
 		B84F3BA2696BE27D24D8A251 /* StagedFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagedFolder.swift; sourceTree = "<group>"; };
 		BA7519856F44CED6893C97FF /* LicenseManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseManagerTests.swift; sourceTree = "<group>"; };
+		BF9AA60CBACC4A5E939B9C1F /* ConvertPhaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertPhaseTests.swift; sourceTree = "<group>"; };
 		BFA63102EF2636A922324AEC /* Browser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Browser.swift; sourceTree = "<group>"; };
 		BFBEBF47F3929776DC55B329 /* background.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = background.js; sourceTree = "<group>"; };
 		C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallTests.swift; sourceTree = "<group>"; };
@@ -312,7 +316,9 @@
 			isa = PBXGroup;
 			children = (
 				85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */,
+				10E98F8FC7BC3BA1B2B9E87D /* CompatibilityCheckTests.swift */,
 				4069D5979D285640F694A243 /* ConversionHistoryTests.swift */,
+				BF9AA60CBACC4A5E939B9C1F /* ConvertPhaseTests.swift */,
 				0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */,
 				8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */,
 				E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */,
@@ -787,7 +793,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */,
+				9CF4B739156F47352BEB7345 /* CompatibilityCheckTests.swift in Sources */,
 				24EFA3D4D3E42B9B3D3B3878 /* ConversionHistoryTests.swift in Sources */,
+				7BBEEE24261712E7252EC0D9 /* ConvertPhaseTests.swift in Sources */,
 				3EF6C94AE2E9349FA45B1B68 /* FirefoxAddonsTests.swift in Sources */,
 				140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */,
 				45F547D0F8C46C918FE5C0DE /* FirefoxFakes.swift in Sources */,

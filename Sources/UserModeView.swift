@@ -245,14 +245,14 @@ struct UserModeView: View {
                             onComplete: { vm.completeFinishing() })
 
             VStack(spacing: 2) {
-                Text(vm.phase.title)
+                Text(vm.phase.title(for: vm.options.browser))
                     .font(Theme.Font.headingSM())
                     .foregroundStyle(Theme.Colors.ink)
                     .id("title\(vm.phase.rawValue)")
                     .transition(.asymmetric(
                         insertion: .move(edge: .bottom).combined(with: .opacity),
                         removal: .move(edge: .top).combined(with: .opacity)))
-                Text(vm.phase.subtitle)
+                Text(vm.phase.subtitle(for: vm.options.browser))
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
                     .id("sub\(vm.phase.rawValue)")
@@ -277,7 +277,7 @@ struct UserModeView: View {
                 .font(Theme.Font.headingSM())
                 .foregroundStyle(Theme.Colors.ink)
                 .multilineTextAlignment(.center)
-            Text(vm.failureSummary ?? vm.phase.subtitle)
+            Text(vm.failureSummary ?? vm.phase.subtitle(for: vm.options.browser))
                 .font(Theme.Font.caption())
                 .foregroundStyle(Theme.Colors.mute)
                 .multilineTextAlignment(.center)
@@ -312,7 +312,9 @@ struct UserModeView: View {
             }
         }
         if let last = vm.lastReachedTrackPhase {
-            return "Failed while \(last.title.lowercased())"
+            // Lower only the first letter, so "Safari" and "Firefox" keep theirs.
+            let title = last.title(for: vm.options.browser)
+            return "Failed while " + title.prefix(1).lowercased() + title.dropFirst()
         }
         return "Conversion failed"
     }

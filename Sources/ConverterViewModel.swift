@@ -762,10 +762,11 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
-    /// Move `phase` forward (never backward) based on a CLI line; capture install path.
+    /// Move `phase` forward (never backward) based on a CLI line; capture the
+    /// Safari app's install path. A Firefox run installs through persist instead.
     private func advancePhase(from line: String) {
-        if let installed = installedPath(from: line) { installedAppPath = installed }
-        if let next = ConvertPhase.detect(from: line), next.rawValue > phase.rawValue {
+        if options.browser == .safari, let installed = installedPath(from: line) { installedAppPath = installed }
+        if let next = ConvertPhase.detect(from: line, browser: options.browser), next.rawValue > phase.rawValue {
             phase = next
             if ConvertPhase.track.contains(next) { lastReachedTrackPhase = next }
             Feedback.step()
@@ -789,7 +790,7 @@ final class ConverterViewModel: ObservableObject {
             // flips to .done, which surfaces the "Open extension" button.
             phase = .finishing
         } else {
-            if let verdict = CompatibilityCheck.verdict(fromLog: logLines) {
+            if let verdict = CompatibilityCheck.verdict(fromLog: logLines, browser: options.browser) {
                 compatibility = verdict
                 failureSummary = verdict.message
             } else {
@@ -921,8 +922,9 @@ final class ConverterViewModel: ObservableObject {
         compatibilityCheck?.cancel()
         compatibility = nil
         guard !batchActive else { return }
+        let browser = options.browser
         compatibilityCheck = Task { [weak self] in
-            let verdict = await CompatibilityCheck.run(path: path)
+            let verdict = await CompatibilityCheck.run(path: path, browser: browser)
             guard !Task.isCancelled, let self, self.options.inputPath == path,
                   self.phase == .idle else { return }
             self.compatibility = verdict

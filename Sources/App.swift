@@ -337,7 +337,8 @@ struct ViaductApp: App {
             return ["state": "idle"]
         default:
             return ["state": "active", "fraction": vm.phase.fraction,
-                    "title": vm.phase.title, "subtitle": vm.phase.subtitle]
+                    "title": vm.phase.title(for: vm.options.browser),
+                    "subtitle": vm.phase.subtitle(for: vm.options.browser)]
         }
     }
 

@@ -55,7 +55,7 @@ struct ConversionQueueView: View {
         let done = queue.doneCount
         let failed = queue.items.filter { if case .failed = $0.status { return true }; return false }.count
         if queue.isRunning {
-            return vm.phase == .idle ? "Getting the next one ready" : vm.phase.title
+            return vm.phase == .idle ? "Getting the next one ready" : vm.phase.title(for: vm.options.browser)
         }
         var parts = ["\(done) installed"]
         if failed > 0 { parts.append("\(failed) failed") }
@@ -131,7 +131,7 @@ struct ConversionQueueView: View {
         switch item.status {
         case .pending:              return item.note
         case .preparing:            return "Getting it ready"
-        case .converting:           return vm.phase == .idle ? "Starting" : vm.phase.title
+        case .converting:           return vm.phase == .idle ? "Starting" : vm.phase.title(for: vm.options.browser)
         case .waiting:              return "Answer the signing question in the Viaduct window"
         case .done:                 return item.note
         case let .failed(why):      return why

@@ -13,33 +13,42 @@ enum ConvertPhase: Int, CaseIterable, Identifiable {
     /// CLI has already exited successfully.
     var isFinishing: Bool { self == .finishing }
 
-    var title: String {
-        switch self {
-        case .idle:       return "Ready"
-        case .extracting: return "Unpacking extension"
-        case .reading:    return "Reading manifest"
-        case .staging:    return "Preparing assets"
-        case .packaging:  return "Generating Safari project"
-        case .building:   return "Building & signing"
-        case .installing: return "Installing to Safari"
-        case .finishing:  return "Finishing up"
-        case .done:       return "Installed"
-        case .failed:     return "Conversion failed"
+    func title(for browser: Browser) -> String {
+        switch (self, browser) {
+        case (.idle, _):              return "Ready"
+        case (.extracting, _):        return "Unpacking extension"
+        case (.reading, .safari):     return "Reading manifest"
+        case (.staging, .safari):     return "Preparing assets"
+        case (.packaging, .safari):   return "Generating Safari project"
+        case (.building, .safari):    return "Building & signing"
+        case (.reading, .firefox), (.staging, .firefox),
+             (.packaging, .firefox), (.building, .firefox):
+            return "Converting for Firefox"
+        case (.installing, .safari):  return "Installing to Safari"
+        case (.installing, .firefox): return "Adding to Firefox"
+        case (.finishing, _):         return "Finishing up"
+        case (.done, _):              return "Installed"
+        case (.failed, _):            return "Conversion failed"
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .idle:       return ""
-        case .extracting: return "Opening the package"
-        case .reading:    return "Checking what Safari supports"
-        case .staging:    return "Patching Chrome APIs for Safari"
-        case .packaging:  return "Building the Xcode project"
-        case .building:   return "The slow step. A minute or two is normal"
-        case .installing: return "Registering with Safari"
-        case .finishing:  return "Almost there"
-        case .done:       return "Turn it on in Safari → Settings → Extensions"
-        case .failed:     return "Copy the log to see what went wrong"
+    func subtitle(for browser: Browser) -> String {
+        switch (self, browser) {
+        case (.idle, _):              return ""
+        case (.extracting, _):        return "Opening the package"
+        case (.reading, .safari):     return "Checking what Safari supports"
+        case (.staging, .safari):     return "Patching Chrome APIs for Safari"
+        case (.packaging, .safari):   return "Building the Xcode project"
+        case (.building, .safari):    return "The slow step. A minute or two is normal"
+        case (.reading, .firefox), (.staging, .firefox),
+             (.packaging, .firefox), (.building, .firefox):
+            return "Patching Chrome APIs for Firefox"
+        case (.installing, .safari):  return "Registering with Safari"
+        case (.installing, .firefox): return "Firefox keeps it from now on"
+        case (.finishing, _):         return "Almost there"
+        case (.done, .safari):        return "Turn it on in Safari → Settings → Extensions"
+        case (.done, .firefox):       return "It's on in Firefox"
+        case (.failed, _):            return "Copy the log to see what went wrong"
         }
     }
 
@@ -57,13 +66,21 @@ enum ConvertPhase: Int, CaseIterable, Identifiable {
     }
 
     /// Detect a phase from a stripped CLI output line. nil = no transition.
-    static func detect(from line: String) -> ConvertPhase? {
-        if line.contains("Extracting ") { return .extracting }
-        if line.contains("Loaded \"") { return .reading }
-        if line.contains("Staging clean") { return .staging }
-        if line.contains("safari-web-extension-packager") { return .packaging }
-        if line.contains("Building (") { return .building }
-        if line.contains("Installed →") || line.contains("Installed:") { return .installing }
+    /// A Firefox run only prints unpacking and staging lines; the app moves it
+    /// to installing itself when it hands the result to persist.
+    static func detect(from line: String, browser: Browser) -> ConvertPhase? {
+        switch browser {
+        case .safari:
+            if line.contains("Extracting ") { return .extracting }
+            if line.contains("Loaded \"") { return .reading }
+            if line.contains("Staging clean") { return .staging }
+            if line.contains("safari-web-extension-packager") { return .packaging }
+            if line.contains("Building (") { return .building }
+            if line.contains("Installed →") || line.contains("Installed:") { return .installing }
+        case .firefox:
+            if line.contains("Extracting ") { return .extracting }
+            if line.contains("Loaded \"") || line.contains("Staging clean") { return .staging }
+        }
         return nil
     }
 }
