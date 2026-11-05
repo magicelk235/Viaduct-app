@@ -685,6 +685,7 @@
 			buildPhases = (
 				FC2CE8C82374EA97715A4004 /* Fetch Node */,
 				582419ADB52178443E2916EA /* Build Persist */,
+				94811D79DF7EFD9518FD4882 /* Build Store Button */,
 				8447CB9A519BE4019124E3E9 /* Sources */,
 				2734418A22F3D57141CDDA1B /* Resources */,
 				F36AB7A63FD1FD9C231D7842 /* CopyFiles */,
@@ -804,6 +805,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"$SRCROOT/Resources/bin/build-persist.sh\"";
+		};
+		94811D79DF7EFD9518FD4882 /* Build Store Button */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Store Button";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/Resources/bin/build-store-button.sh\"";
 		};
 		E3B03C0BC0F74DAB629BDB2C /* Stamp manifest version */ = {
 			isa = PBXShellScriptBuildPhase;

@@ -84,6 +84,15 @@ function paintInjected(btn) {
   btn.style.color = paint.fg;
 }
 
+// The app's yes/no from an installed-state reply, or null when there's no real
+// answer. A transport that can't reach the app still says installed: false, but
+// marks the reply with state 'unreachable' or an error, and that "false" means
+// nothing.
+function installedAnswer(res) {
+  if (!res || res.state === 'unreachable' || res.error) return null;
+  return typeof res.installed === 'boolean' ? res.installed : null;
+}
+
 function refreshInstalled(id) {
   // Query once per id and keep the definitive answer. Install/remove update the
   // cache directly, so there's no need to re-poll on every mutation.
@@ -95,8 +104,9 @@ function refreshInstalled(id) {
   viaductTransport.installed(id).then(
     (res) => {
       installedInFlight.delete(id);
-      if (res && typeof res.installed === 'boolean') {
-        installedById.set(id, res.installed);
+      const installed = installedAnswer(res);
+      if (installed !== null) {
+        installedById.set(id, installed);
         apply(); // repaint with the real state
       }
       // No definitive answer (app unreachable): leave uncached so a later tick
@@ -125,7 +135,7 @@ function removeViaduct(id, btn) {
       const res = await Promise.race([
         req, new Promise(resolve => setTimeout(() => resolve(null), 2000)),
       ]);
-      if (res && typeof res.installed === 'boolean') installed = res.installed;
+      installed = installedAnswer(res);
     } catch (e) { /* app asleep; try next tick */ }
     if (gen !== pollGen) return;
     if (installed === false) {

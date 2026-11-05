@@ -126,6 +126,10 @@ targets:
         # build machine. Skips when the bundle is newer than its sources.
         script: "\"$SRCROOT/Resources/bin/build-persist.sh\""
         basedOnDependencyAnalysis: false
+      - name: Build Store Button
+        # The Add to Firefox add-on: Firefox/store-button plus the Safari extension's page script.
+        script: "\"$SRCROOT/Resources/bin/build-store-button.sh\""
+        basedOnDependencyAnalysis: false
 
   ViaductExtension:
     type: app-extension
