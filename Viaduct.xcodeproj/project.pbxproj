@@ -41,6 +41,7 @@
 		4C4B67ED30410DC03D26A229 /* PolarClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5CF4DC01BA0568CED14285 /* PolarClientTests.swift */; };
 		544A439C6481249E7C287FE7 /* ActivationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B65E78309624F2ED7F17DB /* ActivationView.swift */; };
 		544B0B9830373177FFF2F3CC /* PolarClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F6C8FC3D64DCF465F07D706 /* PolarClient.swift */; };
+		5B77CDB7C8F98E5E79AED120 /* StoreRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD6AEB13D91A52A0B23E407 /* StoreRequest.swift */; };
 		5C97C5C44F4F06197A3022CE /* ViaductHelper in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 80827CB13F6B2A9F55BFF643 /* ViaductHelper */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5CE7D41427EEF31E2724FE92 /* FreePlanFirefoxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E64830EE88379F454793DD06 /* FreePlanFirefoxTests.swift */; };
 		5CFB2E5454F3B4826AD9EAC2 /* icon.png in Resources */ = {isa = PBXBuildFile; fileRef = 6DA2AA9A7141526C03A24FD3 /* icon.png */; };
@@ -107,6 +108,7 @@
 		F315EA79EDAD1B804861FE08 /* StoreButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35BF1999828B1064D26A9212 /* StoreButton.swift */; };
 		F48852A862DD08EF590A8132 /* HelperAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6507B1D31A509FB9B597D5DD /* HelperAgent.swift */; };
 		F5BA1043D575B545084D028A /* LicenseTier.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABD63386A90365058C4EF143 /* LicenseTier.swift */; };
+		F7BB3BE9CE05CD5801935255 /* StoreRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 524A7697778E6A796AD538D7 /* StoreRequestTests.swift */; };
 		FB447A2CB916C3211D0E4B8D /* ExtensionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */; };
 		FC1A937DDF2BE791C6955099 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3842807AAA6FB565FA7B44DF /* Assets.xcassets */; };
 		FC9EEA05C4DAF9978F1F732A /* CompatibilityNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34F4D6605E9CC563F29DACA /* CompatibilityNotice.swift */; };
@@ -210,6 +212,7 @@
 		4B2A0A414CC85860A87063B5 /* ConvertOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertOptions.swift; sourceTree = "<group>"; };
 		4C05D702FBDB0409D178D944 /* LicenseFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseFixtures.swift; sourceTree = "<group>"; };
 		4F6C2EDE51EFD41F45415DBF /* FirefoxAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxAgent.swift; sourceTree = "<group>"; };
+		524A7697778E6A796AD538D7 /* StoreRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreRequestTests.swift; sourceTree = "<group>"; };
 		54450BBE8A7C1AB7A103C71D /* InstallProgressBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallProgressBridge.swift; sourceTree = "<group>"; };
 		57EF2AA67C8160B7269036B6 /* LicenseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseManager.swift; sourceTree = "<group>"; };
 		58D150FB914882216A502FBE /* ViaductExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ViaductExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -237,6 +240,7 @@
 		85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserTests.swift; sourceTree = "<group>"; };
 		86F58194969B90E5FFB81596 /* HelperAgentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperAgentTests.swift; sourceTree = "<group>"; };
 		8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxConversionTests.swift; sourceTree = "<group>"; };
+		8AD6AEB13D91A52A0B23E407 /* StoreRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreRequest.swift; sourceTree = "<group>"; };
 		8CB47406C1BC6E1DFBB936ED /* MigrationArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationArchive.swift; sourceTree = "<group>"; };
 		93BE234A03029E865345DFC1 /* SetupStepsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupStepsTests.swift; sourceTree = "<group>"; };
 		949941983A97023BD3198B70 /* IssueReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueReport.swift; sourceTree = "<group>"; };
@@ -356,6 +360,7 @@
 				AA5CF4DC01BA0568CED14285 /* PolarClientTests.swift */,
 				93BE234A03029E865345DFC1 /* SetupStepsTests.swift */,
 				79D4BA4CDEFC3C07C5CC3CDE /* SigningAccountTests.swift */,
+				524A7697778E6A796AD538D7 /* StoreRequestTests.swift */,
 				D2648119E24965D5CD09DFA5 /* UpdatePolicyTests.swift */,
 				60814F367A291247BE4AA570 /* Support */,
 			);
@@ -381,6 +386,7 @@
 				CD1A9AF75C432F6ED0056157 /* ConversionQueueView.swift */,
 				216A0409EC1C4E06AB21B317 /* ExtensionIdentity.swift */,
 				B84F3BA2696BE27D24D8A251 /* StagedFolder.swift */,
+				8AD6AEB13D91A52A0B23E407 /* StoreRequest.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -840,6 +846,7 @@
 				4C4B67ED30410DC03D26A229 /* PolarClientTests.swift in Sources */,
 				94155D11FE933F5A7E463F8B /* SetupStepsTests.swift in Sources */,
 				3E92FA139E6A8D9E55B78116 /* SigningAccountTests.swift in Sources */,
+				F7BB3BE9CE05CD5801935255 /* StoreRequestTests.swift in Sources */,
 				A26DAD8E42D40137C1D2A80A /* TempDir.swift in Sources */,
 				0887E9BF888BD0BC0A6B4B02 /* TestDefaults.swift in Sources */,
 				31433D009EB6F9CCED4871FA /* UpdatePolicyTests.swift in Sources */,
@@ -915,6 +922,7 @@
 				8B6F88ECF6AB3CD9A48222F5 /* Snappy.swift in Sources */,
 				1B68851345B7CC2A2A2408A4 /* StagedFolder.swift in Sources */,
 				F315EA79EDAD1B804861FE08 /* StoreButton.swift in Sources */,
+				5B77CDB7C8F98E5E79AED120 /* StoreRequest.swift in Sources */,
 				D498F700B216CEF067756D6A /* Theme.swift in Sources */,
 				36D01BBC4EC9233BE32D6B68 /* UpdatePolicy.swift in Sources */,
 				08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */,

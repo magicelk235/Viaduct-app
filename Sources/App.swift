@@ -244,12 +244,9 @@ struct ViaductApp: App {
     }
 
     private static func handleOpenURL(_ url: URL, vm: ConverterViewModel) {
-        guard url.scheme == "viaduct" else { return }
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
-        let id = items?.first(where: { $0.name == "id" })?.value
-        switch url.host {
-        case "install":
-            guard let id else { return }
+        guard let request = StoreRequest(url: url) else { return }
+        switch request.action {
+        case .install(let name):
             // Starting a store install resets the flow, which would wipe the
             // conversion or batch already running (and record its app under
             // this one's name). Show what's running instead.
@@ -259,31 +256,38 @@ struct ViaductApp: App {
                 MainWindow.show()
                 return
             }
-            // The store URL is /detail/NAME/ID — pass NAME so the app isn't named
-            // after the random-looking ID when the manifest name is an __MSG_ i18n key.
-            let name = items?.first(where: { $0.name == "name" })?.value
-            OfficialVersionPrompt.shared.checkBeforeStoreInstall(chromeId: id) {
-                // Install came from the Safari extension on the store page — the
-                // page renders the progress bar (via InstallProgressBridge), so
-                // keep the app out of the user's way instead of coming forward.
+            // The store URL is /detail/NAME/ID, and `name` is that NAME, so the
+            // app isn't named after the random-looking ID when the manifest
+            // name is an __MSG_ i18n key.
+            let start = {
+                // The store page renders the progress bar (via
+                // InstallProgressBridge), so keep the app out of the user's
+                // way instead of coming forward.
                 NSApp.hide(nil)
                 vm.resetUserFlow()
                 InstallProgressBridge.shared.downloading = true
-                downloadAndConvert(extensionId: id, displayName: name, vm: vm)
+                downloadAndConvert(extensionId: request.storeId, displayName: name,
+                                   browser: request.browser, vm: vm)
             }
-        case "remove":
-            // Store-page "Remove from Safari": delete every install for this CWS
-            // id (its .app + archived source + history record). Headless like
-            // install — the page confirms the result by re-polling installed state.
-            if let id { Task { await vm.history.removeByStoreId(id, browser: .safari) } }
-        default:
-            break
+            switch request.browser {
+            case .safari:
+                OfficialVersionPrompt.shared.checkBeforeStoreInstall(chromeId: request.storeId, convert: start)
+            case .firefox:
+                // The official-version list only knows Safari versions.
+                start()
+            }
+        case .remove:
+            // Store-page Remove: delete every install of this CWS id in that
+            // browser. Headless like install; the page confirms the result by
+            // re-polling installed state.
+            Task { await vm.history.removeByStoreId(request.storeId, browser: request.browser) }
         }
     }
 
-    /// The state dict the Safari extension polls for; rendered as the install
-    /// bar on the Chrome Web Store page. When `queryId` is set, also answers
-    /// whether that CWS id is installed (drives the Add/Remove button).
+    /// The state dict the store-page extensions poll for; rendered as the
+    /// install bar on the Chrome Web Store page. When `queryId` is set (an
+    /// `InstalledQuery` object), also answers whether that CWS id is installed
+    /// in that browser (drives the Add/Remove button).
     @MainActor
     private static func progressSnapshot(_ vm: ConverterViewModel?, queryId: String?) -> [String: Any] {
         var dict = baseSnapshot(vm)
@@ -291,8 +295,9 @@ struct ViaductApp: App {
         // bus, so we never volunteer the user's full installed set — just a
         // yes/no for the single id they queried.
         if let queryId {
+            let query = InstalledQuery.parse(queryId)
             dict["forId"] = queryId
-            dict["installed"] = vm?.history.isInstalled(storeId: queryId, browser: .safari) ?? false
+            dict["installed"] = vm?.history.isInstalled(storeId: query.storeId, browser: query.browser) ?? false
         }
         return dict
     }
@@ -325,7 +330,9 @@ struct ViaductApp: App {
                 // visible — the animation gets to finish on screen.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { vm.completeFinishing() }
             }
-            return ["state": "done"]
+            // `pending`: a Firefox install still waiting on Firefox to pick it
+            // up. Just a yes/no, safe on the open bus.
+            return ["state": "done", "pending": vm.firefoxInstallPending]
         case .idle:
             // The engine downloads on first launch, and a store-page install can
             // land in the middle of it. Say so, otherwise the page's bar drops
@@ -348,7 +355,8 @@ struct ViaductApp: App {
         }
     }
 
-    private static func downloadAndConvert(extensionId: String, displayName: String?, vm: ConverterViewModel) {
+    private static func downloadAndConvert(extensionId: String, displayName: String?, browser: Browser,
+                                           vm: ConverterViewModel) {
         Task {
             do {
                 let downloaded = try await ChromeStore.downloadCRX(id: extensionId)
@@ -365,8 +373,10 @@ struct ViaductApp: App {
                     // stops before the convert phases start (e.g. ad-hoc alert).
                     InstallProgressBridge.shared.downloading = false
                     vm.resetUserFlow()
-                    // The store button is Safari's, whatever the window has picked.
-                    vm.options.browser = .safari
+                    // The browser the store page asked for, whatever the window
+                    // has picked. Set before selectInput: its compatibility
+                    // check reads it.
+                    vm.options.browser = browser
                     if let settingsNote { vm.appendLog("→ \(settingsNote)") }
                     vm.selectInput(path: finalURL.path)
                     // Store name beats the manifest's __MSG_ key / the .crx filename.
