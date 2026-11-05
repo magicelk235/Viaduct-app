@@ -88,7 +88,7 @@ struct ConversionQueueView: View {
                     Button("Unlock Pro") {
                         queue.dismiss()
                         // One sheet at a time per window: let this one leave first.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.showPaywall = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.presentPaywall(for: .safari) }
                     }
                     .buttonStyle(.raycastPrimary)
                 } else if queue.doneCount > 0 {

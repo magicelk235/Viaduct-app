@@ -5,7 +5,14 @@ protocol GumroadLicensing {
 }
 
 /// Checks the Pro keys sold on Gumroad before the tiers. They count as Mixed.
+///
+/// Gumroad license API: https://docs.gumroad.com/#verify-a-license
+/// POST https://api.gumroad.com/v2/licenses/verify
+///   product_id=<id>&license_key=<key>&increment_uses_count=false
+/// Returns: { success, uses, purchase:{ refunded, disputed, chargebacked, ... } }
 struct GumroadClient: GumroadLicensing {
+    /// Stable even if the product's URL slug is renamed. From the product's
+    /// Settings/Advanced page.
     static let productID = "-7WMe9QfKNdzB5rmGZjMdw=="
     var session: URLSession = .shared
 

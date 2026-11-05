@@ -183,7 +183,7 @@ struct ViaductApp: App {
             }
             // Paywall: shown when an unlicensed user hits the free-quota wall.
             // Dismisses itself once activation flips the license to .licensed.
-            .sheet(isPresented: $vm.showPaywall) {
+            .sheet(isPresented: $vm.showPaywall, onDismiss: { vm.paywallDidClose() }) {
                 ActivationView(license: license, extensionCount: vm.history.records.count) { vm.showPaywall = false }
                     .onChange(of: license.state) { newState in
                         if newState == .licensed { vm.showPaywall = false }
@@ -438,7 +438,7 @@ struct StatusMenu: View {
                 NSApp.setActivationPolicy(.regular)
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
-                vm.showPaywall = true
+                vm.presentPaywall(for: nil)
             }
         }
 

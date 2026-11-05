@@ -75,6 +75,18 @@ final class LicenseStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: dir.appendingPathComponent(aside[0]), encoding: .utf8), broken)
     }
 
+    func testUnreadableKeyListStaysWhenItCantBeMovedAside() throws {
+        let broken = #"[{"provider":"polar","key":"#
+        try broken.write(to: file, atomically: true, encoding: .utf8)
+        // Every name the move could pick over the next minute is taken.
+        let second = Int(Date().timeIntervalSince1970)
+        for t in second...(second + 60) {
+            try Data().write(to: dir.appendingPathComponent("licenses.json.unreadable-\(t)"))
+        }
+        store().save([StoredKey(provider: .polar, key: "S", activationId: "act-1", tier: .safari, lastValidated: stamp)])
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), broken)
+    }
+
     func testNewKeysDontNeedTheOldFile() {
         let key = StoredKey(provider: .polar, key: "S", activationId: "act-1", tier: .safari, lastValidated: stamp)
         store().save([key])

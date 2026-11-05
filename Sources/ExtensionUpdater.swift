@@ -84,13 +84,26 @@ final class ExtensionUpdater {
         } catch { return nil }
     }
 
-    /// Store installs due for a weekly CWS version poll: has a storeId and hasn't
-    /// been checked in the last week. Local-source-only records have no upstream
-    /// to poll, so they're excluded.
+    /// Whether a license turns the weekly store update on. It rebuilds through
+    /// the Safari conversion, so it takes a license that covers Safari.
+    nonisolated static func isUnlocked(by entitlements: Entitlements) -> Bool {
+        entitlements.safari
+    }
+
+    /// Whether the weekly store update looks after this record: a store
+    /// install, under a license that covers it.
+    nonisolated static func covers(_ rec: ConversionRecord, entitlements: Entitlements) -> Bool {
+        rec.storeId != nil && entitlements.safari
+    }
+
+    /// Store installs due for a weekly CWS version poll: covered by the license
+    /// and not checked in the last week. Local-source-only records have no
+    /// upstream to poll, so they're excluded.
     private func dueForUpdateCheck() -> [ConversionRecord] {
         let now = Date()
+        let entitlements = LicenseManager.shared.entitlements
         return history.records.filter { rec in
-            rec.storeId != nil
+            Self.covers(rec, entitlements: entitlements)
             && UpdatePolicy.dueForUpdateCheck(lastCheck: rec.lastUpdateCheck, now: now)
         }
     }

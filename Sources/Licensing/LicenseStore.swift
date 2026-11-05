@@ -58,7 +58,8 @@ struct LicenseStore {
     }
 
     /// Writes the list, empty or not, so a removed key doesn't come back from
-    /// the old file. An existing list that can't be read is moved aside first.
+    /// the old file. An existing list that can't be read is moved aside first,
+    /// and when that fails nothing is written, so it's never overwritten.
     func save(_ keys: [StoredKey]) {
         let fm = FileManager.default
         try? fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -66,7 +67,7 @@ struct LicenseStore {
            (try? Data(contentsOf: file)).flatMap({ try? JSONDecoder().decode([StoredKey].self, from: $0) }) == nil {
             let aside = file.deletingLastPathComponent()
                 .appendingPathComponent("\(file.lastPathComponent).unreadable-\(Int(Date().timeIntervalSince1970))")
-            try? fm.moveItem(at: file, to: aside)
+            guard (try? fm.moveItem(at: file, to: aside)) != nil else { return }
         }
         guard let data = try? JSONEncoder().encode(keys) else { return }
         try? data.write(to: file, options: .atomic)

@@ -2,8 +2,8 @@ import SwiftUI
 @preconcurrency import UserNotifications
 
 /// On the free plan Viaduct keeps a converted extension for a week, then
-/// removes it. Pro keeps them. This owns that clock: the removal, the warnings
-/// before it, and a note once it's gone.
+/// removes it. A license for its browser keeps it. This owns that clock: the
+/// removal, the warnings before it, and a note once it's gone.
 @MainActor
 final class FreePlan {
     static let keepFor: TimeInterval = 7 * 24 * 3600
@@ -17,31 +17,36 @@ final class FreePlan {
     private nonisolated static let reminderPrefix = notificationPrefix + "removal-"
 
     private let history: ConversionHistory
+    private let license: LicenseManager
     private var timer: Timer?
     /// Told about every extension this removes, so the window can say so.
     var onRemoved: ([ConversionRecord]) -> Void = { _ in }
 
-    init(history: ConversionHistory) { self.history = history }
+    init(history: ConversionHistory, license: LicenseManager) {
+        self.history = history
+        self.license = license
+    }
+
+    /// For the app's own license. Not a `= .shared` default: default
+    /// arguments are evaluated off the main actor.
+    convenience init(history: ConversionHistory) {
+        self.init(history: history, license: .shared)
+    }
 
     /// When a conversion made right now gets removed, or nil if it's kept.
-    static func removalDate(licensed: Bool, now: Date = Date()) -> Date? {
-        licensed ? nil : now.addingTimeInterval(keepFor)
+    static func removalDate(unlimited: Bool, now: Date = Date()) -> Date? {
+        unlimited ? nil : now.addingTimeInterval(keepFor)
     }
 
     /// Bring removals, reminders and the timer in line with the license. Safe
     /// to call as often as anything changes. Does nothing until the license
-    /// check has an answer, so a Pro user is never swept while it's running.
+    /// check has an answer, so a paying user is never swept while it's running.
     func sync() {
-        switch LicenseManager.shared.state {
-        case .licensed:
-            history.keepAllFreeExtensions()
-        case .unlicensed:
-            let removed = history.removeExpiredFreeExtensions()
-            removed.forEach(notifyRemoved)
-            if !removed.isEmpty { onRemoved(removed) }
-        default:
-            return
-        }
+        guard license.hasLaunchAnswer else { return }
+        history.keepFreeExtensions(where: { _ in license.unlimited(.safari) })
+        let removed = history.removeExpiredFreeExtensions()
+        removed.forEach(notifyRemoved)
+        if !removed.isEmpty { onRemoved(removed) }
         reconcileReminders()
         scheduleNextSweep()
     }
@@ -91,7 +96,7 @@ final class FreePlan {
                     content.title = warning.daysLeft == 1
                         ? "\(warning.name) will be removed tomorrow"
                         : "\(warning.name) will be removed in \(warning.daysLeft) days"
-                    content.body = "Upgrade to Pro to keep it."
+                    content.body = "Upgrade to keep it."
                     content.sound = .default
                     let trigger = UNTimeIntervalNotificationTrigger(
                         timeInterval: max(60, warning.fireAt.timeIntervalSinceNow), repeats: false)
@@ -108,7 +113,7 @@ final class FreePlan {
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = "Removed \(name)"
-            content.body = "Upgrade to Pro to keep the ones you convert."
+            content.body = "Upgrade to keep the ones you convert."
             content.sound = .default
             center.add(UNNotificationRequest(identifier: Self.notificationPrefix + "removed-\(rec.id.uuidString)",
                                              content: content, trigger: nil))
@@ -118,7 +123,7 @@ final class FreePlan {
 
 /// Shows Viaduct's notifications while it's the frontmost app (macOS hides an
 /// app's own notifications then unless it asks), and routes clicks: a warning
-/// opens the Pro screen; anything else opens the window, which is where the
+/// opens the paywall; anything else opens the window, which is where the
 /// "was removed" message waits.
 final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationRouter()
@@ -136,8 +141,8 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
         let warning = id.hasPrefix(FreePlan.notificationPrefix + "removal-")
         DispatchQueue.main.async {
             MainWindow.show()
-            if warning, !LicenseManager.shared.isLicensed {
-                ConverterViewModel.shared.showPaywall = true
+            if warning, !LicenseManager.shared.unlimited(.safari) {
+                ConverterViewModel.shared.presentPaywall(for: .safari)
             }
             completionHandler()
         }
@@ -145,8 +150,8 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
 }
 
 extension View {
-    /// The "was removed, upgrade to Pro" message on the main window, shown
-    /// once for whatever the free plan removed since the user last saw it.
+    /// The "was removed, upgrade" message on the main window, shown once for
+    /// whatever the free plan removed since the user last saw it.
     func freePlanRemovedNotice(vm: ConverterViewModel, blocked: Bool) -> some View {
         modifier(FreePlanRemovedNotice(vm: vm, blocked: blocked))
     }
@@ -165,14 +170,14 @@ private struct FreePlanRemovedNotice: ViewModifier {
 
     func body(content: Content) -> some View {
         content.alert(Self.title(for: vm.removedOnFreePlan), isPresented: showing) {
-            Button("Upgrade to Pro") {
+            Button("Upgrade") {
                 vm.removedOnFreePlan = []
                 // One modal at a time per window: let the alert leave first.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.showPaywall = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.presentPaywall(for: .safari) }
             }
             Button("Not Now", role: .cancel) { vm.removedOnFreePlan = [] }
         } message: {
-            Text("Upgrade to Pro to keep the ones you convert.")
+            Text("Upgrade to keep the ones you convert.")
         }
     }
 

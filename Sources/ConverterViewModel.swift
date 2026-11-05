@@ -43,8 +43,22 @@ final class ConverterViewModel: ObservableObject {
     /// card has to say out loud.
     @Published var lastBuildAdHoc = false
 
-    /// Set when an unlicensed user hits the free-quota wall; drives the paywall sheet.
+    /// Drives the paywall sheet. Open it with `presentPaywall(for:)`.
     @Published var showPaywall = false
+    /// The browser that ran out of free conversions, so the paywall can point
+    /// at what unlocks it. Nil when the paywall was opened some other way.
+    @Published private(set) var paywallBrowser: Browser?
+
+    func presentPaywall(for browser: Browser?) {
+        paywallBrowser = browser
+        showPaywall = true
+    }
+
+    /// The paywall sheet calls this once it's gone, so whatever opens it next
+    /// doesn't inherit the last browser.
+    func paywallDidClose() {
+        paywallBrowser = nil
+    }
 
     /// Free-plan extensions Viaduct removed that the user hasn't been told
     /// about in the window yet. Saved, because the removal usually happens
@@ -139,12 +153,13 @@ final class ConverterViewModel: ObservableObject {
     }
 
     /// Auto-update installed store extensions when the Chrome Web Store ships a
-    /// newer version. Off by default — it polls the CWS, so it's opt-in. Pro-only.
+    /// newer version. Off by default — it polls the CWS, so it's opt-in. Needs
+    /// a license.
     @AppStorage("autoUpdate") var autoUpdate = false
 
-    /// The stored toggle AND a valid license: a free user can't enable CWS
-    /// polling by flipping the persisted flag some other way.
-    var autoUpdateEnabled: Bool { autoUpdate && LicenseManager.shared.isLicensed }
+    /// The stored toggle AND a license that unlocks it: a free user can't
+    /// enable CWS polling by flipping the persisted flag some other way.
+    var autoUpdateEnabled: Bool { autoUpdate && ExtensionUpdater.isUnlocked(by: LicenseManager.shared.entitlements) }
 
     private let runner = CLIRunner.shared
     private let updater = CLIUpdater.shared
@@ -202,19 +217,22 @@ final class ConverterViewModel: ObservableObject {
         history.pruneDeleted()
         refreshSigningTeams()
         refreshStoreButton()
-        // Auto-update is Pro-only, and the stored license is still being
-        // verified at this point. Wait for the answer instead of reading
-        // "checking" as "unlicensed", which would drop the login item for every
-        // paying user.
-        licenseWatch = LicenseManager.shared.$state
+        // Nothing is decided until the launch check has an answer. After that,
+        // every change to what's unlimited can keep or sweep free-plan
+        // extensions and switch store updates on or off.
+        licenseWatch = LicenseManager.shared.$entitlements
+            .combineLatest(LicenseManager.shared.$hasLaunchAnswer)
+            .filter { $0.1 }
+            .map { $0.0 }
             .removeDuplicates()
             .receive(on: RunLoop.main)
-            .sink { [weak self] state in
-                // Free-plan removals first: buying Pro clears them, and the
-                // login item below has to know whether any are left.
+            .sink { [weak self] entitlements in
+                // Free-plan removals first: a license clears the ones it
+                // covers, and the login item below has to know whether any
+                // are left.
                 self?.freePlan.sync()
-                // Pro after the fact: nothing left to upsell.
-                if state == .licensed { self?.removedOnFreePlan = [] }
+                // Bought after the fact: nothing left to upsell.
+                if entitlements.safari { self?.removedOnFreePlan = [] }
                 self?.startAutoUpdate()
             }
         // Any change to the list (a conversion, a removal from Settings or the
@@ -289,7 +307,7 @@ final class ConverterViewModel: ObservableObject {
     /// per-record weekly gate keeps CWS polling to at most once a week.
     func startAutoUpdate() {
         // Nothing to decide until the license check has an answer.
-        guard LicenseManager.shared.state == .licensed || LicenseManager.shared.state == .unlicensed else { return }
+        guard LicenseManager.shared.hasLaunchAnswer else { return }
         syncLoginItem()
         guard autoUpdateEnabled else { return }
         extensionUpdater.updateIfNeeded()
@@ -309,11 +327,12 @@ final class ConverterViewModel: ObservableObject {
     /// Register/unregister the app as a login item for whatever needs it
     /// running. SMAppService.mainApp — no separate helper bundle/plist to maintain.
     func syncLoginItem() {
+        // Not before the launch check answers: "no answer yet" read as "no
+        // license" would drop the login item for every paying user.
+        guard LicenseManager.shared.hasLaunchAnswer else { return }
         do {
-            // Background features need the app relaunched at login so their
-            // timers survive reboots: the weekly store update, and the free-plan
-            // removal that would otherwise never happen if the user just quit.
-            if autoUpdateEnabled || !history.pendingFreeRemovals.isEmpty {
+            if Self.wantsLoginItem(autoUpdate: autoUpdate, records: history.records,
+                                   entitlements: LicenseManager.shared.entitlements) {
                 if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
             } else {
                 if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
@@ -321,6 +340,16 @@ final class ConverterViewModel: ObservableObject {
         } catch {
             appendLog("⚠︎ Login-item update failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Background features need the app relaunched at login so their timers
+    /// survive reboots: the weekly store update, when it covers a record, and
+    /// the free-plan removal that would otherwise never happen if the user
+    /// just quit.
+    nonisolated static func wantsLoginItem(autoUpdate: Bool, records: [ConversionRecord],
+                                           entitlements: Entitlements) -> Bool {
+        (autoUpdate && records.contains { ExtensionUpdater.covers($0, entitlements: entitlements) })
+            || records.contains { $0.freeRemovesAt != nil }
     }
 
     // MARK: - Logging
@@ -444,11 +473,11 @@ final class ConverterViewModel: ObservableObject {
                     chromeId: pendingChromeId ?? pendingStoreId
                         ?? ExtensionIdentity.chromeId(forSource: options.inputPath),
                     version: extInfo?.version,
-                    freeRemovesAt: FreePlan.removalDate(licensed: LicenseManager.shared.isLicensed))
+                    freeRemovesAt: FreePlan.removalDate(unlimited: LicenseManager.shared.unlimited(.safari)))
         pendingStoreId = nil
         pendingChromeId = nil
-        // Count this against the free quota (no-op once licensed).
-        LicenseManager.shared.recordFreeConversion()
+        // Count this against the free quota (does nothing once Safari is unlimited).
+        LicenseManager.shared.recordFreeConversion(.safari)
     }
 
     /// Honest, per-state guidance for the Xcode gate. Each case names exactly
@@ -637,8 +666,8 @@ final class ConverterViewModel: ObservableObject {
             phase = .failed
             return
         }
-        if !LicenseManager.shared.canConvert {
-            showPaywall = true
+        if !LicenseManager.shared.canConvert(.safari) {
+            presentPaywall(for: .safari)
             appendLog("✗ Free conversion limit reached.")
             phase = .idle
             return

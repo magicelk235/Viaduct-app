@@ -43,8 +43,9 @@ struct ConversionRecord: Codable, Identifiable {
     var lastUpdateCheck: Date?
 
     /// When Viaduct removes this extension, for one converted on the free plan.
-    /// Nil for Pro conversions, and for anything converted before the free plan
-    /// had this limit, so those stay. Activating Pro clears it on every record.
+    /// Nil for conversions a license covers, and for anything converted before
+    /// the free plan had this limit, so those stay. Adding a license clears it
+    /// on every record the license covers.
     var freeRemovesAt: Date?
 
     /// Effective app name for rebuilds.
@@ -58,9 +59,12 @@ final class ConversionHistory: ObservableObject {
     @Published private(set) var records: [ConversionRecord] = []
 
     private let key = "conversionHistory"
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
-    init() { load() }
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load()
+    }
 
     func add(name: String, sourcePath: String, appName: String,
              installedPath: String?, build: SigningAccount.Build,
@@ -86,10 +90,17 @@ final class ConversionHistory: ObservableObject {
         records.filter { $0.freeRemovesAt != nil }
     }
 
-    /// Pro keeps everything: forget every free-plan removal date.
-    func keepAllFreeExtensions() {
-        guard records.contains(where: { $0.freeRemovesAt != nil }) else { return }
-        for i in records.indices { records[i].freeRemovesAt = nil }
+    /// A license keeps what it covers: forget the free-plan removal date on
+    /// the records `covered` matches.
+    func keepFreeExtensions(where covered: (ConversionRecord) -> Bool) {
+        var kept = records
+        var changed = false
+        for i in kept.indices where kept[i].freeRemovesAt != nil && covered(kept[i]) {
+            kept[i].freeRemovesAt = nil
+            changed = true
+        }
+        guard changed else { return }
+        records = kept
         save()
     }
 
