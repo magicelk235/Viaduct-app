@@ -27,8 +27,9 @@ enum HelperAgent {
         guard let runtime = bundledRuntime(helperURL: helper) else {
             fail("node or persist.mjs is missing from the app around \(helper.path)")
         }
-        // The app registers the agent itself, so persist must never write or
-        // load a launchd job of its own.
+        // Tells supervise the app runs it, so it appends its lines to agent.log
+        // itself: launchd throws stderr away, since the plist has no
+        // StandardErrorPath.
         guard setenv("LAVADUCT_PERSIST_AGENT", "external", 1) == 0 else {
             let reason = String(cString: strerror(errno))
             fail("can't set LAVADUCT_PERSIST_AGENT: \(reason)")
@@ -41,8 +42,10 @@ enum HelperAgent {
         fail("can't run \(runtime.node.path): \(reason)")
     }
 
+    /// NSLog puts the reason in the unified log, where a run under launchd can
+    /// still be read, and on stderr for a run from Terminal.
     private static func fail(_ reason: String) -> Never {
-        FileHandle.standardError.write(Data("ViaductHelper: \(reason)\n".utf8))
+        NSLog("ViaductHelper: %@", reason)
         exit(1)
     }
 }
