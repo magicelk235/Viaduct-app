@@ -46,9 +46,21 @@ targets:
         type: folder
         buildPhase: resources
         optional: true
+      # The Firefox agent's launchd plist, where SMAppService.agent(plistName:)
+      # looks for it.
+      - path: Resources/LaunchAgents/com.magicelk235.viaduct.firefox-agent.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
     dependencies:
       - target: ViaductExtension
         embed: true
+      - target: ViaductHelper
+        embed: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
       - package: Sparkle
     info:
       path: Info.plist
@@ -155,11 +167,28 @@ targets:
             || { echo "error: manifest version not stamped in $manifest"; exit 1; }
         basedOnDependencyAnalysis: false
 
+  # The program the Firefox agent's plist runs. `ViaductHelper agent` turns
+  # into the bundled node running persist.mjs.
+  ViaductHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Helper
+    settings:
+      base:
+        PRODUCT_NAME: ViaductHelper
+        PRODUCT_BUNDLE_IDENTIFIER: com.magicelk235.viaduct.helper
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        SKIP_INSTALL: YES
+        ENABLE_HARDENED_RUNTIME: false
+
   ViaductTests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - path: Tests/ViaductTests
+      - path: Helper/HelperAgent.swift
     dependencies:
       - target: Viaduct
     settings:

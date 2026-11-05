@@ -92,11 +92,11 @@ echo "==> Staging to $WORK for signing"
 rm -rf "$WORK" && mkdir -p "$WORK"
 ditto "$REL/Viaduct.app" "$APP"
 
-# Sign inside-out (Sparkle's helpers, then the framework, then the extension,
-# then the app). --timestamp (secure, not =none) and --options runtime are
-# MANDATORY for notarization. Nothing deep-signs for us here, so every nested
-# executable inside Sparkle.framework has to be named explicitly — an unsigned
-# one fails notarization for the whole app.
+# Sign inside-out (Sparkle's helpers, then the framework, then ViaductHelper
+# and the extension, then the app). --timestamp (secure, not =none) and
+# --options runtime are MANDATORY for notarization. Nothing deep-signs for us
+# here, so every nested executable inside Sparkle.framework has to be named
+# explicitly — an unsigned one fails notarization for the whole app.
 echo "==> Signing with Developer ID"
 xattr -cr "$APP"
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
@@ -109,6 +109,8 @@ if [ -d "$SPARKLE" ]; then
   done
   codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$SPARKLE"
 fi
+codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
+  "$APP/Contents/Helpers/ViaductHelper"
 codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
   --entitlements "$EXT_ENT" "$APPEX"
 codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
