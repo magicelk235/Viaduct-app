@@ -343,7 +343,7 @@ struct UserModeView: View {
         switch vm.phase {
         case .idle where vm.options.inputPath.isEmpty:
             // Firefox takes one extension at a time for now.
-            Button("Choose extension") { vm.pickInput(allowBatch: vm.options.browser == .safari) }
+            Button("Choose extension") { vm.pickInput(allowBatch: vm.targetBrowser == .safari) }
                 .buttonStyle(.raycastPrimary)
                 .frame(maxWidth: .infinity)
 
@@ -353,7 +353,7 @@ struct UserModeView: View {
             VStack(spacing: Theme.Space.sm) {
                 Button {
                     vm.resetUserFlow()
-                    vm.pickInput(allowBatch: vm.options.browser == .safari)
+                    vm.pickInput(allowBatch: vm.targetBrowser == .safari)
                 } label: {
                     Text("Choose another extension")
                         .frame(maxWidth: .infinity)
@@ -497,7 +497,7 @@ struct UserModeView: View {
     private func reselect() {
         if vm.isRunning { vm.cancel() }
         vm.resetUserFlow()
-        vm.pickInput(allowBatch: vm.options.browser == .safari)
+        vm.pickInput(allowBatch: vm.targetBrowser == .safari)
     }
 
     /// Label for a one-click Xcode fix. `-runFirstLaunch` installs packages and
@@ -567,7 +567,7 @@ struct UserModeView: View {
             guard let url else { return }
             DispatchQueue.main.async {
                 if vm.phase != .idle { vm.resetUserFlow() }
-                vm.selectInput(path: url.path)
+                vm.chooseInput(path: url.path)
             }
         }
         return true

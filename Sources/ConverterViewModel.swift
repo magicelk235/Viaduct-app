@@ -1411,6 +1411,14 @@ final class ConverterViewModel: ObservableObject {
         startCompatibilityCheck(path: path)
     }
 
+    /// An extension the user picked or dropped on the window. It converts for
+    /// the browser the picker shows, even where Convert Again or a store
+    /// install left the card set to the other one.
+    func chooseInput(path: String) {
+        options.browser = targetBrowser
+        selectInput(path: path)
+    }
+
     /// Say up front when it can't work, before Xcode, signing or a free
     /// conversion come into it. A batch starts converting straight away and
     /// gets its answer from the run instead.
@@ -1458,7 +1466,7 @@ final class ConverterViewModel: ObservableObject {
         if panel.urls.count > 1 {
             BatchConvert.start(panel.urls, vm: self)
         } else if let url = panel.url {
-            selectInput(path: url.path)
+            chooseInput(path: url.path)
         }
     }
 
