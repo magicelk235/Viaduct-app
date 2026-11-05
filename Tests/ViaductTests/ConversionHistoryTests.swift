@@ -104,6 +104,26 @@ final class ConversionHistoryTests: XCTestCase {
         XCTAssertEqual(history.records.count, 1)
     }
 
+    func testStorePageRemoveTakesOnlyThatBrowsersInstall() async throws {
+        let (history, persist) = makeHistory(kept: [FirefoxFixtures.addon()])
+        let app = TempDir.make().appendingPathComponent("Dark Reader.app")
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        history.add(browser: .safari, name: "Dark Reader", sourcePath: TempDir.make().appendingPathComponent("Dark Reader.crx").path,
+                    appName: "Dark Reader", installedPath: app.path, adHoc: false, iconData: nil,
+                    storeId: "eimadpbcbfnmbkopoojfekhnkhdbieeh")
+        addFirefox(history)                                            // the same store id, in Firefox
+        let matchedSafari = await history.removeByStoreId("eimadpbcbfnmbkopoojfekhnkhdbieeh", browser: .safari)
+        XCTAssertTrue(matchedSafari)
+        XCTAssertEqual(history.records.map(\.browser), [.firefox])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: app.path))
+        XCTAssertTrue(persist.uninstalls.isEmpty)
+        let matchedAgain = await history.removeByStoreId("eimadpbcbfnmbkopoojfekhnkhdbieeh", browser: .safari)
+        XCTAssertFalse(matchedAgain)                                   // nothing left in Safari
+        await history.removeByStoreId("eimadpbcbfnmbkopoojfekhnkhdbieeh", browser: .firefox)
+        XCTAssertEqual(persist.uninstalls, [.init(id: "darkreader@viaduct", profile: "/profiles/a", restart: false)])
+        XCTAssertTrue(history.records.isEmpty)
+    }
+
     func testRestartFirefoxIsOfferedOnlyWhenFirefoxHasToRestart() async throws {
         let (history, persist) = makeHistory(kept: [FirefoxFixtures.addon()])
         addFirefox(history)

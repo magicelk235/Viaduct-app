@@ -80,16 +80,18 @@ final class FreePlan {
         }
         sweeping = true
         var removed: [ConversionRecord] = []
+        var sweptAt: Date
         repeat {
             sweepAgain = false
+            sweptAt = now()
             history.keepFreeExtensions(where: { license.unlimited($0.browser) })
-            removed += await history.removeExpiredFreeExtensions(now: now())
+            removed += await history.removeExpiredFreeExtensions(now: sweptAt)
         } while sweepAgain
         sweeping = false
         removed.forEach(notifyRemoved)
         if !removed.isEmpty { onRemoved(removed) }
         reconcileReminders()
-        scheduleNextSweep()
+        scheduleNextSweep(sweptAt: sweptAt)
         return removed
     }
 
@@ -110,14 +112,16 @@ final class FreePlan {
         return UUID(uuidString: String(rest[..<dash]))
     }
 
-    /// Wake for the next sweep due. Re-armed on every sync.
-    private func scheduleNextSweep() {
+    /// Wake for the next sweep due. Re-armed on every sync. `sweptAt` is the
+    /// time the last sweep went by: only a removal due by then can have
+    /// failed, while one that came due as the sweep waited on Firefox is
+    /// simply next.
+    private func scheduleNextSweep(sweptAt: Date) {
         timer?.invalidate()
         timer = nil
-        let now = self.now()
         guard let next = Self.nextSweepDate(removalDates: history.pendingFreeRemovals.compactMap(\.freeRemovesAt),
-                                            now: now) else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: max(1, next.timeIntervalSince(now) + 1),
+                                            now: sweptAt) else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: max(1, next.timeIntervalSince(now()) + 1),
                                      repeats: false) { [weak self] _ in
             Task { @MainActor in self?.sync() }
         }

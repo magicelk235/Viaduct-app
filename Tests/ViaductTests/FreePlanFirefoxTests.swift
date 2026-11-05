@@ -31,6 +31,7 @@ final class FreePlanFirefoxTests: XCTestCase {
         let removed = await plan.runSync()
         XCTAssertTrue(removed.isEmpty)
         XCTAssertEqual(history.records.count, 1)
+        XCTAssertEqual(history.records.first?.freeRemovesAt, now.addingTimeInterval(-60))
     }
 
     func testNextSweepDate() {

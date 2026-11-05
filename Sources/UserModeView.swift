@@ -553,7 +553,10 @@ struct RecentConversions: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .transition(.opacity)
             .sheet(item: $selected) { rec in
-                HistoryDetailSheet(record: rec, vm: vm, history: history) { selected = nil }
+                // A removal that ends late must not close another record's sheet.
+                HistoryDetailSheet(record: rec, vm: vm, history: history) {
+                    if selected?.id == rec.id { selected = nil }
+                }
             }
         }
     }
@@ -680,12 +683,16 @@ struct HistoryDetailSheet: View {
                     Button("Close") { dismiss() }
                         .buttonStyle(.raycastGhost)
                         .keyboardShortcut(.cancelAction)
+                        // The removal's outcome, a failure or the Restart Firefox
+                        // offer, shows in this sheet, so it stays up until then.
+                        .disabled(removing)
                 }
             }
         }
         .padding(Theme.Space.lg)
         .frame(width: 340)
         .background(AmbientBackground())
+        .interactiveDismissDisabled(removing)
         .removalFailureAlert($removalFailure) { _ in remove(restartingFirefox: true) }
     }
 
