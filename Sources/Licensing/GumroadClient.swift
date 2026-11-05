@@ -40,14 +40,16 @@ struct GumroadClient: GumroadLicensing {
         if let problem = Self.outcome(status: http.statusCode, body: data) { throw problem }
     }
 
-    /// nil when the key is good. Only a 404 or a 2xx without success means
-    /// Gumroad said no; a rate limit or an outage must never drop a paid key.
+    /// nil when the key is good. Only `success: false` with a 404 or a 2xx
+    /// means Gumroad said no; a rate limit, an outage or an answer without
+    /// `success` must never drop a paid key.
     static func outcome(status: Int, body: Data) -> LicenseError? {
-        guard let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
+        guard let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let success = json["success"] as? Bool else {
             return .unreachable
         }
 
-        guard json["success"] as? Bool == true else {
+        guard success else {
             if status == 404 || (200..<300).contains(status) {
                 return .rejected(json["message"] as? String ?? "Invalid license key.")
             }

@@ -22,14 +22,23 @@ enum PolarConfig {
         string(key).flatMap(URL.init(string:))
     }
 
-    /// Reads one value per tier, with the key suffix spelled like the
-    /// tier's name ("Firefox", "Safari", "Mixed").
+    /// Reads one value per tier. The key suffixes are spelled out here, not
+    /// taken from the tier's name, so renaming a tier in the UI can't lose
+    /// its Polar values. release.sh checks the same key names.
     private static func perTier<Value>(_ read: (String) -> Value?) -> [LicenseTier: Value] {
         var values: [LicenseTier: Value] = [:]
         for tier in LicenseTier.allCases {
-            values[tier] = read(tier.displayName)
+            values[tier] = read(infoPlistSuffix(tier))
         }
         return values
+    }
+
+    private static func infoPlistSuffix(_ tier: LicenseTier) -> String {
+        switch tier {
+        case .firefox: return "Firefox"
+        case .safari: return "Safari"
+        case .mixed: return "Mixed"
+        }
     }
 }
 

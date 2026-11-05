@@ -36,4 +36,16 @@ final class PolarClientTests: XCTestCase {
             XCTAssertEqual($0 as? LicenseError, .unreachable)
         }
     }
+
+    func testWhichForbiddenAnswersMeanNo() {
+        let cases: [(status: Int, body: String, expected: LicenseError)] = [
+            (403, #"{"error":"NotPermitted","detail":"Activation Limit reached"}"#,
+             .activationLimitReached("Activation Limit reached")),
+            (403, #"{"error":"Forbidden","detail":"You are not allowed to do this."}"#, .unreachable),
+            (403, #"{"detail":"Not authenticated"}"#, .unreachable),
+        ]
+        for (status, json, expected) in cases {
+            XCTAssertEqual(PolarClient.error(status: status, body: body(json)), expected, "\(status) \(json)")
+        }
+    }
 }

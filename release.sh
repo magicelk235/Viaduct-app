@@ -64,7 +64,8 @@ MISSING_POLAR=()
 for key in PolarOrganizationID PolarBenefitFirefox PolarBenefitSafari PolarBenefitMixed \
            PolarCheckoutFirefox PolarCheckoutSafari PolarCheckoutMixed PolarPortalURL; do
   value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$REL/Viaduct.app/Contents/Info.plist" 2>/dev/null || true)"
-  [ -n "$value" ] || MISSING_POLAR+=("$key")
+  # PolarConfig trims, so a value of only whitespace counts as empty there too.
+  [ -n "${value//[[:space:]]/}" ] || MISSING_POLAR+=("$key")
 done
 if [ ${#MISSING_POLAR[@]} -gt 0 ]; then
   if [ "$NOTARIZE" = 1 ]; then

@@ -32,7 +32,7 @@ final class KeyEntry: ObservableObject {
     /// Adds the typed key. Success empties the field. A failure leaves the key
     /// in it, so it can be fixed instead of pasted again.
     func submit(to license: LicenseManager) async {
-        guard hasText else { return }
+        guard hasText, !license.isAddingKey else { return }
         error = nil
         do {
             try await license.addKey(text)
@@ -56,6 +56,7 @@ struct KeyErrorText: View {
                 .tracked()
                 .font(Theme.Font.caption())
                 .foregroundStyle(Theme.Colors.accentRed)
+                .fixedSize(horizontal: false, vertical: true)
             if case .activationLimitReached = error, let portal = PolarConfig.portalURL {
                 Button("Manage Activations") { NSWorkspace.shared.open(portal) }
                     .buttonStyle(.raycastTertiary)
