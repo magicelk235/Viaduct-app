@@ -347,7 +347,7 @@ struct SetupView: View {
                 ? "No conversion limit, and your extensions stay on this Mac."
                 : nil
         case .firefox:
-            if flow.firefox == nil { return "Viaduct puts your extensions in Firefox. It's free to download." }
+            if flow.firefox == nil { return "Viaduct puts your extensions in Firefox. Firefox is free to download." }
             return flow.isDone(.firefox)
                 ? "Your add-ons stay in Firefox when it quits."
                 : "Firefox restarts once when your first add-on goes in. Your tabs come back."

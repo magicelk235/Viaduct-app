@@ -113,6 +113,7 @@ struct SettingsView: View {
                 case .general:
                     appUpdateCard
                     cliCard
+                    FirefoxAgentSection(history: history)
                     warningsCard
                     SetupAgainSection(vm: vm)
                     supportCard
@@ -120,6 +121,7 @@ struct SettingsView: View {
                     licenseCard
                 case .extensions:
                     storeCard
+                    FirefoxSection()
                     MigrationSection(vm: vm, history: history)
                     // Kept last: the list grows with every conversion, so it
                     // shouldn't push the other sections down.
