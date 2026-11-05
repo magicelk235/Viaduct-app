@@ -168,12 +168,18 @@ targets:
         basedOnDependencyAnalysis: false
 
   # The program the Firefox agent's plist runs. `ViaductHelper agent` turns
-  # into the bundled node running persist.mjs.
+  # into the bundled node running persist.mjs. When Firefox starts it, it's
+  # the Add to Firefox button's native messaging host, which shares the app's
+  # store-request code below.
   ViaductHelper:
     type: tool
     platform: macOS
     sources:
       - path: Helper
+      - path: Sources/Features/Shared/Browser.swift
+      - path: Sources/Features/Shared/ExtensionIdentity.swift
+      - path: Sources/Features/Shared/StoreRequest.swift
+      - path: Sources/Features/FirefoxStoreButton/NativeHostProtocol.swift
     settings:
       base:
         PRODUCT_NAME: ViaductHelper
