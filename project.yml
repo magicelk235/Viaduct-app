@@ -82,7 +82,7 @@ targets:
         # macOS asks before one app reads another's data. Import from Chrome and
         # bringing settings over read the browser's profile folder, and without
         # a reason here the prompt reads like something to deny.
-        NSAppDataUsageDescription: "Viaduct reads the extensions installed in your browsers, and their saved settings, so it can bring them over to Safari."
+        NSAppDataUsageDescription: "Viaduct reads the extensions installed in your browsers, and their saved settings, so it can bring them over to Safari or Firefox."
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - viaduct

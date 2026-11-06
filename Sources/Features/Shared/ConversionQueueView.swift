@@ -46,6 +46,7 @@ struct ConversionQueueView: View {
         switch queue.stopReason {
         case .needsUpgrade: return "Free conversions used up"
         case .needsXcode:   return "Xcode is needed"
+        case .needsFirefox(let gate): return gate.headline
         case .cancelled:    return "Stopped"
         case nil:           return "Finished"
         }
@@ -64,11 +65,15 @@ struct ConversionQueueView: View {
             parts.append("the rest need a \(browser.displayName) license")
         case .needsXcode:
             parts.append("install Xcode, then run the rest again")
+        case .needsFirefox(let gate):
+            parts.append(gate.batchHint)
         default:
             break
         }
         var text = parts.joined(separator: ", ") + "."
-        if done > 0 { text += " Turn them on in Safari's Extensions settings." }
+        if ConversionQueue.doneBrowsers(queue.items).contains(.safari) {
+            text += " Turn them on in Safari's Extensions settings."
+        }
         return text
     }
 
@@ -77,28 +82,57 @@ struct ConversionQueueView: View {
         HStack {
             if queue.isRunning {
                 Spacer()
+                // Off at the same moments as Cancel on the card: an install
+                // that's under way can't be pulled back halfway.
                 Button("Stop") { queue.cancel() }
                     .buttonStyle(.raycastTertiary)
+                    .disabled(vm.cancelDisabled)
+                    .opacity(vm.cancelDisabled ? 0.4 : 1)
             } else {
                 Button("Close") { queue.dismiss() }
                     .buttonStyle(.raycastGhost)
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                if case .needsUpgrade(let browser) = queue.stopReason {
+                switch queue.stopReason {
+                case .needsUpgrade(let browser):
                     Button("Upgrade") {
                         queue.dismiss()
                         // One sheet at a time per window: let this one leave first.
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { vm.presentPaywall(for: browser) }
                     }
                     .buttonStyle(.raycastPrimary)
-                } else if queue.doneCount > 0 {
-                    Button("Open Safari Settings") {
-                        queue.openSafariExtensionSettings()
-                        queue.dismiss()
-                    }
-                    .buttonStyle(.raycastPrimary)
+                case .needsFirefox(let gate):
+                    Button(gate.actionTitle) { gate.perform() }
+                        .buttonStyle(.raycastPrimary)
+                default:
+                    afterBatchButtons
                 }
             }
+        }
+    }
+
+    /// Where the batch's extensions get used: Safari's settings to turn them
+    /// on, Firefox to see them. With both, Safari's is the main one.
+    @ViewBuilder
+    private var afterBatchButtons: some View {
+        let done = ConversionQueue.doneBrowsers(queue.items)
+        if done.contains(.firefox) {
+            let openFirefox = Button("Open Firefox") {
+                queue.openFirefox()
+                queue.dismiss()
+            }
+            if done.contains(.safari) {
+                openFirefox.buttonStyle(.raycastTertiary)
+            } else {
+                openFirefox.buttonStyle(.raycastPrimary)
+            }
+        }
+        if done.contains(.safari) {
+            Button("Open Safari Settings") {
+                queue.openSafariExtensionSettings()
+                queue.dismiss()
+            }
+            .buttonStyle(.raycastPrimary)
         }
     }
 
@@ -131,8 +165,13 @@ struct ConversionQueueView: View {
         switch item.status {
         case .pending:              return item.note
         case .preparing:            return "Getting it ready"
-        case .converting:           return vm.phase == .idle ? "Starting" : vm.phase.title(for: vm.options.browser)
-        case .waiting:              return "Answer the signing question in the Viaduct window"
+        case .converting:
+            if vm.showFirefoxRestartPrompt { return "Answer the Firefox question in the Viaduct window" }
+            return vm.phase == .idle ? "Starting" : vm.phase.title(for: vm.options.browser)
+        case .waiting:
+            return vm.showFirefoxDisclosure
+                ? "Answer the Firefox question in the Viaduct window"
+                : "Answer the signing question in the Viaduct window"
         case .done:                 return item.note
         case let .failed(why):      return why
         case let .skipped(why):     return why.isEmpty ? nil : why

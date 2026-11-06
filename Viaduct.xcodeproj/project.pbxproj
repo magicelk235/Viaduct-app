@@ -125,6 +125,7 @@
 		FC1A937DDF2BE791C6955099 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3842807AAA6FB565FA7B44DF /* Assets.xcassets */; };
 		FC9EEA05C4DAF9978F1F732A /* CompatibilityNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = D34F4D6605E9CC563F29DACA /* CompatibilityNotice.swift */; };
 		FD86E0B02A60934111227EA5 /* LicenseSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */; };
+		FE26FFC294FBBAD785CEE9D5 /* FirefoxBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A8780ED316172A672AE799 /* FirefoxBatchTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -196,6 +197,7 @@
 		0D7F56E305526E4B35D84338 /* TempDir.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempDir.swift; sourceTree = "<group>"; };
 		0F117C84E304CC6FEDEDAC0C /* LicenseTierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseTierTests.swift; sourceTree = "<group>"; };
 		1086B824609E8B420E80D68F /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		10A8780ED316172A672AE799 /* FirefoxBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxBatchTests.swift; sourceTree = "<group>"; };
 		10E98F8FC7BC3BA1B2B9E87D /* CompatibilityCheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatibilityCheckTests.swift; sourceTree = "<group>"; };
 		129FB30329F2C8050E59D618 /* ViaductExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ViaductExtension.entitlements; sourceTree = "<group>"; };
 		173C3928435A6B646D91DF6E /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
@@ -364,6 +366,7 @@
 				4069D5979D285640F694A243 /* ConversionHistoryTests.swift */,
 				BF9AA60CBACC4A5E939B9C1F /* ConvertPhaseTests.swift */,
 				0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */,
+				10A8780ED316172A672AE799 /* FirefoxBatchTests.swift */,
 				8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */,
 				F0EB96891F52D94EEECD00C5 /* FirefoxDisclosureTests.swift */,
 				6A63D429B23179821FE53203 /* FirefoxSettingsTests.swift */,
@@ -884,6 +887,7 @@
 				24EFA3D4D3E42B9B3D3B3878 /* ConversionHistoryTests.swift in Sources */,
 				7BBEEE24261712E7252EC0D9 /* ConvertPhaseTests.swift in Sources */,
 				3EF6C94AE2E9349FA45B1B68 /* FirefoxAddonsTests.swift in Sources */,
+				FE26FFC294FBBAD785CEE9D5 /* FirefoxBatchTests.swift in Sources */,
 				140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */,
 				81D3146B4ED290AF0540B801 /* FirefoxDisclosureTests.swift in Sources */,
 				45F547D0F8C46C918FE5C0DE /* FirefoxFakes.swift in Sources */,

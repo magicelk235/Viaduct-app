@@ -342,8 +342,7 @@ struct UserModeView: View {
     private var ctaBlock: some View {
         switch vm.phase {
         case .idle where vm.options.inputPath.isEmpty:
-            // Firefox takes one extension at a time for now.
-            Button("Choose extension") { vm.pickInput(allowBatch: vm.targetBrowser == .safari) }
+            Button("Choose extension") { vm.pickInput(allowBatch: true) }
                 .buttonStyle(.raycastPrimary)
                 .frame(maxWidth: .infinity)
 
@@ -353,7 +352,7 @@ struct UserModeView: View {
             VStack(spacing: Theme.Space.sm) {
                 Button {
                     vm.resetUserFlow()
-                    vm.pickInput(allowBatch: vm.targetBrowser == .safari)
+                    vm.pickInput(allowBatch: true)
                 } label: {
                     Text("Choose another extension")
                         .frame(maxWidth: .infinity)
@@ -497,7 +496,7 @@ struct UserModeView: View {
     private func reselect() {
         if vm.isRunning { vm.cancel() }
         vm.resetUserFlow()
-        vm.pickInput(allowBatch: vm.targetBrowser == .safari)
+        vm.pickInput(allowBatch: true)
     }
 
     /// Label for a one-click Xcode fix. `-runFirstLaunch` installs packages and
@@ -555,8 +554,6 @@ struct UserModeView: View {
         guard vm.phase == .idle || vm.phase == .done || vm.phase == .failed else { return false }
         guard !providers.isEmpty else { return false }
         if providers.count > 1 {
-            // A batch converts for Safari, and Firefox takes one at a time for now.
-            guard vm.targetBrowser == .safari else { return false }
             BatchConvert.loadURLs(from: providers) { urls in
                 if vm.phase != .idle { vm.resetUserFlow() }
                 BatchConvert.start(urls, vm: vm)

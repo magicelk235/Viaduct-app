@@ -5,11 +5,13 @@ import Foundation
 enum BatchConvert {
     @MainActor
     static func start(_ urls: [URL], vm: ConverterViewModel) {
+        // Read now: the picker could change while the manifests are read.
+        let browser = vm.targetBrowser
         Task {
             // Reading each manifest (and unzipping archives to do it) is slow
             // enough to keep off the main thread.
             let items = await Task.detached(priority: .userInitiated) {
-                urls.map { QueueItem.file($0) }
+                urls.map { QueueItem.file($0, browser: browser) }
             }.value
             ConversionQueue.shared.start(items, vm: vm)
         }

@@ -7,7 +7,7 @@ import SafariServices
 struct QueueItem: Identifiable {
     enum Status: Equatable {
         case pending, preparing, converting
-        /// Parked on the signing alert in the main window.
+        /// Parked on the signing alert or the Firefox disclosure in the main window.
         case waiting
         case done
         case failed(String)
@@ -72,6 +72,7 @@ final class ConversionQueue: ObservableObject {
     enum StopReason: Equatable {
         case needsUpgrade(Browser)
         case needsXcode
+        case needsFirefox(FirefoxGate)
         case cancelled
     }
 
@@ -109,6 +110,7 @@ final class ConversionQueue: ObservableObject {
         isPresented = true
         vm.batchActive = true
         vm.signingWarningAnsweredForBatch = false
+        vm.firefoxRestartAnsweredForBatch = nil
         vm.userRunEnded = { [weak self] ok in self?.runEnded(ok) }
         runNext()
     }
@@ -184,9 +186,9 @@ final class ConversionQueue: ObservableObject {
         guard expectingEnd else { return }   // ended synchronously, already handled
 
         if vm.isRunning { return }           // running; runEnded() takes it from here
-        if vm.showAdhocWarning {
+        if vm.showAdhocWarning || vm.showFirefoxDisclosure {
             items[index].status = .waiting
-            watchSigningAnswer(index: index)
+            watchAnswer(index: index)
             return
         }
         expectingEnd = false
@@ -200,16 +202,20 @@ final class ConversionQueue: ObservableObject {
         } else if vm.needsXcode {
             items[index].status = .failed(vm.failureSummary ?? "Xcode is required.")
             finish(reason: .needsXcode)
+        } else if let gate = vm.firefoxGate {
+            // Every Firefox item after this one would stop on the same thing.
+            items[index].status = .failed(vm.failureSummary ?? gate.headline)
+            finish(reason: .needsFirefox(gate))
         } else {
             items[index].status = .failed(vm.failureSummary ?? "The conversion didn't start.")
             runNext()
         }
     }
 
-    /// The signing alert is up. "Convert Anyway" starts the run (and runEnded
-    /// follows); either other button lands the flow in .failed, which stops
-    /// the batch the same way Cancel would.
-    private func watchSigningAnswer(index: Int) {
+    /// The signing alert or the Firefox disclosure is up. Going ahead starts
+    /// the run (and runEnded follows); backing out lands the flow in .failed,
+    /// which stops the batch the same way Cancel would.
+    private func watchAnswer(index: Int) {
         guard let vm else { return }
         phaseWatch = vm.$phase
             .dropFirst()
@@ -229,6 +235,11 @@ final class ConversionQueue: ObservableObject {
                     vm.showPaywall = false
                     self.items[index].status = .pending
                     self.finish(reason: .needsUpgrade(browser))
+                } else if let gate = vm.firefoxGate {
+                    self.phaseWatch = nil
+                    self.expectingEnd = false
+                    self.items[index].status = .failed(vm.failureSummary ?? gate.headline)
+                    self.finish(reason: .needsFirefox(gate))
                 } else if phase == .failed {
                     self.phaseWatch = nil
                     self.expectingEnd = false
@@ -245,6 +256,15 @@ final class ConversionQueue: ObservableObject {
         if ok {
             items[index].status = .done
             items[index].installedPath = vm.installedAppPath
+            if items[index].browser == .firefox, vm.firefoxInstallPending {
+                items[index].note = "Arrives the next time you open Firefox"
+            }
+        } else if let gate = vm.firefoxGate {
+            // No profile, or Viaduct off in Login Items, found once the run was
+            // going. The next item would only stop on it again.
+            items[index].status = .failed(vm.failureSummary ?? gate.headline)
+            finish(reason: .needsFirefox(gate))
+            return
         } else {
             items[index].status = .failed(vm.failureSummary ?? "Conversion failed.")
         }
@@ -261,6 +281,7 @@ final class ConversionQueue: ObservableObject {
         switch reason {
         case .needsUpgrade(let browser): leftover = "Needs a \(browser.displayName) license"
         case .needsXcode:                leftover = "Needs Xcode"
+        case .needsFirefox(let gate):    leftover = gate.skippedNote
         case .cancelled:                 leftover = "Cancelled"
         case nil:                        leftover = ""
         }
@@ -271,22 +292,37 @@ final class ConversionQueue: ObservableObject {
         if let vm {
             vm.batchActive = false
             vm.signingWarningAnsweredForBatch = false
+            vm.firefoxRestartAnsweredForBatch = nil
             vm.userRunEnded = nil
-            // Stopped while the signing question was up: answering it now
-            // would act on a batch that's gone.
+            // Stopped while the signing question or the Firefox disclosure was
+            // up: answering it now would act on a batch that's gone.
             vm.showAdhocWarning = false
-            // The Xcode gate has to stay on screen; anything else goes back to
-            // the empty card so the last item doesn't look like a single run.
-            if reason != .needsXcode, !vm.isRunning { vm.resetUserFlow() }
+            vm.showFirefoxDisclosure = false
+            // The Xcode and Firefox gates have to stay on screen; anything else
+            // goes back to the empty card so the last item doesn't look like a
+            // single run.
+            switch reason {
+            case .needsXcode, .needsFirefox: break
+            default: if !vm.isRunning { vm.resetUserFlow() }
+            }
         }
     }
 
     // MARK: - After the batch
 
+    /// The browsers at least one item went into, which decide how the sheet ends.
+    static func doneBrowsers(_ items: [QueueItem]) -> Set<Browser> {
+        Set(items.filter { $0.status == .done }.map(\.browser))
+    }
+
+    func openFirefox() {
+        FirefoxLocator.find().map(FirefoxLocator.open)
+    }
+
     /// Safari keeps converted extensions off until they're ticked in its
     /// settings, so the batch ends there instead of launching every host app.
     func openSafariExtensionSettings() {
-        let last = items.last { $0.status == .done && $0.installedPath != nil }
+        let last = items.last { $0.status == .done && $0.browser == .safari && $0.installedPath != nil }
         guard let path = last?.installedPath,
               let extensionId = Self.appexBundleId(inHostApp: path) else {
             StoreButton.openSafariSettings()
@@ -306,5 +342,25 @@ final class ConversionQueue: ObservableObject {
         let appex = (try? FileManager.default.contentsOfDirectory(at: plugins, includingPropertiesForKeys: nil))?
             .first { $0.pathExtension == "appex" }
         return appex.flatMap { Bundle(url: $0)?.bundleIdentifier }
+    }
+}
+
+extension FirefoxGate {
+    /// Ends the batch sheet's summary, after the counts.
+    var batchHint: String {
+        switch self {
+        case .notInstalled: return "install Firefox, then run the rest again"
+        case .noProfile: return "open Firefox once, then run the rest again"
+        case .loginItemOff: return "turn Viaduct on in Login Items, then run the rest again"
+        }
+    }
+
+    /// What the items the batch never got to say.
+    var skippedNote: String {
+        switch self {
+        case .notInstalled: return "Needs Firefox"
+        case .noProfile: return "Needs a Firefox profile"
+        case .loginItemOff: return "Needs Viaduct in Login Items"
+        }
     }
 }
