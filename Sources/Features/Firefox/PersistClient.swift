@@ -62,6 +62,8 @@ protocol PersistClientProtocol: Sendable {
     func list() async throws -> [PersistAddon]
     func status() async throws -> PersistStatus
     func profiles(firefox: String?) async throws -> PersistProfiles
+    /// Persist's version and the lavaduct it was built with, e.g. "0.2.0 (lavaduct 0.1.0)".
+    func version() async throws -> String
 }
 
 /// Runs the bundled persist.mjs on the bundled node and reads its JSON answers.
@@ -196,6 +198,11 @@ struct PersistClient: PersistClientProtocol {
         var args = ["profiles", "--json"]
         if let firefox { args += ["--firefox", firefox] }
         return try Self.decode(PersistProfiles.self, from: try await query(args))
+    }
+
+    func version() async throws -> String {
+        String(decoding: try await query(["--version"]), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Runs a read-only command and returns its stdout, or throws when it failed.

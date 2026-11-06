@@ -547,7 +547,8 @@ struct UserModeView: View {
         return IssueReport.conversionFailure(
             extensionName: name, version: vm.extInfo?.version,
             storeId: vm.pendingStoreId ?? ExtensionIdentity.chromeId(forSource: vm.options.inputPath),
-            summary: vm.compatibility?.title ?? vm.failureSummary, log: log, cliVersion: vm.installedVersion)
+            summary: vm.compatibility?.title ?? vm.failureSummary, log: log, cliVersion: vm.installedVersion,
+            browser: vm.options.browser, persistVersion: vm.persistVersion)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -730,7 +731,8 @@ struct HistoryDetailSheet: View {
                     .disabled(removing)
                     Button("Report a Problem") {
                         NSWorkspace.shared.open(IssueReport.convertedButBroken(
-                            extensionName: record.name, version: record.version, storeId: record.storeId))
+                            extensionName: record.name, version: record.version, storeId: record.storeId,
+                            browser: record.browser, cliVersion: vm.installedVersion, persistVersion: vm.persistVersion))
                     }
                     .buttonStyle(.raycastGhost)
                     .help("It installed but doesn't work right in \(record.browser.displayName)")

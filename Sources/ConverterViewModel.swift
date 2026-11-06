@@ -156,6 +156,9 @@ final class ConverterViewModel: ObservableObject {
     @Published var showFirefoxRestartPrompt = false
     /// The last install only arrives the next time Firefox opens.
     @Published private(set) var firefoxInstallPending = false
+    /// The bundled persist's version, for problem reports. Nil until launch
+    /// has asked it, and when it can't run.
+    @Published private(set) var persistVersion: String?
     /// The profile Convert Again installs into, so the new install replaces the
     /// one its record is for. Set after the record's input is picked, since
     /// picking an input drops it; the next Firefox run uses it up.
@@ -269,6 +272,7 @@ final class ConverterViewModel: ObservableObject {
         refreshSigningTeams()
         refreshStoreButton()
         refreshFirefox()
+        Task { persistVersion = try? await FirefoxAddons.shared.persist.version() }
         // After an update the agent still runs the old build's persist.
         do {
             try FirefoxAddons.shared.restartAgentAfterUpdate()

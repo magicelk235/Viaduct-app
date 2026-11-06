@@ -15,6 +15,7 @@ final class FakeEvents { var events: [String] = [] }
     var installResult: Result<PersistResult, PersistError> = .success(FirefoxFixtures.result())
     var uninstallError: PersistError?
     var listError: PersistError?
+    var versionResult: Result<String, PersistError> = .success("0.2.0 (lavaduct 0.1.0)")
     var onList: (() -> Void)?
     /// Awaited while an install runs, after a successful one is kept, the way
     /// persist records an add-on before it waits on Firefox.
@@ -54,6 +55,8 @@ final class FakeEvents { var events: [String] = [] }
     func status() async throws -> PersistStatus { statusResult }
 
     func profiles(firefox: String?) async throws -> PersistProfiles { profilesResult }
+
+    func version() async throws -> String { try versionResult.get() }
 }
 
 /// The Firefox agent, as a status the test sets and register/unregister calls it counts.

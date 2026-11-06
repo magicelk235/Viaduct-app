@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		06DD26A7C7920C7AF8FDFBC3 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4706037E93DBAA4A3F086E94 /* App.swift */; };
+		074D10D83101D9BA1FB479EB /* IssueReportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D167B2D0899B2A33C5C51C /* IssueReportTests.swift */; };
 		0887E9BF888BD0BC0A6B4B02 /* TestDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D961B10C9B4F47A1DDCD97 /* TestDefaults.swift */; };
 		08A78FAFF0EED420FA4C8619 /* FirefoxStoreButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF141A0FFF2C3490E0B57436 /* FirefoxStoreButton.swift */; };
 		08ACA19DDF0FDE70CFD912DC /* FreePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71BC154785D7907203EFAB37 /* FreePlan.swift */; };
@@ -234,6 +235,7 @@
 		4C05D702FBDB0409D178D944 /* LicenseFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseFixtures.swift; sourceTree = "<group>"; };
 		4F6C2EDE51EFD41F45415DBF /* FirefoxAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxAgent.swift; sourceTree = "<group>"; };
 		524A7697778E6A796AD538D7 /* StoreRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreRequestTests.swift; sourceTree = "<group>"; };
+		53D167B2D0899B2A33C5C51C /* IssueReportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IssueReportTests.swift; sourceTree = "<group>"; };
 		54450BBE8A7C1AB7A103C71D /* InstallProgressBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallProgressBridge.swift; sourceTree = "<group>"; };
 		5744E524CE6E44F5FFCCA47F /* FirefoxStoreButtonCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxStoreButtonCard.swift; sourceTree = "<group>"; };
 		57EF2AA67C8160B7269036B6 /* LicenseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseManager.swift; sourceTree = "<group>"; };
@@ -386,6 +388,7 @@
 				E64830EE88379F454793DD06 /* FreePlanFirefoxTests.swift */,
 				189162E0C18399C5A150EAEB /* GumroadClientTests.swift */,
 				86F58194969B90E5FFB81596 /* HelperAgentTests.swift */,
+				53D167B2D0899B2A33C5C51C /* IssueReportTests.swift */,
 				BA7519856F44CED6893C97FF /* LicenseManagerTests.swift */,
 				85135CE31BAB02A65A5A2872 /* LicenseStoreTests.swift */,
 				F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */,
@@ -915,6 +918,7 @@
 				D927B6BDE50444AC288DEDDB /* GumroadClientTests.swift in Sources */,
 				8305D547CB19BFDB37A9B391 /* HelperAgent.swift in Sources */,
 				1F2ED729945FC8BB99702E9D /* HelperAgentTests.swift in Sources */,
+				074D10D83101D9BA1FB479EB /* IssueReportTests.swift in Sources */,
 				E0077D70C9E11D959B5EB4E7 /* LicenseFixtures.swift in Sources */,
 				1E38CDD8DD767ACBFDF5D7D3 /* LicenseManagerTests.swift in Sources */,
 				415890B6951DB7C0CDAF8652 /* LicenseStoreTests.swift in Sources */,

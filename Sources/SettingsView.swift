@@ -173,7 +173,7 @@ struct SettingsView: View {
         **What I expected:**
 
         ---
-        Viaduct \(app) · CLI \(vm.installedVersion)
+        Viaduct \(app) · CLI \(vm.installedVersion)\(vm.persistVersion.map { " · persist \($0)" } ?? "")
         \(ProcessInfo.processInfo.operatingSystemVersionString)
         """
         if let fail = vm.failureSummary {
