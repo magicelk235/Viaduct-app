@@ -71,8 +71,11 @@ struct ConversionQueueView: View {
             break
         }
         var text = parts.joined(separator: ", ") + "."
-        if ConversionQueue.doneBrowsers(queue.items).contains(.safari) {
-            text += " Turn them on in Safari's Extensions settings."
+        let doneBrowsers = ConversionQueue.doneBrowsers(queue.items)
+        if doneBrowsers.contains(.safari) {
+            text += doneBrowsers.count > 1
+                ? " Turn the Safari ones on in Safari's Extensions settings."
+                : " Turn them on in Safari's Extensions settings."
         }
         return text
     }

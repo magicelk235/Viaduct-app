@@ -50,6 +50,15 @@ final class FirefoxBatchTests: XCTestCase {
         XCTAssertEqual(ConversionQueue.doneBrowsers([x]), [])
     }
 
+    func test_firefoxGateSkipsOnlyTheFirefoxItemsLeft() {
+        func item(_ browser: Browser, _ status: QueueItem.Status) -> QueueItem {
+            var i = QueueItem(name: "x", browser: browser) { URL(fileURLWithPath: "/") }; i.status = status; return i
+        }
+        let items = [item(.firefox, .done), item(.firefox, .failed("gate")), item(.safari, .pending),
+                     item(.firefox, .pending), item(.safari, .pending), item(.firefox, .pending)]
+        XCTAssertEqual(ConversionQueue.skippedByFirefoxGate(items), [3, 5])
+    }
+
     func test_gatesWordTheBatchStop() {
         XCTAssertEqual(FirefoxGate.notInstalled.batchHint, "install Firefox, then run the rest again")
         XCTAssertEqual(FirefoxGate.noProfile.batchHint, "open Firefox once, then run the rest again")

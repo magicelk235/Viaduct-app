@@ -94,6 +94,9 @@ final class ConversionQueue: ObservableObject {
     /// so a task from a stopped batch can resume after the next one started;
     /// it checks this before touching `items`.
     private var batchID = UUID()
+    /// A Firefox gate one item ran into. The Firefox items after it are
+    /// skipped, Safari ones keep going, and the batch ends on this gate.
+    private var firefoxGateHit: FirefoxGate?
 
     var doneCount: Int { items.filter { $0.status == .done }.count }
     var finishedCount: Int { items.filter { $0.status.isFinished }.count }
@@ -106,6 +109,7 @@ final class ConversionQueue: ObservableObject {
         items = newItems
         stopReason = nil
         batchID = UUID()
+        firefoxGateHit = nil
         isRunning = true
         isPresented = true
         vm.batchActive = true
@@ -203,9 +207,9 @@ final class ConversionQueue: ObservableObject {
             items[index].status = .failed(vm.failureSummary ?? "Xcode is required.")
             finish(reason: .needsXcode)
         } else if let gate = vm.firefoxGate {
-            // Every Firefox item after this one would stop on the same thing.
             items[index].status = .failed(vm.failureSummary ?? gate.headline)
-            finish(reason: .needsFirefox(gate))
+            hitFirefoxGate(gate)
+            runNext()
         } else {
             items[index].status = .failed(vm.failureSummary ?? "The conversion didn't start.")
             runNext()
@@ -239,7 +243,8 @@ final class ConversionQueue: ObservableObject {
                     self.phaseWatch = nil
                     self.expectingEnd = false
                     self.items[index].status = .failed(vm.failureSummary ?? gate.headline)
-                    self.finish(reason: .needsFirefox(gate))
+                    self.hitFirefoxGate(gate)
+                    self.runNext()
                 } else if phase == .failed {
                     self.phaseWatch = nil
                     self.expectingEnd = false
@@ -261,10 +266,9 @@ final class ConversionQueue: ObservableObject {
             }
         } else if let gate = vm.firefoxGate {
             // No profile, or Viaduct off in Login Items, found once the run was
-            // going. The next item would only stop on it again.
+            // going. The Firefox items left would only stop on it again.
             items[index].status = .failed(vm.failureSummary ?? gate.headline)
-            finish(reason: .needsFirefox(gate))
-            return
+            hitFirefoxGate(gate)
         } else {
             items[index].status = .failed(vm.failureSummary ?? "Conversion failed.")
         }
@@ -273,7 +277,19 @@ final class ConversionQueue: ObservableObject {
         DispatchQueue.main.async { [weak self] in self?.runNext() }
     }
 
+    /// Every Firefox item still waiting would stop on the same gate; Safari
+    /// items don't care about it.
+    static func skippedByFirefoxGate(_ items: [QueueItem]) -> [Int] {
+        items.indices.filter { items[$0].browser == .firefox && items[$0].status == .pending }
+    }
+
+    private func hitFirefoxGate(_ gate: FirefoxGate) {
+        firefoxGateHit = gate
+        for i in Self.skippedByFirefoxGate(items) { items[i].status = .skipped(gate.skippedNote) }
+    }
+
     private func finish(reason: StopReason?) {
+        let reason = reason ?? firefoxGateHit.map(StopReason.needsFirefox)
         phaseWatch = nil
         currentIndex = nil
         stopReason = reason
