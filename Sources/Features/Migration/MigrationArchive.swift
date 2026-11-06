@@ -121,7 +121,7 @@ enum MigrationArchive {
         guard let manifest = try? decoder.decode(Manifest.self, from: Data(contentsOf: manifestURL)) else {
             throw Failure.notAnArchive
         }
-        return queueItems(from: manifest, root: manifestURL.deletingLastPathComponent())
+        return queueItems(from: manifest, root: root)
     }
 
     /// One queue item per entry, for the browser it was in. `root` is the

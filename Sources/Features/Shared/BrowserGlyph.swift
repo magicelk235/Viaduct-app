@@ -17,12 +17,9 @@ extension Browser {
     /// installed copy, so Viaduct never ships another company's logo.
     @MainActor var appIcon: NSImage {
         if let icon = Self.foundIcons[self] { return icon }
-        guard let app = appURL else {
-            // Not cached, so a browser installed later shows up next time.
-            let globe = NSImage(systemSymbolName: "globe", accessibilityDescription: displayName) ?? NSImage()
-            globe.size = NSSize(width: 16, height: 16)
-            return globe
-        }
+        // The browser's own icon is only cached once found, so one installed
+        // later shows up next time.
+        guard let app = appURL else { return Self.globe }
         let icon = NSWorkspace.shared.icon(forFile: app.path)
         icon.size = NSSize(width: 16, height: 16)
         Self.foundIcons[self] = icon
@@ -30,6 +27,12 @@ extension Browser {
     }
 
     @MainActor private static var foundIcons: [Browser: NSImage] = [:]
+
+    @MainActor private static let globe: NSImage = {
+        let image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil) ?? NSImage()
+        image.size = NSSize(width: 16, height: 16)
+        return image
+    }()
 }
 
 /// A small browser icon that says which browser an extension is in.
