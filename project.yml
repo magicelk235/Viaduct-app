@@ -88,16 +88,16 @@ targets:
               - viaduct
             CFBundleURLName: com.magicelk235.viaduct
         # Polar license keys and checkout. Not secrets: the app only calls
-        # Polar's public customer-portal endpoints. The owner fills these in,
-        # and release.sh won't notarize a release while any is empty.
-        PolarOrganizationID: ""
-        PolarBenefitFirefox: ""
-        PolarBenefitSafari: ""
-        PolarBenefitMixed: ""
-        PolarCheckoutFirefox: ""
-        PolarCheckoutSafari: ""
-        PolarCheckoutMixed: ""
-        PolarPortalURL: ""
+        # Polar's public customer-portal endpoints. release.sh won't notarize
+        # a release while any of these is empty.
+        PolarOrganizationID: "760e4bf4-f5a2-4a74-8a22-66da54f6f33b"
+        PolarBenefitFirefox: "c1919e84-c61a-457d-88a1-1eba94915d95"
+        PolarBenefitSafari: "96da9e96-970b-494d-85ab-5780caa77b41"
+        PolarBenefitMixed: "82852254-3f6b-4395-a527-e9d930b87234"
+        PolarCheckoutFirefox: "https://buy.polar.sh/polar_cl_kYYElpaU4pmRWDwI5KJAtcbd6epjDwG5HcHZE08b7gp"
+        PolarCheckoutSafari: "https://buy.polar.sh/polar_cl_Ns3uKKSVeiB34PlvHjqM864ytr9YRigIvqc1j1Yy2cF"
+        PolarCheckoutMixed: "https://buy.polar.sh/polar_cl_DoWnpwb5gqYljHloz8IEjnuG6FA6ItQIgiEYf04EsGx"
+        PolarPortalURL: "https://polar.sh/magicelklabs/portal"
     entitlements:
       path: Viaduct.entitlements
       properties:
