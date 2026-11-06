@@ -57,3 +57,36 @@ enum FirefoxConversion {
         return checked ? .convert : .convertThenCheck
     }
 }
+
+enum FirefoxConversionError: LocalizedError, Equatable {
+    case cliFailed(Int32)
+    case nothingStaged
+
+    var errorDescription: String? {
+        switch self {
+        case .cliFailed(let code): return "The conversion stopped with exit code \(code)."
+        case .nothingStaged: return "The conversion finished without making the Firefox add-on."
+        }
+    }
+}
+
+extension FirefoxConversion {
+    /// Convert `input` and hand the add-on to persist, with nothing asked and
+    /// nothing written to history. It runs in the background, so Firefox is
+    /// never started or restarted: a profile that's open gets the add-on the
+    /// next time Firefox starts. The add-on keeps its ID, so persist replaces
+    /// the copy Firefox runs in place.
+    @MainActor static func run(input: String, appName: String, firefox: FirefoxLocator.Install, profile: String?,
+                               addons: FirefoxAddons, root: URL = cachesRoot,
+                               cli: ([String]) async -> Int32 = ExtensionUpdater.runCLI) async throws -> PersistResult {
+        let out = outputDir(appName: appName, root: root)
+        // Removing a record leaves its output behind, so a stale manifest
+        // could pass for this run's.
+        clearOutput(out)
+        let code = await cli(convertArgs(input: input, outputDir: out))
+        guard code == 0 else { throw FirefoxConversionError.cliFailed(code) }
+        guard let staged = stagedExtension(in: out) else { throw FirefoxConversionError.nothingStaged }
+        return try await addons.install(staged: staged, profile: profile, firefox: firefox.appURL.path,
+                                        restart: false, launch: false)
+    }
+}

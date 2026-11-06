@@ -44,6 +44,7 @@
 		45F547D0F8C46C918FE5C0DE /* FirefoxFakes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A71C568254C0C273B3114B /* FirefoxFakes.swift */; };
 		45FA411398B88953C1F15878 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F87C69746F349EE36E0488A6 /* SafariWebExtensionHandler.swift */; };
 		4C4B67ED30410DC03D26A229 /* PolarClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5CF4DC01BA0568CED14285 /* PolarClientTests.swift */; };
+		51D4D9CB507BD8995E8C28E5 /* AsyncAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6103856E44D899847C43A80F /* AsyncAssertions.swift */; };
 		544A439C6481249E7C287FE7 /* ActivationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B65E78309624F2ED7F17DB /* ActivationView.swift */; };
 		544B0B9830373177FFF2F3CC /* PolarClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F6C8FC3D64DCF465F07D706 /* PolarClient.swift */; };
 		5B77CDB7C8F98E5E79AED120 /* StoreRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD6AEB13D91A52A0B23E407 /* StoreRequest.swift */; };
@@ -94,6 +95,7 @@
 		C41913DBE7F2011934E416F7 /* InstallProgressBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54450BBE8A7C1AB7A103C71D /* InstallProgressBridge.swift */; };
 		C7FD3FC9C1738DB9ECA307B6 /* LicenseError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26EBC0782C878793066DBEA5 /* LicenseError.swift */; };
 		C8166273B730DDD088D8F714 /* background.js in Resources */ = {isa = PBXBuildFile; fileRef = BFBEBF47F3929776DC55B329 /* background.js */; };
+		C844BAE1FEACF2E010BFF245 /* FirefoxAutoUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0AE61F1B049C300073BEBF /* FirefoxAutoUpdateTests.swift */; };
 		C850A04CC643BEC3FF0A109D /* ExtensionIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 216A0409EC1C4E06AB21B317 /* ExtensionIdentity.swift */; };
 		C924CF2113FC167AA09DB79D /* PersistClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E8C813EE69850CABF1BD4C /* PersistClientTests.swift */; };
 		CBA72BAC72BC33E0C7C7B79D /* ConverterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBFE922AB1245ED752C9321 /* ConverterViewModel.swift */; };
@@ -202,6 +204,7 @@
 		129FB30329F2C8050E59D618 /* ViaductExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ViaductExtension.entitlements; sourceTree = "<group>"; };
 		173C3928435A6B646D91DF6E /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		189162E0C18399C5A150EAEB /* GumroadClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GumroadClientTests.swift; sourceTree = "<group>"; };
+		1A0AE61F1B049C300073BEBF /* FirefoxAutoUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxAutoUpdateTests.swift; sourceTree = "<group>"; };
 		207CDF62051713E9E3FD1CC3 /* Snappy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snappy.swift; sourceTree = "<group>"; };
 		216A0409EC1C4E06AB21B317 /* ExtensionIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionIdentity.swift; sourceTree = "<group>"; };
 		26589CAE3A5A5EE216202FAF /* ConvertPhase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvertPhase.swift; sourceTree = "<group>"; };
@@ -233,6 +236,7 @@
 		58D150FB914882216A502FBE /* ViaductExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ViaductExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A6E1B55880A88354EC17F8F /* CLIUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIUpdater.swift; sourceTree = "<group>"; };
 		5B3B349223B937D244E01611 /* bin */ = {isa = PBXFileReference; lastKnownFileType = folder; name = bin; path = Resources/bin; sourceTree = SOURCE_ROOT; };
+		6103856E44D899847C43A80F /* AsyncAssertions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncAssertions.swift; sourceTree = "<group>"; };
 		612B08CDDA73C028EA1B893A /* BatchConvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchConvert.swift; sourceTree = "<group>"; };
 		614D8805DDE093D020F1D0D7 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		6507B1D31A509FB9B597D5DD /* HelperAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperAgent.swift; sourceTree = "<group>"; };
@@ -366,6 +370,7 @@
 				4069D5979D285640F694A243 /* ConversionHistoryTests.swift */,
 				BF9AA60CBACC4A5E939B9C1F /* ConvertPhaseTests.swift */,
 				0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */,
+				1A0AE61F1B049C300073BEBF /* FirefoxAutoUpdateTests.swift */,
 				10A8780ED316172A672AE799 /* FirefoxBatchTests.swift */,
 				8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */,
 				F0EB96891F52D94EEECD00C5 /* FirefoxDisclosureTests.swift */,
@@ -448,6 +453,7 @@
 		60814F367A291247BE4AA570 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				6103856E44D899847C43A80F /* AsyncAssertions.swift */,
 				43A71C568254C0C273B3114B /* FirefoxFakes.swift */,
 				4C05D702FBDB0409D178D944 /* LicenseFixtures.swift */,
 				0D7F56E305526E4B35D84338 /* TempDir.swift */,
@@ -882,11 +888,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				51D4D9CB507BD8995E8C28E5 /* AsyncAssertions.swift in Sources */,
 				B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */,
 				9CF4B739156F47352BEB7345 /* CompatibilityCheckTests.swift in Sources */,
 				24EFA3D4D3E42B9B3D3B3878 /* ConversionHistoryTests.swift in Sources */,
 				7BBEEE24261712E7252EC0D9 /* ConvertPhaseTests.swift in Sources */,
 				3EF6C94AE2E9349FA45B1B68 /* FirefoxAddonsTests.swift in Sources */,
+				C844BAE1FEACF2E010BFF245 /* FirefoxAutoUpdateTests.swift in Sources */,
 				FE26FFC294FBBAD785CEE9D5 /* FirefoxBatchTests.swift in Sources */,
 				140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */,
 				81D3146B4ED290AF0540B801 /* FirefoxDisclosureTests.swift in Sources */,

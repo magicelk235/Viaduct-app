@@ -91,17 +91,16 @@ final class ExtensionUpdater {
         } catch { return nil }
     }
 
-    /// Whether a license turns the weekly store update on. It rebuilds through
-    /// the Safari conversion, so it takes a license that covers Safari.
+    /// Whether a license turns the weekly store update on. Any license does;
+    /// which records it then looks after depends on the browsers it covers.
     nonisolated static func isUnlocked(by entitlements: Entitlements) -> Bool {
-        entitlements.safari
+        entitlements != .none
     }
 
     /// Whether the weekly store update looks after this record: a store
-    /// install in Safari, under a license that covers Safari. The update
-    /// rebuilds through the Safari conversion, so it can't take a Firefox one.
+    /// install, under a license that covers the browser it went into.
     nonisolated static func covers(_ rec: ConversionRecord, entitlements: Entitlements) -> Bool {
-        rec.storeId != nil && entitlements.safari && rec.browser == .safari
+        rec.storeId != nil && entitlements.unlimited(rec.browser)
     }
 
     /// Store installs due for a weekly CWS version poll: covered by the license
@@ -132,6 +131,16 @@ final class ExtensionUpdater {
 
     private func update(_ rec: ConversionRecord) async {
         guard let sid = rec.storeId else { return }
+        // A Firefox add-on needs Firefox to build into. Without it, try again
+        // next week rather than report a failure.
+        var firefox: FirefoxLocator.Install?
+        if rec.browser == .firefox {
+            firefox = FirefoxLocator.find()
+            guard firefox != nil else {
+                history.stampUpdateCheck(id: rec.id)
+                return
+            }
+        }
         // Poll the CWS. Any failure: stamp the check (don't retry until next week)
         // and move on — a transient store hiccup shouldn't spin.
         guard let crx = try? await ChromeStore.downloadCRX(id: sid) else {
@@ -147,17 +156,33 @@ final class ExtensionUpdater {
         // New version — archive the fresh source and rebuild from it.
         let sourcePath = Self.archiveSource(crx.path, appName: rec.resolvedAppName, browser: rec.browser) ?? crx.path
         history.updateSource(id: rec.id, path: sourcePath)
+        if let firefox {
+            do {
+                _ = try await FirefoxConversion.run(input: sourcePath, appName: rec.resolvedAppName, firefox: firefox,
+                                                    profile: rec.profilePath, addons: .shared)
+                // Persist keeps the add-on itself: there's no .app, and nothing signed ad-hoc.
+                history.markUpdated(id: rec.id, version: latest, installedPath: nil,
+                                    build: SigningAccount.Build(adHoc: false))
+            } catch {
+                updateFailed(rec)
+            }
+            return
+        }
         let code = await rebuild(sourcePath: sourcePath, appName: rec.resolvedAppName)
         if code == 0 {
             history.markUpdated(id: rec.id, version: latest,
                                 installedPath: rec.installedPath,
                                 build: SigningAccount.inspectBuild(installedAppPath: rec.installedPath))
         } else {
-            // Build failed: stamp the poll so we don't hammer it, and surface it.
-            history.stampUpdateCheck(id: rec.id)
-            history.markUpdateFailed(id: rec.id)
-            notifyFailure(rec)
+            updateFailed(rec)
         }
+    }
+
+    /// The rebuild failed: stamp the poll so we don't hammer it, and surface it.
+    private func updateFailed(_ rec: ConversionRecord) {
+        history.stampUpdateCheck(id: rec.id)
+        history.markUpdateFailed(id: rec.id)
+        notifyFailure(rec)
     }
 
     /// Run a full convert+install from source via the CLI, signing with the same
@@ -168,15 +193,20 @@ final class ExtensionUpdater {
         opts.appName = appName
         opts.useTeam(SigningAccount.signingTeam()?.id)
         opts.force = true          // never block a rebuild on advisory issues
+        return await Self.runCLI(opts.conversionArgs())
+    }
 
-        // A conversion the user started holds the CLI; wait for it instead of
-        // logging a failed update that never ran.
+    /// Run the CLI with `args` and return its exit code, or -1 when it can't
+    /// start. A conversion the user started holds the CLI; wait for it instead
+    /// of logging a failed update that never ran.
+    static func runCLI(_ args: [String]) async -> Int32 {
+        let runner = CLIRunner.shared
         while runner.isRunning {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
         return await withCheckedContinuation { cont in
             do {
-                try runner.run(args: opts.conversionArgs(), onLine: { _ in }) { c in
+                try runner.run(args: args, onLine: { _ in }) { c in
                     cont.resume(returning: c)
                 }
             } catch {

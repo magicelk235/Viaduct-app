@@ -363,7 +363,7 @@ struct SettingsView: View {
                 .onChange(of: vm.autoUpdate) { _ in vm.startAutoUpdate() }
             if !unlocked {
                 HStack(spacing: Theme.Space.sm) {
-                    TierBadge(tier: .safari, color: Theme.Colors.accentBlue)
+                    TierBadge(tier: .single(for: vm.targetBrowser), color: Theme.Colors.accentBlue)
                     // The License page has the key field and the Buy rows.
                     Button("Unlock with a license") { navigation.selectedTab = .license }
                         .buttonStyle(.plain)

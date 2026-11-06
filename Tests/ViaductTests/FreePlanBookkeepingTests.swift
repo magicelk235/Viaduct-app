@@ -28,14 +28,14 @@ final class FreePlanBookkeepingTests: XCTestCase {
         XCTAssertTrue(ConverterViewModel.wantsLoginItem(autoUpdate: false, records: [pending], entitlements: .none))
     }
 
-    func testWeeklyUpdatesNeedSafariUntilFirefoxCanBeRebuilt() {
+    func testWeeklyUpdatesUnlockWithAnyLicense() {
         XCTAssertTrue(ExtensionUpdater.isUnlocked(by: .mixed))
         XCTAssertTrue(ExtensionUpdater.isUnlocked(by: LicenseTier.safari.entitlements))
-        XCTAssertFalse(ExtensionUpdater.isUnlocked(by: LicenseTier.firefox.entitlements))
+        XCTAssertTrue(ExtensionUpdater.isUnlocked(by: LicenseTier.firefox.entitlements))
         XCTAssertFalse(ExtensionUpdater.isUnlocked(by: .none))
     }
 
-    func testWeeklyUpdatesLeaveFirefoxStoreInstallsAlone() {
+    func testSafariLicenseLeavesFirefoxStoreInstallsAlone() {
         var rec = ConversionRecord(name: "Store", sourcePath: "/tmp/s", date: now, storeId: "abcdefghijklmnopabcdefghijklmnop")
         XCTAssertTrue(ExtensionUpdater.covers(rec, entitlements: LicenseTier.safari.entitlements))
         rec.browser = .firefox
