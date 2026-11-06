@@ -52,6 +52,7 @@
 		5CE7D41427EEF31E2724FE92 /* FreePlanFirefoxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E64830EE88379F454793DD06 /* FreePlanFirefoxTests.swift */; };
 		5CFB2E5454F3B4826AD9EAC2 /* icon.png in Resources */ = {isa = PBXBuildFile; fileRef = 6DA2AA9A7141526C03A24FD3 /* icon.png */; };
 		5EFC7D7D779ABB35E55827AD /* LevelDBReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4423589F579371E2932603DA /* LevelDBReader.swift */; };
+		637C2D07C504427787DB9558 /* MigrationArchiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07B2F7021473E1663D5B4213 /* MigrationArchiveTests.swift */; };
 		64A64A03445710FDDC87DF8C /* UserModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A5AD59DEEF416F7494A43E /* UserModeView.swift */; };
 		6680B63717F0A06B5325BCC8 /* LicenseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE825678F91BF68F79CD25C3 /* LicenseStore.swift */; };
 		6829C4A22F41905F6FBF0223 /* ExtensionIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 216A0409EC1C4E06AB21B317 /* ExtensionIdentity.swift */; };
@@ -195,6 +196,7 @@
 		0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxAddonsTests.swift; sourceTree = "<group>"; };
 		04E0DC146811DD698771FEBF /* PersistClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistClient.swift; sourceTree = "<group>"; };
 		05B8E43BC93347A3075A2DF1 /* BrowserPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPicker.swift; sourceTree = "<group>"; };
+		07B2F7021473E1663D5B4213 /* MigrationArchiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationArchiveTests.swift; sourceTree = "<group>"; };
 		07D4467430B46DE5DA552B34 /* ExtensionSettingsTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionSettingsTransfer.swift; sourceTree = "<group>"; };
 		09BE5C61C57681BCE4413B57 /* CLIRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIRunner.swift; sourceTree = "<group>"; };
 		0B07EEE7E17977D9F440E04A /* FirefoxPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxPrompts.swift; sourceTree = "<group>"; };
@@ -388,6 +390,7 @@
 				85135CE31BAB02A65A5A2872 /* LicenseStoreTests.swift */,
 				F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */,
 				0F117C84E304CC6FEDEDAC0C /* LicenseTierTests.swift */,
+				07B2F7021473E1663D5B4213 /* MigrationArchiveTests.swift */,
 				A9F36FF1DAEA908922C1CDF5 /* NativeHostProtocolTests.swift */,
 				C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */,
 				C8E8C813EE69850CABF1BD4C /* PersistClientTests.swift */,
@@ -917,6 +920,7 @@
 				415890B6951DB7C0CDAF8652 /* LicenseStoreTests.swift in Sources */,
 				FD86E0B02A60934111227EA5 /* LicenseSummaryTests.swift in Sources */,
 				CF9E5B2660414FF8CE4910D0 /* LicenseTierTests.swift in Sources */,
+				637C2D07C504427787DB9558 /* MigrationArchiveTests.swift in Sources */,
 				9C38C6735325460CC91C718D /* NativeHostProtocolTests.swift in Sources */,
 				D3AB5400B1B95E0D24350EC5 /* PaywallTests.swift in Sources */,
 				C924CF2113FC167AA09DB79D /* PersistClientTests.swift in Sources */,

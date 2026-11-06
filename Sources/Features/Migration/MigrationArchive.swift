@@ -18,6 +18,8 @@ enum MigrationArchive {
         /// (store installs re-download by id instead).
         var source: String?
         var iconPNG: Data?
+        /// Missing from exports made before Firefox support, which were all Safari.
+        var browser: Browser?
     }
 
     struct Manifest: Codable {
@@ -51,7 +53,7 @@ enum MigrationArchive {
         var entries: [Entry] = []
         for (i, rec) in records.enumerated() {
             var entry = Entry(name: rec.name, appName: rec.resolvedAppName, storeId: rec.storeId,
-                              version: rec.version, source: nil, iconPNG: rec.iconData)
+                              version: rec.version, source: nil, iconPNG: rec.iconData, browser: rec.browser)
             let src = URL(fileURLWithPath: rec.sourcePath)
             if fm.fileExists(atPath: src.path) {
                 let ext = src.pathExtension
@@ -119,11 +121,17 @@ enum MigrationArchive {
         guard let manifest = try? decoder.decode(Manifest.self, from: Data(contentsOf: manifestURL)) else {
             throw Failure.notAnArchive
         }
+        return queueItems(from: manifest, root: manifestURL.deletingLastPathComponent())
+    }
 
-        return manifest.extensions.map { entry in
+    /// One queue item per entry, for the browser it was in. `root` is the
+    /// folder the manifest sits in, which entry sources are relative to.
+    static func queueItems(from manifest: Manifest, root: URL) -> [QueueItem] {
+        manifest.extensions.map { entry in
             let local = entry.source.map { root.appendingPathComponent($0) }
             var item = QueueItem(name: entry.appName, iconPNG: entry.iconPNG,
-                                 storeId: entry.storeId, chromeId: entry.storeId) {
+                                 storeId: entry.storeId, chromeId: entry.storeId,
+                                 browser: entry.browser ?? .safari) {
                 if let local, FileManager.default.fileExists(atPath: local.path) { return local }
                 guard let id = entry.storeId else { throw Failure.notAnArchive }
                 return try await ChromeStore.downloadCRX(id: id)
@@ -183,7 +191,7 @@ struct MigrationSection: View {
             HStack {
                 Button("Export") { exportAll() }
                     .buttonStyle(.raycastTertiary)
-                    .disabled(work.isBusy || !history.records.contains { $0.browser == .safari })
+                    .disabled(work.isBusy || history.records.isEmpty)
                 Button("Import") { importArchive() }
                     .buttonStyle(.raycastTertiary)
                     .disabled(work.isBusy || vm.isRunning || queue.isRunning)
@@ -204,9 +212,7 @@ struct MigrationSection: View {
         panel.nameFieldStringValue = "Viaduct extensions.zip"
         panel.allowedContentTypes = [.zip]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        // The archive has no browser field, so a Firefox record would come
-        // back on the other Mac as a Safari conversion.
-        let records = history.records.filter { $0.browser == .safari }
+        let records = history.records
         work.isBusy = true
         status = "Exporting…"
         Task { @MainActor in
