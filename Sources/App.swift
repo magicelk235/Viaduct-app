@@ -240,6 +240,7 @@ struct ViaductApp: App {
         InstallProgressBridge.shared.snapshot = { [weak vm] queryId in
             ViaductApp.progressSnapshot(vm, queryId: queryId)
         }
+        Task { await FirefoxStoreButton.shared.syncAfterLaunch() }
         AppDelegate.openURLHandler = { handleOpenURL($0, vm: vm) }
     }
 

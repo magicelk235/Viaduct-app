@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		06DD26A7C7920C7AF8FDFBC3 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4706037E93DBAA4A3F086E94 /* App.swift */; };
 		0887E9BF888BD0BC0A6B4B02 /* TestDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82D961B10C9B4F47A1DDCD97 /* TestDefaults.swift */; };
+		08A78FAFF0EED420FA4C8619 /* FirefoxStoreButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF141A0FFF2C3490E0B57436 /* FirefoxStoreButton.swift */; };
 		08ACA19DDF0FDE70CFD912DC /* FreePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71BC154785D7907203EFAB37 /* FreePlan.swift */; };
 		08B4EB1A298FE1C910818925 /* NativeHostProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC84FA4723A0433A0B7361E0 /* NativeHostProtocol.swift */; };
 		08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC67CD1790FCD1A2DBD5B113 /* Updater.swift */; };
@@ -18,6 +19,7 @@
 		140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */; };
 		149CA37E3C610C997E55ABF5 /* BrowserExtensionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F238F28D6B436BEA1FDEC7 /* BrowserExtensionScanner.swift */; };
 		1544867A5FC80B3E139ABA48 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7543601C995152BCD979C617 /* SettingsWindowController.swift */; };
+		1577D4D1AA55F55A988DC846 /* FirefoxStoreButtonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED7840E5813F5EEF76293B60 /* FirefoxStoreButtonTests.swift */; };
 		1B68851345B7CC2A2A2408A4 /* StagedFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84F3BA2696BE27D24D8A251 /* StagedFolder.swift */; };
 		1E38CDD8DD767ACBFDF5D7D3 /* LicenseManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA7519856F44CED6893C97FF /* LicenseManagerTests.swift */; };
 		1EE76700C7DC11A36FAEE4BC /* ConvertAnimations.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD24BC2D7FBDC2959615B2BD /* ConvertAnimations.swift */; };
@@ -292,11 +294,13 @@
 		DF2B7969794EF0B93CC897FE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlanBookkeepingTests.swift; sourceTree = "<group>"; };
 		E64830EE88379F454793DD06 /* FreePlanFirefoxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlanFirefoxTests.swift; sourceTree = "<group>"; };
+		ED7840E5813F5EEF76293B60 /* FirefoxStoreButtonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxStoreButtonTests.swift; sourceTree = "<group>"; };
 		EE825678F91BF68F79CD25C3 /* LicenseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseStore.swift; sourceTree = "<group>"; };
 		F0EB96891F52D94EEECD00C5 /* FirefoxDisclosureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxDisclosureTests.swift; sourceTree = "<group>"; };
 		F5C27E367AFE90928CD50E21 /* LicenseSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseSummaryTests.swift; sourceTree = "<group>"; };
 		F87C69746F349EE36E0488A6 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
 		FC67CD1790FCD1A2DBD5B113 /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
+		FF141A0FFF2C3490E0B57436 /* FirefoxStoreButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxStoreButton.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -361,6 +365,7 @@
 				8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */,
 				F0EB96891F52D94EEECD00C5 /* FirefoxDisclosureTests.swift */,
 				6A63D429B23179821FE53203 /* FirefoxSettingsTests.swift */,
+				ED7840E5813F5EEF76293B60 /* FirefoxStoreButtonTests.swift */,
 				E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */,
 				E64830EE88379F454793DD06 /* FreePlanFirefoxTests.swift */,
 				189162E0C18399C5A150EAEB /* GumroadClientTests.swift */,
@@ -590,6 +595,7 @@
 		E7436417902EE69FD124DAC8 /* FirefoxStoreButton */ = {
 			isa = PBXGroup;
 			children = (
+				FF141A0FFF2C3490E0B57436 /* FirefoxStoreButton.swift */,
 				DC84FA4723A0433A0B7361E0 /* NativeHostProtocol.swift */,
 			);
 			path = FirefoxStoreButton;
@@ -879,6 +885,7 @@
 				81D3146B4ED290AF0540B801 /* FirefoxDisclosureTests.swift in Sources */,
 				45F547D0F8C46C918FE5C0DE /* FirefoxFakes.swift in Sources */,
 				40A703F84F1F4442418B3BE0 /* FirefoxSettingsTests.swift in Sources */,
+				1577D4D1AA55F55A988DC846 /* FirefoxStoreButtonTests.swift in Sources */,
 				89771B5CF0FF41D056780341 /* FreePlanBookkeepingTests.swift in Sources */,
 				5CE7D41427EEF31E2724FE92 /* FreePlanFirefoxTests.swift in Sources */,
 				D927B6BDE50444AC288DEDDB /* GumroadClientTests.swift in Sources */,
@@ -953,6 +960,7 @@
 				D99F97B0816982437791A229 /* FirefoxLocator.swift in Sources */,
 				8A33BB9B65D52B5588EFAFAD /* FirefoxPrompts.swift in Sources */,
 				3C053DEAE16B3A4562C72596 /* FirefoxSettings.swift in Sources */,
+				08A78FAFF0EED420FA4C8619 /* FirefoxStoreButton.swift in Sources */,
 				08ACA19DDF0FDE70CFD912DC /* FreePlan.swift in Sources */,
 				6E359B723C1792C2BEE83D6A /* GumroadClient.swift in Sources */,
 				C41913DBE7F2011934E416F7 /* InstallProgressBridge.swift in Sources */,
