@@ -77,6 +77,7 @@
 		94155D11FE933F5A7E463F8B /* SetupStepsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93BE234A03029E865345DFC1 /* SetupStepsTests.swift */; };
 		9592998665FD64231D84ED72 /* SigningAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4CA23E222C7922E7D3DCB0 /* SigningAccount.swift */; };
 		96088A25F5F39F22811DB915 /* ChromeImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38866ACCB31D891DBAA75D76 /* ChromeImportView.swift */; };
+		979735510F131AE17EE932E3 /* ShortcutsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F2A86BFFD3C62976E8F64E /* ShortcutsTests.swift */; };
 		9B420D598F23447A0DE0DC0C /* FirefoxAddons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369EB76B56E947D292A330C1 /* FirefoxAddons.swift */; };
 		9C252960654554A92B56BE6A /* SettingsCarryOver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD704CBD63E252269BE0B96 /* SettingsCarryOver.swift */; };
 		9C38C6735325460CC91C718D /* NativeHostProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F36FF1DAEA908922C1CDF5 /* NativeHostProtocolTests.swift */; };
@@ -243,6 +244,7 @@
 		6507B1D31A509FB9B597D5DD /* HelperAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperAgent.swift; sourceTree = "<group>"; };
 		65391241F2B43D3FC8BB7A08 /* FirefoxLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxLocator.swift; sourceTree = "<group>"; };
 		67C81E124A88D934C226864B /* UpdatePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatePolicy.swift; sourceTree = "<group>"; };
+		68F2A86BFFD3C62976E8F64E /* ShortcutsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsTests.swift; sourceTree = "<group>"; };
 		69A3660E251D8D05219E55FB /* CompatibilityCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatibilityCheck.swift; sourceTree = "<group>"; };
 		6A63D429B23179821FE53203 /* FirefoxSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxSettingsTests.swift; sourceTree = "<group>"; };
 		6DA2AA9A7141526C03A24FD3 /* icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = icon.png; sourceTree = "<group>"; };
@@ -392,6 +394,7 @@
 				AA5CF4DC01BA0568CED14285 /* PolarClientTests.swift */,
 				F688A35C6AC0E172B1625371 /* SettingsSeedTests.swift */,
 				93BE234A03029E865345DFC1 /* SetupStepsTests.swift */,
+				68F2A86BFFD3C62976E8F64E /* ShortcutsTests.swift */,
 				79D4BA4CDEFC3C07C5CC3CDE /* SigningAccountTests.swift */,
 				D2BF6C0A849E19A65E371C43 /* StoreButtonAddonTests.swift */,
 				524A7697778E6A796AD538D7 /* StoreRequestTests.swift */,
@@ -920,6 +923,7 @@
 				4C4B67ED30410DC03D26A229 /* PolarClientTests.swift in Sources */,
 				69EB5BAC5F46CF7F87516909 /* SettingsSeedTests.swift in Sources */,
 				94155D11FE933F5A7E463F8B /* SetupStepsTests.swift in Sources */,
+				979735510F131AE17EE932E3 /* ShortcutsTests.swift in Sources */,
 				3E92FA139E6A8D9E55B78116 /* SigningAccountTests.swift in Sources */,
 				D095368AB758641AABAC3DEF /* StoreButtonAddonTests.swift in Sources */,
 				F7BB3BE9CE05CD5801935255 /* StoreRequestTests.swift in Sources */,
