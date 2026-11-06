@@ -118,6 +118,9 @@ final class ConversionQueue: ObservableObject {
     /// after it are skipped, the other browser's keep going, and the batch
     /// ends on this reason.
     private var firstStop: StopReason?
+    /// The Xcode card's state as the Xcode stop found it. Later items reset
+    /// the flow, so the end of the batch puts the card back from this.
+    private var xcodeStop: (status: CLIRunner.XcodeStatus, summary: String?)?
 
     var doneCount: Int { items.filter { $0.status == .done }.count }
     var finishedCount: Int { items.filter { $0.status.isFinished }.count }
@@ -131,6 +134,7 @@ final class ConversionQueue: ObservableObject {
         stopReason = nil
         batchID = UUID()
         firstStop = nil
+        xcodeStop = nil
         isRunning = true
         isPresented = true
         vm.batchActive = true
@@ -227,6 +231,7 @@ final class ConversionQueue: ObservableObject {
             runNext()
         } else if vm.needsXcode {
             items[index].status = .failed(vm.failureSummary ?? "Xcode is required.")
+            if firstStop == nil { xcodeStop = (vm.xcodeStatus, vm.failureSummary) }
             stop(.needsXcode)
             runNext()
         } else if let gate = vm.firefoxGate {
@@ -341,7 +346,14 @@ final class ConversionQueue: ObservableObject {
             // goes back to the empty card so the last item doesn't look like a
             // single run.
             switch reason {
-            case .needsXcode, .needsFirefox: break
+            case .needsXcode:
+                if let saved = xcodeStop, !vm.needsXcode {
+                    vm.options.browser = .safari
+                    vm.xcodeStatus = saved.status
+                    vm.failureSummary = saved.summary
+                    vm.needsXcode = true
+                }
+            case .needsFirefox: break
             default: if !vm.isRunning { vm.resetUserFlow() }
             }
         }
