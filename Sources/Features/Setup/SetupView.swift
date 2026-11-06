@@ -9,6 +9,7 @@ struct SetupView: View {
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject var flow: SetupFlow
     @ObservedObject private var license = LicenseManager.shared
+    @ObservedObject private var firefoxButton = FirefoxStoreButton.shared
 
     /// The step on screen and whether it's done, as last seen. A step that
     /// turns done while it's open moves setup on; picking a row that's
@@ -19,6 +20,7 @@ struct SetupView: View {
     @State private var showFirefoxDisclosure = false
 
     private var storeButtonOn: Bool { vm.storeButtonEnabled == true }
+    private var firefoxButtonOn: Bool { firefoxButton.state == .on }
     private var current: Seen { Seen(step: flow.step, done: flow.isDone(flow.step)) }
 
     var body: some View {
@@ -26,7 +28,8 @@ struct SetupView: View {
             AmbientBackground()
             Group {
                 if flow.showingWelcome {
-                    SetupWelcome(flow: flow, storeButtonOn: storeButtonOn)
+                    SetupWelcome(flow: flow,
+                                 storeButtonOn: flow.browser == .safari ? storeButtonOn : firefoxButtonOn)
                         .transition(.opacity)
                 } else {
                     checklist
@@ -58,6 +61,7 @@ struct SetupView: View {
                                     flow.refresh()
                                 },
                                 onCancel: {})
+        .firefoxStoreButtonPrompts(.shared)
     }
 
     // MARK: - Checklist
@@ -206,6 +210,8 @@ struct SetupView: View {
                 }
             case .storeButton:
                 wide("Turn On in Safari") { StoreButton.openSafariSettings() }
+            case .firefoxStoreButton:
+                firefoxButtonAction
             case .firefox:
                 if flow.firefox == nil {
                     wide("Get Firefox") { NSWorkspace.shared.open(FirefoxLocator.downloadURL) }
@@ -259,6 +265,26 @@ struct SetupView: View {
         }
     }
 
+    @ViewBuilder
+    private var firefoxButtonAction: some View {
+        switch firefoxButton.state {
+        case .needsFirefox:
+            wide("Get Firefox") { NSWorkspace.shared.open(FirefoxLocator.downloadURL) }
+        case .installing, .removing:
+            Button {} label: {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(firefoxButton.state == .removing ? "Removing" : "Installing")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.raycastPrimary)
+            .disabled(true)
+        default:
+            wide("Add to Firefox") { Task { await FirefoxStoreButton.shared.requestInstall() } }
+        }
+    }
+
     // MARK: - Copy
 
     /// Only the open step shows a spinner, and only before its first answer.
@@ -267,6 +293,7 @@ struct SetupView: View {
         case .xcode:        return flow.xcode == nil
         case .appleAccount: return flow.account == nil
         case .diskAccess:   return flow.checkingDiskAccess
+        case .firefoxStoreButton: return firefoxButton.state == .checking
         case .storeButton, .license, .firefox: return false
         }
     }
@@ -293,6 +320,8 @@ struct SetupView: View {
             return flow.isDone(.diskAccess) ? "Viaduct can read your browsers" : "Let Viaduct read your browsers"
         case .storeButton:
             return storeButtonOn ? "Add to Safari is on" : "Add to Safari button"
+        case .firefoxStoreButton:
+            return firefoxButtonOn ? "Add to Firefox is on" : "Add to Firefox button"
         case .license:
             return license.unlimited(flow.browser) ? "\(flow.browser.displayName) is unlimited" : "Activate a license"
         case .firefox:
@@ -342,6 +371,14 @@ struct SetupView: View {
             return storeButtonOn
                 ? "Chrome Web Store pages show the button."
                 : "Puts a button on Chrome Web Store pages, so extensions install straight from the store."
+        case .firefoxStoreButton:
+            if case .failed(let message) = firefoxButton.state { return message }
+            guard firefoxButtonOn else {
+                return "Puts a button on Chrome Web Store pages, so extensions install straight from the store."
+            }
+            return firefoxButton.arrivesLater
+                ? "It arrives the next time you open Firefox."
+                : "Chrome Web Store pages in Firefox show the button."
         case .license:
             return license.unlimited(flow.browser)
                 ? "No conversion limit, and your extensions stay on this Mac."
@@ -367,6 +404,7 @@ struct SetupView: View {
         case .appleAccount: return "person.crop.circle.fill"
         case .diskAccess:   return "lock.open.fill"
         case .storeButton:  return "safari.fill"
+        case .firefoxStoreButton: return "puzzlepiece.extension.fill"
         case .license:      return "key.fill"
         case .firefox:      return "flame.fill"
         }
@@ -413,6 +451,7 @@ private struct StepGlyph: View {
 /// on this Mac, then Import from Chrome when there's anything to import.
 private struct SetupWelcome: View {
     let flow: SetupFlow
+    /// The picked browser's store button, never the other one's.
     let storeButtonOn: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -435,9 +474,13 @@ private struct SetupWelcome: View {
                         title: "Drop one on the window",
                         detail: "A .zip, .crx or an unpacked folder.")]
         if storeButtonOn {
-            ways.append(Way(symbol: "safari.fill",
-                            title: "Add to Safari on the Chrome Web Store",
-                            detail: "The button sits on every extension's page."))
+            ways.append(flow.browser == .safari
+                ? Way(symbol: "safari.fill",
+                      title: "Add to Safari on the Chrome Web Store",
+                      detail: "The button sits on every extension's page.")
+                : Way(symbol: "puzzlepiece.extension.fill",
+                      title: "Add to Firefox on the Chrome Web Store",
+                      detail: "The button sits on every extension's page."))
         }
         if flow.canImport {
             ways.append(Way(symbol: "square.and.arrow.down.on.square.fill",

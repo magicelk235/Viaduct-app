@@ -3,7 +3,8 @@ import AppKit
 
 /// First-launch setup: gets a new install to the point where a conversion can
 /// succeed for the browser picked at the top. For Safari that's Xcode, an
-/// Apple account in it and the store button; for Firefox it's Firefox itself.
+/// Apple account in it and the store button; for Firefox it's Firefox itself
+/// and its own store button.
 /// Both ask for read access to the browsers and a license, then end on a
 /// welcome screen that hands over to Import from Chrome.
 @MainActor
@@ -11,7 +12,7 @@ final class SetupFlow: ObservableObject {
     static let shared = SetupFlow()
 
     enum Step: Int, CaseIterable, Identifiable {
-        case xcode, appleAccount, diskAccess, storeButton, license, firefox
+        case xcode, appleAccount, diskAccess, storeButton, license, firefox, firefoxStoreButton
         var id: Int { rawValue }
     }
 
@@ -96,7 +97,7 @@ final class SetupFlow: ObservableObject {
         let steps: [Step]
         switch browser {
         case .safari:  steps = [.xcode, .appleAccount, .diskAccess, .storeButton, .license]
-        case .firefox: steps = [.firefox, .diskAccess, .license]
+        case .firefox: steps = [.firefox, .diskAccess, .firefoxStoreButton, .license]
         }
         return steps.filter { $0 != .diskAccess || hasBrowsers }
     }
@@ -155,12 +156,15 @@ final class SetupFlow: ObservableObject {
     /// front, since every fix happens in another app.
     func refresh() {
         firefox = FirefoxLocator.find()
+        let firefoxButton = browser == .firefox ? Task { await FirefoxStoreButton.shared.refresh() } : nil
         // Each step keeps its last answer until the new one lands, so going
         // back to a done row doesn't flash a spinner or reopen it.
         Task.detached(priority: .userInitiated) {
             let status = CLIRunner.xcodeStatus()
             let state: AccountState = SigningAccount.xcodeTeamPresent() ? .signedIn
                 : (SigningAccount.xcodeAccountPresent() ? .needsCertificate : .signedOut)
+            // The first pick of a step needs the button's answer too.
+            await firefoxButton?.value
             await MainActor.run {
                 self.xcode = status
                 self.account = state
@@ -204,6 +208,7 @@ final class SetupFlow: ObservableObject {
         case .storeButton:  return ConverterViewModel.shared.storeButtonEnabled == true
         case .license:      return LicenseManager.shared.unlimited(browser)
         case .firefox:      return firefox != nil && FirefoxDisclosure.isAccepted()
+        case .firefoxStoreButton: return FirefoxStoreButton.shared.state == .on
         }
     }
 }
