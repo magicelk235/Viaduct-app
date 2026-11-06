@@ -49,6 +49,7 @@ struct ChromeImportView: View {
             Text("Import from Chrome")
                 .font(Theme.Font.headingMD())
                 .foregroundStyle(Theme.Colors.ink)
+            BrowserPicker(selection: $vm.targetBrowser)
 
             if !blocked.isEmpty { blockedNotice }
 
@@ -61,6 +62,10 @@ struct ChromeImportView: View {
         .frame(width: 520)
         .background(AmbientBackground())
         .task { await load() }
+        .onChange(of: vm.targetBrowser) { _ in
+            guard let extensions else { return }
+            selected = defaultSelection(extensions)
+        }
         // Back from System Settings with access granted: look again.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             guard !blocked.isEmpty else { return }
@@ -160,7 +165,8 @@ struct ChromeImportView: View {
                 }
             }
             Spacer(minLength: Theme.Space.sm)
-            if let alt = SafariAlternatives.lookup(chromeId: ext.chromeId) {
+            // Only Safari has the maker's own version to send people to.
+            if vm.targetBrowser == .safari, let alt = SafariAlternatives.lookup(chromeId: ext.chromeId) {
                 Button { NSWorkspace.shared.open(alt.url) } label: {
                     Label("Safari version", systemImage: "safari")
                         .font(Theme.Font.caption())
@@ -180,7 +186,7 @@ struct ChromeImportView: View {
 
     /// The one reason a row starts unticked, if there is one.
     private func status(_ ext: InstalledBrowserExtension) -> String? {
-        if alreadyInSafari(ext) { return "Already in Safari" }
+        if alreadyIn(ext) { return "Already in \(vm.targetBrowser.displayName)" }
         if !ext.enabled { return "Off in \(ext.profile.browser.name)" }
         if ext.unpacked { return "Loaded unpacked" }
         return nil
@@ -190,15 +196,15 @@ struct ChromeImportView: View {
 
     private var footer: some View {
         let count = selected.count
-        let left = license.freeConversionsRemaining
         return HStack(alignment: .center) {
             Button("Cancel", action: dismiss)
                 .buttonStyle(.raycastGhost)
                 .keyboardShortcut(.cancelAction)
             Spacer()
-            // Only when it changes the outcome: more ticked than the free tier covers.
-            if !license.isLicensed, count > left {
-                Text("\(left) free, \(count - left) need Pro")
+            if let note = Self.quotaNote(selected: count, freeLeft: license.freeConversionsRemaining,
+                                         unlimited: license.unlimited(vm.targetBrowser),
+                                         browser: vm.targetBrowser) {
+                Text(note)
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.body)
             }
@@ -217,22 +223,23 @@ struct ChromeImportView: View {
         }.value
         blocked = denied
         extensions = found
-        // Start with what's worth converting: on in the browser, installed from
-        // a store (an unpacked folder is someone's work in progress), not
-        // already in Safari, and not something its maker already ships for Safari.
-        selected = Set(found.filter { ext in
-            ext.enabled && !ext.unpacked && !alreadyInSafari(ext)
-                && SafariAlternatives.lookup(chromeId: ext.chromeId) == nil
-        }.map(\.id))
+        selected = defaultSelection(found)
+    }
+
+    private func defaultSelection(_ found: [InstalledBrowserExtension]) -> Set<String> {
+        Self.defaultSelection(found, browser: vm.targetBrowser, alreadyIn: alreadyIn,
+                              hasOfficialSafariVersion: { SafariAlternatives.lookup(chromeId: $0) != nil })
     }
 
     private func start() {
         guard let extensions else { return }
+        let browser = vm.targetBrowser
         let items = extensions.filter { selected.contains($0.id) }.map { ext in
             QueueItem(name: ext.name, iconPNG: ext.iconPNG,
                       storeId: ext.fromWebStore ? ext.chromeId : nil,
                       chromeId: ext.chromeId,
-                      settingsProfile: ext.profile) {
+                      settingsProfile: ext.profile,
+                      browser: browser) {
                 try await Task.detached(priority: .userInitiated) {
                     try BrowserExtensionScanner.stage(ext)
                 }.value
@@ -245,12 +252,33 @@ struct ChromeImportView: View {
         }
     }
 
-    private func alreadyInSafari(_ ext: InstalledBrowserExtension) -> Bool {
-        vm.history.isInstalled(chromeId: ext.chromeId)
+    private func alreadyIn(_ ext: InstalledBrowserExtension) -> Bool {
+        vm.history.isInstalled(chromeId: ext.chromeId, browser: vm.targetBrowser)
     }
 
     private func orderedProfiles(_ list: [InstalledBrowserExtension]) -> [BrowserProfile] {
         var seen = Set<BrowserProfile>()
         return list.map(\.profile).filter { seen.insert($0).inserted }
+    }
+}
+
+extension ChromeImportView {
+    /// What starts ticked: on in the browser, installed from a store (an
+    /// unpacked folder is someone's work in progress), not already in the
+    /// target browser, and for Safari, not something its maker already ships
+    /// for Safari.
+    static func defaultSelection(_ found: [InstalledBrowserExtension], browser: Browser,
+                                 alreadyIn: (InstalledBrowserExtension) -> Bool,
+                                 hasOfficialSafariVersion: (String) -> Bool) -> Set<String> {
+        Set(found.filter { ext in
+            ext.enabled && !ext.unpacked && !alreadyIn(ext)
+                && (browser != .safari || !hasOfficialSafariVersion(ext.chromeId))
+        }.map(\.id))
+    }
+
+    /// Only when it changes the outcome: more ticked than the free plan covers.
+    static func quotaNote(selected: Int, freeLeft: Int, unlimited: Bool, browser: Browser) -> String? {
+        guard !unlimited, selected > freeLeft else { return nil }
+        return "\(freeLeft) free, \(selected - freeLeft) need a \(LicenseTier.single(for: browser).displayName) license"
     }
 }

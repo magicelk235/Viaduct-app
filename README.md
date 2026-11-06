@@ -19,8 +19,9 @@ open a terminal to do it.
   the store listing rather than the extension's random-looking ID. Names written
   as Chrome `__MSG_` i18n keys get resolved out of `_locales`.
 - On the free plan, Viaduct removes a converted extension 7 days after converting
-  it, with reminders 3 days and 1 day before. Pro keeps them, including ones converted
-  before activating. Extensions converted before this limit existed are kept.
+  it, with reminders 3 days and 1 day before. A license for that browser keeps them,
+  including ones converted before activating. Extensions converted before this limit
+  existed are kept.
 - The CLI isn't baked into the app. Viaduct downloads
   `@magicelk235/viaduct` from npm the first time you open it, keeps it in
   Application Support, and checks on every later launch whether a newer one has

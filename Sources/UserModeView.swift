@@ -4,8 +4,9 @@ import UniformTypeIdentifiers
 
 /// Clean, card-centric User surface: one glass drop-zone card holds the whole
 /// flow — drop/browse, then the extension's icon + name, then live phase text
-/// while converting. A single morphing CTA below drives convert → open Safari.
-/// No arrow, no aurora; flat near-black canvas, Raycast glass.
+/// while converting. A single morphing CTA below drives convert → open the
+/// result in Safari or Firefox. No arrow, no aurora; flat near-black canvas,
+/// Raycast glass.
 struct UserModeView: View {
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject private var license = LicenseManager.shared
@@ -30,6 +31,10 @@ struct UserModeView: View {
             VStack(spacing: Theme.Space.lg) {
                 Spacer(minLength: Theme.Space.xl)
                 header
+                // Held while a run is going, the finishing animation included:
+                // the run keeps its browser through to the done card.
+                BrowserPicker(selection: $vm.targetBrowser)
+                    .disabled(vm.isRunning || vm.phase.isFinishing)
                 dropCard
                 ctaBlock
                 freeUsesBadge
@@ -79,16 +84,17 @@ struct UserModeView: View {
     // MARK: - Header
 
     private var header: some View {
-        BrandLockup(subtitle: "Run Chrome extensions in Safari.")
+        BrandLockup(subtitle: "Run Chrome extensions in Safari and Firefox.")
     }
 
     // MARK: - Free-uses badge
 
-    /// Tells unlicensed users how many free conversions remain, so the paywall
-    /// isn't a surprise. Hidden entirely for licensed users and mid-convert.
+    /// Tells free-plan users how many free conversions remain, so the paywall
+    /// isn't a surprise. Hidden for anyone whose license covers the picked
+    /// browser, and mid-convert.
     @ViewBuilder
     private var freeUsesBadge: some View {
-        if !license.isLicensed && showsHistory {
+        if !license.unlimited(vm.targetBrowser) && showsHistory {
             let left = license.freeConversionsRemaining
             Text(left > 0
                  ? "\(left) free conversion\(left == 1 ? "" : "s") left"
@@ -207,7 +213,13 @@ struct UserModeView: View {
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1).truncationMode(.middle)
                 if vm.phase == .done {
-                    DoneBadge()
+                    DoneBadge(browser: vm.options.browser)
+                    if vm.firefoxInstallPending {
+                        Text("Arrives the next time you open Firefox.")
+                            .font(Theme.Font.caption())
+                            .foregroundStyle(Theme.Colors.mute)
+                            .multilineTextAlignment(.center)
+                    }
                     // A run can succeed and still come out ad-hoc: the CLI
                     // rebuilds that way when the team it found can't sign.
                     // Safari then refuses the extension outright until the
@@ -227,7 +239,11 @@ struct UserModeView: View {
                             .font(Theme.Font.caption())
                             .foregroundStyle(Theme.Colors.mute)
                     }
-                    OfficialVersionBanner(path: vm.options.inputPath, storeId: vm.pendingStoreId)
+                    // It points at an official Safari version, so it's no help
+                    // for Firefox.
+                    if vm.options.browser == .safari {
+                        OfficialVersionBanner(path: vm.options.inputPath, storeId: vm.pendingStoreId)
+                    }
                 }
             }
             .transition(.scale(scale: 0.92).combined(with: .opacity))
@@ -245,14 +261,14 @@ struct UserModeView: View {
                             onComplete: { vm.completeFinishing() })
 
             VStack(spacing: 2) {
-                Text(vm.phase.title)
+                Text(vm.phase.title(for: vm.options.browser))
                     .font(Theme.Font.headingSM())
                     .foregroundStyle(Theme.Colors.ink)
                     .id("title\(vm.phase.rawValue)")
                     .transition(.asymmetric(
                         insertion: .move(edge: .bottom).combined(with: .opacity),
                         removal: .move(edge: .top).combined(with: .opacity)))
-                Text(vm.phase.subtitle)
+                Text(vm.phase.subtitle(for: vm.options.browser))
                     .font(Theme.Font.caption())
                     .foregroundStyle(Theme.Colors.mute)
                     .id("sub\(vm.phase.rawValue)")
@@ -261,8 +277,8 @@ struct UserModeView: View {
 
             Button("Cancel") { vm.cancel(); vm.resetUserFlow() }
                 .buttonStyle(.raycastGhost)
-                .disabled(vm.phase.isFinishing)
-                .opacity(vm.phase.isFinishing ? 0.4 : 1)
+                .disabled(vm.cancelDisabled)
+                .opacity(vm.cancelDisabled ? 0.4 : 1)
         }
     }
 
@@ -277,7 +293,7 @@ struct UserModeView: View {
                 .font(Theme.Font.headingSM())
                 .foregroundStyle(Theme.Colors.ink)
                 .multilineTextAlignment(.center)
-            Text(vm.failureSummary ?? vm.phase.subtitle)
+            Text(vm.failureSummary ?? vm.phase.subtitle(for: vm.options.browser))
                 .font(Theme.Font.caption())
                 .foregroundStyle(Theme.Colors.mute)
                 .multilineTextAlignment(.center)
@@ -302,6 +318,7 @@ struct UserModeView: View {
     /// Name the step that failed, pulled from how far `phase` advanced before
     /// the CLI bailed. Falls back to a generic headline.
     private var failedHeadline: String {
+        if let gate = vm.firefoxGate { return gate.headline }
         if let verdict = vm.compatibility { return verdict.title }
         if vm.needsXcode {
             switch vm.xcodeStatus {
@@ -312,7 +329,9 @@ struct UserModeView: View {
             }
         }
         if let last = vm.lastReachedTrackPhase {
-            return "Failed while \(last.title.lowercased())"
+            // Lower only the first letter, so "Safari" and "Firefox" keep theirs.
+            let title = last.title(for: vm.options.browser)
+            return "Failed while " + title.prefix(1).lowercased() + title.dropFirst()
         }
         return "Conversion failed"
     }
@@ -343,6 +362,14 @@ struct UserModeView: View {
                     .buttonStyle(.raycastTertiary)
             }
 
+        // Converting for Firefox needs Firefox on this Mac first.
+        case .idle where vm.options.browser == .firefox && vm.firefoxInstall == nil:
+            Button { FirefoxGate.notInstalled.perform() } label: {
+                Text(FirefoxGate.notInstalled.actionTitle)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.raycastPrimary)
+
         case .idle:
             Button { vm.userConvert() } label: {
                 Text(vm.cliInstalling ? "Getting ready…" : "Convert & Install")
@@ -355,14 +382,32 @@ struct UserModeView: View {
             VStack(spacing: Theme.Space.sm) {
                 Button {
                     Feedback.haptic(.generic)
-                    vm.openConvertedApp()
+                    vm.openResult()
                 } label: {
-                    Text("Open extension")
+                    Text(vm.options.browser == .firefox ? "Open Firefox" : "Open extension")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.raycastPrimary)
                 Button("Convert another") { vm.resetUserFlow() }
                     .buttonStyle(.raycastGhost)
+            }
+
+        // A Firefox gate: its one fix, then a recheck that picks the
+        // conversion back up once the fix took.
+        case .failed where vm.needsFirefox:
+            if let gate = vm.firefoxGate {
+                VStack(spacing: Theme.Space.sm) {
+                    Button {
+                        Feedback.haptic(.generic)
+                        gate.perform()
+                    } label: {
+                        Text(gate.actionTitle)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.raycastPrimary)
+                    Button("Try Again") { vm.recheckFirefox(resume: true) }
+                        .buttonStyle(.raycastTertiary)
+                }
             }
 
         case .failed where vm.needsXcode:
@@ -502,7 +547,8 @@ struct UserModeView: View {
         return IssueReport.conversionFailure(
             extensionName: name, version: vm.extInfo?.version,
             storeId: vm.pendingStoreId ?? ExtensionIdentity.chromeId(forSource: vm.options.inputPath),
-            summary: vm.compatibility?.title ?? vm.failureSummary, log: log, cliVersion: vm.installedVersion)
+            summary: vm.compatibility?.title ?? vm.failureSummary, log: log, cliVersion: vm.installedVersion,
+            browser: vm.options.browser, persistVersion: vm.persistVersion)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -519,7 +565,7 @@ struct UserModeView: View {
             guard let url else { return }
             DispatchQueue.main.async {
                 if vm.phase != .idle { vm.resetUserFlow() }
-                vm.selectInput(path: url.path)
+                vm.chooseInput(path: url.path)
             }
         }
         return true
@@ -553,7 +599,10 @@ struct RecentConversions: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .transition(.opacity)
             .sheet(item: $selected) { rec in
-                HistoryDetailSheet(record: rec, vm: vm, history: history) { selected = nil }
+                // A removal that ends late must not close another record's sheet.
+                HistoryDetailSheet(record: rec, vm: vm, history: history) {
+                    if selected?.id == rec.id { selected = nil }
+                }
             }
         }
     }
@@ -570,9 +619,12 @@ struct RecentConversions: View {
                     .font(Theme.Font.body())
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1).truncationMode(.middle)
-                Text(rec.date.formatted(date: .abbreviated, time: .shortened))
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.stone)
+                HStack(spacing: 4) {
+                    BrowserGlyph(browser: rec.browser)
+                    Text(rec.date.formatted(date: .abbreviated, time: .shortened))
+                        .font(Theme.Font.caption())
+                        .foregroundStyle(Theme.Colors.stone)
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
@@ -593,13 +645,16 @@ struct RecentConversions: View {
 }
 
 /// Detail sheet for one past conversion: big icon + name + when, the source
-/// path, and the three things you'd actually want — re-open in Safari, convert
-/// it again, reveal in Finder — plus a destructive remove.
+/// path, and what you'd want next: reveal the Safari app in Finder or open
+/// Firefox, convert it again, or remove it.
 struct HistoryDetailSheet: View {
     let record: ConversionRecord
     let vm: ConverterViewModel
     @ObservedObject var history: ConversionHistory
     let dismiss: () -> Void
+    /// Remove is waiting on the uninstall, which for Firefox takes a moment.
+    @State private var removing = false
+    @State private var removalFailure: RemovalFailure?
 
     private var sourceExists: Bool {
         FileManager.default.fileExists(atPath: record.sourcePath)
@@ -614,9 +669,14 @@ struct HistoryDetailSheet: View {
                     .font(Theme.Font.headingMD())
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1).truncationMode(.middle)
-                Text("Converted \(record.date.formatted(date: .abbreviated, time: .shortened))")
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.mute)
+                HStack(spacing: 4) {
+                    BrowserGlyph(browser: record.browser)
+                        // The line already names the browser.
+                        .accessibilityHidden(true)
+                    Text("Converted \(record.date.formatted(date: .abbreviated, time: .shortened)) in \(record.browser.displayName)")
+                        .font(Theme.Font.caption())
+                        .foregroundStyle(Theme.Colors.mute)
+                }
             }
 
             HStack(spacing: Theme.Space.sm) {
@@ -644,6 +704,16 @@ struct HistoryDetailSheet: View {
                     }
                     .buttonStyle(.raycastPrimary)
                 }
+                if record.browser == .firefox, let firefox = FirefoxLocator.find() {
+                    Button {
+                        FirefoxLocator.open(firefox)
+                        dismiss()
+                    } label: {
+                        Label("Open Firefox", systemImage: "arrow.up.forward.app")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.raycastPrimary)
+                }
                 Button {
                     vm.reconvert(record)
                     dismiss()
@@ -652,31 +722,98 @@ struct HistoryDetailSheet: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.raycastTertiary)
-                .disabled(!sourceExists)
+                // Converting it again while it's being removed would lose the source.
+                .disabled(!sourceExists || removing)
                 .help(sourceExists ? "" : "The original file has moved or been deleted")
 
                 HStack {
-                    Button("Remove") {
-                        history.remove(record)
-                        dismiss()
+                    Button {
+                        remove()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if removing { ProgressView().controlSize(.small) }
+                            Text("Remove")
+                        }
                     }
                     .buttonStyle(.raycastGhost)
+                    .disabled(removing)
                     Button("Report a Problem") {
                         NSWorkspace.shared.open(IssueReport.convertedButBroken(
-                            extensionName: record.name, version: record.version, storeId: record.storeId))
+                            extensionName: record.name, version: record.version, storeId: record.storeId,
+                            browser: record.browser, cliVersion: vm.installedVersion, persistVersion: vm.persistVersion))
                     }
                     .buttonStyle(.raycastGhost)
-                    .help("It installed but doesn't work right in Safari")
+                    .help("It installed but doesn't work right in \(record.browser.displayName)")
                     Spacer()
                     Button("Close") { dismiss() }
                         .buttonStyle(.raycastGhost)
                         .keyboardShortcut(.cancelAction)
+                        // The removal's outcome, a failure or the Restart Firefox
+                        // offer, shows in this sheet, so it stays up until then.
+                        .disabled(removing)
                 }
             }
         }
         .padding(Theme.Space.lg)
         .frame(width: 340)
         .background(AmbientBackground())
+        .interactiveDismissDisabled(removing)
+        .removalFailureAlert($removalFailure) { _ in remove(restartingFirefox: true) }
+    }
+
+    private func remove(restartingFirefox: Bool = false) {
+        removing = true
+        Task {
+            do {
+                try await history.remove(record, restartFirefox: restartingFirefox)
+                dismiss()
+            } catch {
+                removalFailure = RemovalFailure(record: record, error: error)
+            }
+            removing = false
+        }
+    }
+}
+
+/// A Remove that didn't go through, as its alert shows it.
+struct RemovalFailure {
+    let record: ConversionRecord
+    /// Firefox has the add-on's profile open and only lets go of it by
+    /// restarting, which waits for the user to agree.
+    let needsFirefoxRestart: Bool
+    let message: String
+
+    init(record: ConversionRecord, error: Error) {
+        self.record = record
+        needsFirefoxRestart = (error as? PersistError)?.needsFirefoxRestart ?? false
+        // Persist's message for this names a profile path and a command-line
+        // flag, so the alert shows the restart notice instead.
+        message = needsFirefoxRestart ? "\(FirefoxRestartPrompt.title). \(FirefoxRestartPrompt.message)"
+                                      : error.localizedDescription
+    }
+
+    var title: String { "Couldn't remove \(record.name)" }
+}
+
+extension View {
+    /// The alert for a Remove that didn't go through. When Firefox has to
+    /// restart to let the add-on go, it offers Restart Firefox, and `restart`
+    /// tries again with the restart allowed.
+    func removalFailureAlert(_ failure: Binding<RemovalFailure?>,
+                             restart: @escaping (ConversionRecord) -> Void) -> some View {
+        alert(failure.wrappedValue?.title ?? "",
+              isPresented: Binding(get: { failure.wrappedValue != nil },
+                                   set: { if !$0 { failure.wrappedValue = nil } }),
+              presenting: failure.wrappedValue) { shown in
+            if shown.needsFirefoxRestart {
+                Button(FirefoxRestartPrompt.restartButton) { restart(shown.record) }
+                Button("Not Now", role: .cancel) {}
+            } else {
+                Button("OK", role: .cancel) {}
+            }
+        } message: { shown in
+            Text(shown.message)
+        }
     }
 }
 
@@ -757,8 +894,10 @@ struct ExtensionIcon: View {
 /// The success label for a finished conversion. Solid green pill + white text so
 /// it stays legible on the neutral glass card in both light and dark themes.
 struct DoneBadge: View {
+    let browser: Browser
+
     var body: some View {
-        Label("Installed in Safari", systemImage: "checkmark.circle.fill")
+        Label("Installed in \(browser.displayName)", systemImage: "checkmark.circle.fill")
             .font(Theme.Font.caption())
             .foregroundStyle(.white)
             .padding(.horizontal, Theme.Space.sm).padding(.vertical, 3)

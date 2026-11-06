@@ -36,9 +36,25 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSAppDataUsageDescription</key>
-	<string>Viaduct reads the extensions installed in your browsers, and their saved settings, so it can bring them over to Safari.</string>
+	<string>Viaduct reads the extensions installed in your browsers, and their saved settings, so it can bring them over to Safari or Firefox.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Yehonatan Cohen. PolyForm Shield License 1.0.0.</string>
+	<key>PolarBenefitFirefox</key>
+	<string></string>
+	<key>PolarBenefitMixed</key>
+	<string></string>
+	<key>PolarBenefitSafari</key>
+	<string></string>
+	<key>PolarCheckoutFirefox</key>
+	<string></string>
+	<key>PolarCheckoutMixed</key>
+	<string></string>
+	<key>PolarCheckoutSafari</key>
+	<string></string>
+	<key>PolarOrganizationID</key>
+	<string></string>
+	<key>PolarPortalURL</key>
+	<string></string>
 	<key>SUAutomaticallyUpdate</key>
 	<true/>
 	<key>SUFeedURL</key>

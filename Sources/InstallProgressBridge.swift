@@ -10,23 +10,22 @@ import AppKit
 /// `object` string; the sandboxed appex may receive it).
 ///
 /// SECURITY: DistributedNotificationCenter is a system-wide, unauthenticated
-/// bus — any local process can post `requestNote` and read the `stateNote`
-/// reply. There is no way to authenticate the appex over it, so the snapshot
-/// (see `ViaductApp.progressSnapshot`) MUST carry only non-sensitive progress
-/// state: no filesystem paths, no license/trial specifics, no secrets.
+/// bus — any local process can post `ProgressBus.request` and read the
+/// `ProgressBus.state` reply. There is no way to authenticate the appex over
+/// it, so the snapshot (see `ViaductApp.progressSnapshot`) MUST carry only
+/// non-sensitive progress state: no filesystem paths, no license/trial
+/// specifics, no secrets.
 final class InstallProgressBridge {
     static let shared = InstallProgressBridge()
-
-    static let requestNote = Notification.Name("com.magicelk235.viaduct.progress.request")
-    static let stateNote = Notification.Name("com.magicelk235.viaduct.progress.state")
 
     /// True while the CRX is downloading from the store (before the CLI runs,
     /// while `vm.phase` is still `.idle`).
     var downloading = false
 
     /// Set by the app at launch; returns the JSON-serializable state dict for a
-    /// poll. `queryId` is the CWS id of an installed-check (nil for a plain
-    /// progress poll); the app adds `forId`/`installed` when it's present.
+    /// poll. `queryId` is the installed-check's `InstalledQuery` object (nil
+    /// for a plain progress poll); the app adds `forId`/`installed` when it's
+    /// present.
     /// Runs on the main actor (the observer hops there before calling).
     var snapshot: (String?) -> [String: Any] = { _ in ["state": "idle"] }
 
@@ -36,7 +35,7 @@ final class InstallProgressBridge {
         guard !started else { return }
         started = true
         DistributedNotificationCenter.default().addObserver(
-            forName: Self.requestNote, object: nil, queue: nil
+            forName: ProgressBus.request, object: nil, queue: nil
         ) { [weak self] note in
             let queryId = note.object as? String
             Task { @MainActor in self?.reply(queryId: queryId) }
@@ -48,6 +47,6 @@ final class InstallProgressBridge {
         guard let data = try? JSONSerialization.data(withJSONObject: snapshot(queryId)),
               let json = String(data: data, encoding: .utf8) else { return }
         DistributedNotificationCenter.default().postNotificationName(
-            Self.stateNote, object: json, userInfo: nil, deliverImmediately: true)
+            ProgressBus.state, object: json, userInfo: nil, deliverImmediately: true)
     }
 }

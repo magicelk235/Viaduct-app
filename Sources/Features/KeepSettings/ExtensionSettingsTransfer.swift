@@ -488,7 +488,7 @@ enum ExtensionSettingsTransfer {
     /// The seed: the data as an object literal, then the code that writes it.
     /// Kept to ES5 plus Promise, and free of module syntax, so it runs as a
     /// classic script, a module, or at the top of a service worker.
-    private static func seedScript(local: String, sync: String) -> String {
+    static func seedScript(local: String, sync: String) -> String {
         #"""
         // Added by Viaduct: this extension's saved settings, carried over from Chrome.
         // It runs before the extension's own background code and fills each storage

@@ -61,36 +61,56 @@ final class ExtensionUpdater {
     /// Durable copy of converted sources, so a move to another Mac (and a
     /// rebuild) survives the user moving the original file or macOS purging
     /// the Caches-dir store download.
-    static var archiveDir: URL {
+    nonisolated static var archiveDir: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Viaduct/sources", isDirectory: true)
     }
 
-    /// Copy `path` into the archive, keyed by app name. Returns the archived path
-    /// (or nil on failure — caller then keeps the original path).
-    static func archiveSource(_ path: String, appName: String) -> String? {
+    /// Copy `path` into the archive, keyed by browser and app name. Returns the
+    /// archived path (or nil on failure — caller then keeps the original path).
+    static func archiveSource(_ path: String, appName: String, browser: Browser, root: URL = archiveDir) -> String? {
         let fm = FileManager.default
         guard fm.fileExists(atPath: path), !appName.isEmpty else { return nil }
         do {
-            try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
-            let ext = URL(fileURLWithPath: path).pathExtension
+            // Safari's copies stay at the top, where records from before
+            // Firefox point. Firefox gets a folder so the same name can't clash.
+            let dir = browser == .safari ? root : root.appendingPathComponent("firefox", isDirectory: true)
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let source = URL(fileURLWithPath: path)
+            let ext = source.pathExtension
             // One slot per app name; re-convert overwrites it. Dirs (unpacked)
             // and archives both handled by copyItem.
-            let dest = archiveDir.appendingPathComponent(appName)
+            let dest = dir.appendingPathComponent(appName)
                 .appendingPathExtension(ext.isEmpty ? "src" : ext)
+            // Convert Again converts the archived copy itself. Deleting the
+            // destination first would leave nothing to copy.
+            if source.standardizedFileURL.path == dest.standardizedFileURL.path { return dest.path }
             if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-            try fm.copyItem(at: URL(fileURLWithPath: path), to: dest)
+            try fm.copyItem(at: source, to: dest)
             return dest.path
         } catch { return nil }
     }
 
-    /// Store installs due for a weekly CWS version poll: has a storeId and hasn't
-    /// been checked in the last week. Local-source-only records have no upstream
-    /// to poll, so they're excluded.
+    /// Whether a license turns the weekly store update on. Any license does;
+    /// which records it then looks after depends on the browsers it covers.
+    nonisolated static func isUnlocked(by entitlements: Entitlements) -> Bool {
+        entitlements != .none
+    }
+
+    /// Whether the weekly store update looks after this record: a store
+    /// install, under a license that covers the browser it went into.
+    nonisolated static func covers(_ rec: ConversionRecord, entitlements: Entitlements) -> Bool {
+        rec.storeId != nil && entitlements.unlimited(rec.browser)
+    }
+
+    /// Store installs due for a weekly CWS version poll: covered by the license
+    /// and not checked in the last week. Local-source-only records have no
+    /// upstream to poll, so they're excluded.
     private func dueForUpdateCheck() -> [ConversionRecord] {
         let now = Date()
+        let entitlements = LicenseManager.shared.entitlements
         return history.records.filter { rec in
-            rec.storeId != nil
+            Self.covers(rec, entitlements: entitlements)
             && UpdatePolicy.dueForUpdateCheck(lastCheck: rec.lastUpdateCheck, now: now)
         }
     }
@@ -101,18 +121,26 @@ final class ExtensionUpdater {
     /// enablement is checked by the caller (ConverterViewModel).
     func updateIfNeeded() {
         guard !running, !runner.isRunning, CLIRunner.resolveCLIScript() != nil else { return }
-        history.pruneDeleted()
-        let due = dueForUpdateCheck()
-        guard !due.isEmpty else { return }
         running = true
         Task { @MainActor in
             defer { running = false }
-            for rec in due { await update(rec) }
+            await history.pruneDeleted()
+            for rec in dueForUpdateCheck() { await update(rec) }
         }
     }
 
     private func update(_ rec: ConversionRecord) async {
         guard let sid = rec.storeId else { return }
+        // A Firefox add-on needs Firefox to build into. Without it, try again
+        // next week rather than report a failure.
+        var firefox: FirefoxLocator.Install?
+        if rec.browser == .firefox {
+            firefox = FirefoxLocator.find()
+            guard firefox != nil else {
+                history.stampUpdateCheck(id: rec.id)
+                return
+            }
+        }
         // Poll the CWS. Any failure: stamp the check (don't retry until next week)
         // and move on — a transient store hiccup shouldn't spin.
         guard let crx = try? await ChromeStore.downloadCRX(id: sid) else {
@@ -126,19 +154,35 @@ final class ExtensionUpdater {
             return
         }
         // New version — archive the fresh source and rebuild from it.
-        let sourcePath = Self.archiveSource(crx.path, appName: rec.resolvedAppName) ?? crx.path
+        let sourcePath = Self.archiveSource(crx.path, appName: rec.resolvedAppName, browser: rec.browser) ?? crx.path
         history.updateSource(id: rec.id, path: sourcePath)
+        if let firefox {
+            do {
+                _ = try await FirefoxConversion.run(input: sourcePath, appName: rec.resolvedAppName, firefox: firefox,
+                                                    profile: rec.profilePath, addons: .shared)
+                // Persist keeps the add-on itself: there's no .app, and nothing signed ad-hoc.
+                history.markUpdated(id: rec.id, version: latest, installedPath: nil,
+                                    build: SigningAccount.Build(adHoc: false))
+            } catch {
+                updateFailed(rec)
+            }
+            return
+        }
         let code = await rebuild(sourcePath: sourcePath, appName: rec.resolvedAppName)
         if code == 0 {
             history.markUpdated(id: rec.id, version: latest,
                                 installedPath: rec.installedPath,
                                 build: SigningAccount.inspectBuild(installedAppPath: rec.installedPath))
         } else {
-            // Build failed: stamp the poll so we don't hammer it, and surface it.
-            history.stampUpdateCheck(id: rec.id)
-            history.markUpdateFailed(id: rec.id)
-            notifyFailure(rec)
+            updateFailed(rec)
         }
+    }
+
+    /// The rebuild failed: stamp the poll so we don't hammer it, and surface it.
+    private func updateFailed(_ rec: ConversionRecord) {
+        history.stampUpdateCheck(id: rec.id)
+        history.markUpdateFailed(id: rec.id)
+        notifyFailure(rec)
     }
 
     /// Run a full convert+install from source via the CLI, signing with the same
@@ -149,15 +193,20 @@ final class ExtensionUpdater {
         opts.appName = appName
         opts.useTeam(SigningAccount.signingTeam()?.id)
         opts.force = true          // never block a rebuild on advisory issues
+        return await Self.runCLI(opts.conversionArgs())
+    }
 
-        // A conversion the user started holds the CLI; wait for it instead of
-        // logging a failed update that never ran.
+    /// Run the CLI with `args` and return its exit code, or -1 when it can't
+    /// start. A conversion the user started holds the CLI; wait for it instead
+    /// of logging a failed update that never ran.
+    static func runCLI(_ args: [String]) async -> Int32 {
+        let runner = CLIRunner.shared
         while runner.isRunning {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
         }
         return await withCheckedContinuation { cont in
             do {
-                try runner.run(args: opts.conversionArgs(), onLine: { _ in }) { c in
+                try runner.run(args: args, onLine: { _ in }) { c in
                     cont.resume(returning: c)
                 }
             } catch {

@@ -9,7 +9,7 @@
   "content_scripts": [
     {
       "matches": ["*://chromewebstore.google.com/*"],
-      "js": ["content.js"],
+      "js": ["transport.js", "content.js"],
       "run_at": "document_start"
     }
   ],

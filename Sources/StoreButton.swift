@@ -49,8 +49,7 @@ enum StoreButton {
         SFSafariApplication.showPreferencesForExtension(withIdentifier: identifier) { error in
             guard error != nil else { return }
             DispatchQueue.main.async {
-                guard let safari = NSWorkspace.shared
-                    .urlForApplication(withBundleIdentifier: "com.apple.Safari") else { return }
+                guard let safari = Browser.safari.appURL else { return }
                 NSWorkspace.shared.openApplication(at: safari,
                                                    configuration: NSWorkspace.OpenConfiguration())
             }
@@ -62,8 +61,7 @@ enum StoreButton {
     /// for people who use Chrome extensions.
     static func openWebStore() {
         let store = URL(string: "https://chromewebstore.google.com/")!
-        guard let safari = NSWorkspace.shared
-            .urlForApplication(withBundleIdentifier: "com.apple.Safari") else {
+        guard let safari = Browser.safari.appURL else {
             NSWorkspace.shared.open(store)
             return
         }

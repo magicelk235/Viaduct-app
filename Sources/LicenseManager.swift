@@ -1,135 +1,286 @@
 import Foundation
 import Combine
+import SystemConfiguration
 
-/// Gates the app behind a Gumroad license key.
+/// The license keys on this Mac and what they unlock.
 ///
-/// Flow: user pastes a key → `activate` calls Gumroad's license verify
-/// endpoint. On success we store the key in the Keychain. Every launch we
-/// re-verify, but a previously-verified key keeps working offline via the
-/// cached timestamp so a flaky network never locks a paying user out.
+/// Each key unlocks one tier: Firefox, Safari, or Mixed for both. A Polar
+/// key's tier comes from the benefit it was sold under; a Pro key bought on
+/// Gumroad before the tiers counts as Mixed. The keys add up per browser, and
+/// a browser none of them covers follows the free plan: the shared quota
+/// below, and removal after a week.
 ///
-/// Gumroad license API: https://docs.gumroad.com/#verify-a-license
-/// POST https://api.gumroad.com/v2/licenses/verify
-///   product_id=<id>&license_key=<key>&increment_uses_count=false
-/// Returns: { success, uses, purchase:{ refunded, disputed, chargebacked, ... } }
+/// Every launch checks each key with its store. A key the store turns down is
+/// dropped. A key that can't be checked keeps working for 14 days from its
+/// last good check, so a flaky network never locks a paying user out.
 @MainActor
 final class LicenseManager: ObservableObject {
     static let shared = LicenseManager()
 
-    // MARK: - Config (fill in from your Gumroad product)
-
-    /// Gumroad product ID — stable even if you rename the product URL slug.
-    /// From the product's Settings/Advanced page.
-    private let productID = "-7WMe9QfKNdzB5rmGZjMdw=="
-
-    /// Optional hard cap on activations per key. Gumroad increments `uses` each
-    /// verify; we only bump it on first activation. 0 = unlimited.
-    private let maxActivations = 0
-
-    // MARK: - Published state
-
-    enum State: Equatable {
-        case unknown          // still checking on launch
-        case unlicensed       // no key, show activation
-        case licensed         // good to go
-        case checking         // network call in flight
-    }
-
-    @Published private(set) var state: State = .unknown
-    @Published var lastError: String?
-    /// Whether the launch check has an answer yet. Separate from `state`,
-    /// which also reads `.checking` while a typed key is being verified.
+    @Published private(set) var keys: [StoredKey]
+    /// What the keys unlock between them. Set from the saved keys at launch,
+    /// so a paying user's menu and badges are right before the check answers;
+    /// the check can only take keys away.
+    @Published private(set) var entitlements: Entitlements
+    /// Whether the launch check has an answer yet.
     @Published private(set) var hasLaunchAnswer = false
+    @Published private(set) var isAddingKey = false
+    /// What the launch check wants the user to know: a key it dropped, or one
+    /// it couldn't check for too long.
+    @Published private(set) var problem: String?
 
-    // MARK: - License storage
-    //
-    // Stored in a plain file under Application Support, NOT the Keychain. The
-    // Keychain binds an item to the build's code signature, so every re-signed
-    // release/auto-update triggered a login-password prompt; the
-    // `keychain-access-groups` entitlement that would fix that is restricted to
-    // provisioning-profile builds (a plain Developer ID app can't claim it — it
-    // fails to launch). A Gumroad license key isn't a secret worth that
-    // friction, so a file it is. File over Keychain — the key is a
-    // purchase receipt, not a password.
+    /// The problem shown after an offline Remove: the key is gone from this
+    /// Mac, but its Polar activation is still taken.
+    static let activationNotFreed =
+        "Viaduct couldn't reach Polar to free this Mac's activation. You can free it from Manage Activations."
 
-    /// ~/Library/Application Support/Viaduct. Its creation date doubles as the
-    /// install date: the CLI is installed there on first launch.
-    private static let supportDir: URL =
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Viaduct", isDirectory: true)
+    private let store: LicenseStore
+    private let polar: PolarLicensing
+    private let gumroad: GumroadLicensing
+    private let benefitIds: [LicenseTier: String]
+    private let defaults: UserDefaults
+    private let now: () -> Date
+    private let macName: () -> String
+    /// Keys on their way in, so pasting one twice can't use up a second
+    /// activation.
+    private var keysBeingAdded: Set<String> = []
 
-    /// ~/Library/Application Support/Viaduct/license (created lazily on first write).
-    private static let licenseFile = supportDir.appendingPathComponent("license")
-
-    private var storedKey: String? {
-        get {
-            if let key = try? String(contentsOf: Self.licenseFile, encoding: .utf8), !key.isEmpty {
-                return key
-            }
-            // One-time migration: pull a key an older build left in the Keychain,
-            // then persist it to the file so we never touch the Keychain again.
-            if let legacy = Keychain.readLegacyLicense() {
-                Self.persist(legacy)
-                return legacy
-            }
-            return nil
-        }
-        set { Self.persist(newValue) }
+    init(store: LicenseStore = .live, polar: PolarLicensing = PolarClient.live,
+         gumroad: GumroadLicensing = GumroadClient(),
+         benefitIds: [LicenseTier: String] = PolarConfig.benefitIds,
+         defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init,
+         macName: @escaping () -> String = LicenseManager.computerName) {
+        self.store = store
+        self.polar = polar
+        self.gumroad = gumroad
+        self.benefitIds = benefitIds
+        self.defaults = defaults
+        self.now = now
+        self.macName = macName
+        let keys = store.load()
+        self.keys = keys
+        entitlements = Self.unlocked(by: keys, at: now())
     }
 
-    /// Write the key to the license file (nil/empty clears it). Static so the
-    /// getter's migration path can call it without re-entering `storedKey`.
-    private static func persist(_ value: String?) {
-        guard let value, !value.isEmpty else {
-            try? FileManager.default.removeItem(at: licenseFile)
-            return
-        }
-        try? FileManager.default.createDirectory(at: licenseFile.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        try? value.write(to: licenseFile, atomically: true, encoding: .utf8)
+    /// What the keys still within their grace unlock between them.
+    private static func unlocked(by keys: [StoredKey], at date: Date) -> Entitlements {
+        Entitlements(tiers: keys.filter { $0.isUsable(at: date) }.map(\.tier))
     }
 
-    /// Last time a server verification succeeded — used for the offline grace window.
-    private var lastValidEpoch: Double {
-        get { UserDefaults.standard.double(forKey: "license-last-valid") }
-        set { UserDefaults.standard.set(newValue, forKey: "license-last-valid") }
-    }
+    // MARK: - Free plan
 
-    /// How long a cached-valid license keeps working with no network.
-    private let offlineGraceDays: Double = 14
-
-    private let verifyURL = URL(string: "https://api.gumroad.com/v2/licenses/verify")!
-
-    var isLicensed: Bool { state == .licensed }
-
-    // MARK: - Free tier (freemium)
-
-    /// How many conversions an unlicensed user gets before the hard lock.
+    /// Free conversions per Mac, shared by every browser no key covers.
     let freeQuota = 2
 
-    /// Monotonic count of conversions an unlicensed user has spent. Soft
+    /// Monotonic count of conversions spent on the free plan. Soft
     /// (UserDefaults) — a prefs wipe resets it, but that only buys 2 more free
-    /// signed conversions before the wall returns. Soft counter, move
-    /// to StoreKit/server only if free-tier abuse proves material.
+    /// conversions before the wall returns. Move it to a server only if
+    /// free-plan abuse proves material.
     private(set) var freeConversionsUsed: Int {
-        get { UserDefaults.standard.integer(forKey: "freeConversionsUsed") }
+        get { defaults.integer(forKey: "freeConversionsUsed") }
         set {
             objectWillChange.send()
-            UserDefaults.standard.set(newValue, forKey: "freeConversionsUsed")
+            defaults.set(newValue, forKey: "freeConversionsUsed")
         }
     }
 
     /// Free conversions left before the paywall (0 once exhausted).
     var freeConversionsRemaining: Int { max(0, freeQuota - freeConversionsUsed) }
 
-    /// The gate `userConvert()` checks: licensed users always pass; unlicensed
-    /// users pass until they've spent their free quota.
-    var canConvert: Bool { isLicensed || freeConversionsRemaining > 0 }
+    /// Whether a key covers this browser, so it converts with no limit.
+    func unlimited(_ browser: Browser) -> Bool { entitlements.unlimited(browser) }
 
-    /// Spend one free conversion. No-op for licensed users (unlimited).
-    func recordFreeConversion() {
-        guard !isLicensed else { return }
+    /// The gate a conversion checks: a covered browser always passes, any
+    /// other until the free quota is spent.
+    func canConvert(_ browser: Browser) -> Bool {
+        unlimited(browser) || freeConversionsRemaining > 0
+    }
+
+    /// Spend one free conversion. Does nothing for a browser a key covers.
+    func recordFreeConversion(_ browser: Browser) {
+        guard !unlimited(browser) else { return }
         freeConversionsUsed += 1
+    }
+
+    // MARK: - Launch check
+
+    /// Starts the launch check.
+    func bootstrap() {
+        Task { await validateStoredKeys() }
+    }
+
+    /// Checks every key with its store, all at once, so the launch waits for
+    /// the slowest answer rather than the sum.
+    func validateStoredKeys() async {
+        problem = nil
+        guard !keys.isEmpty else {
+            hasLaunchAnswer = true
+            return
+        }
+        let checked = keys
+        let polar = self.polar, gumroad = self.gumroad, benefitIds = self.benefitIds
+        let answers = await withTaskGroup(of: (String, Answer).self) { group -> [String: Answer] in
+            for key in checked {
+                group.addTask { (key.key, await Self.check(key, polar: polar, gumroad: gumroad, benefitIds: benefitIds)) }
+            }
+            var answers: [String: Answer] = [:]
+            for await (key, answer) in group { answers[key] = answer }
+            return answers
+        }
+
+        // By key string, so a key added or removed while the checks ran is
+        // left alone. In list order, so the problem shown is the first
+        // failing key's, whichever answer arrived first.
+        let date = now()
+        for key in checked {
+            guard let answer = answers[key.key], let i = keys.firstIndex(where: { $0.key == key.key }) else { continue }
+            switch answer {
+            case .good(let tier):
+                keys[i].tier = tier
+                keys[i].lastValidated = date
+            case .refused(let reason):
+                let message = "Your \(keys[i].tier.displayName) license key no longer works on this Mac."
+                keys.remove(at: i)
+                problem = problem ?? reason.map { "\(message) \($0)" } ?? message
+            case .unanswered:
+                if !keys[i].isUsable(at: date) { problem = problem ?? Self.uncheckedTooLong }
+            }
+        }
+        store.save(keys)
+        entitlements = Self.unlocked(by: keys, at: date)
+        hasLaunchAnswer = true
+    }
+
+    private static let uncheckedTooLong =
+        "Couldn't check your license key for 14 days. Viaduct checks again the next time it opens with an internet connection."
+
+    /// The problem left once the keys change outside the launch check: a key
+    /// past its grace, if one is still here.
+    private func remainingProblem(at date: Date) -> String? {
+        keys.contains { !$0.isUsable(at: date) } ? Self.uncheckedTooLong : nil
+    }
+
+    /// What a store said about one key.
+    private enum Answer {
+        case good(LicenseTier)
+        /// It turned the key down, in its own words when it gave some.
+        case refused(String?)
+        /// Nothing that settles it, so the key stays as it was.
+        case unanswered
+    }
+
+    /// Asks the key's store about it. A Polar benefit that isn't in
+    /// `benefitIds` counts as no answer: drift in the settings mustn't cost a
+    /// paying user their key.
+    private nonisolated static func check(_ key: StoredKey, polar: PolarLicensing, gumroad: GumroadLicensing,
+                                          benefitIds: [LicenseTier: String]) async -> Answer {
+        do {
+            switch key.provider {
+            case .polar:
+                let benefitId = try await polar.validate(key: key.key, activationId: key.activationId)
+                return LicenseTier(benefitId: benefitId, in: benefitIds).map(Answer.good) ?? .unanswered
+            case .gumroad:
+                try await gumroad.verify(key: key.key)
+                return .good(.mixed)
+            }
+        } catch LicenseError.rejected(let message) {
+            return .refused(message)
+        } catch LicenseError.unknownKey {
+            return .refused(nil)
+        } catch {
+            return .unanswered
+        }
+    }
+
+    // MARK: - Adding and removing keys
+
+    /// Adds a key the user typed or pasted. Polar activates it for this Mac.
+    /// A key Polar has never heard of can still be a Pro key from Gumroad,
+    /// which counts as Mixed. A key already here that's past its grace is
+    /// checked again instead, which needs no activation. Throws a
+    /// `LicenseError`.
+    func addKey(_ typed: String) async throws {
+        let key = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw LicenseError.unknownKey }
+        let stored = keys.first { $0.key == key }
+        if let stored, stored.isUsable(at: now()) { throw LicenseError.alreadyAdded }
+        guard !keysBeingAdded.contains(key) else { throw LicenseError.alreadyAdded }
+        keysBeingAdded.insert(key)
+        isAddingKey = true
+        defer {
+            keysBeingAdded.remove(key)
+            isAddingKey = !keysBeingAdded.isEmpty
+        }
+        if let stored { return try await checkAgain(stored) }
+
+        let added: StoredKey
+        do {
+            let activation = try await polar.activate(key: key, label: macName())
+            guard let tier = LicenseTier(benefitId: activation.benefitId, in: benefitIds) else {
+                // A key for another product on the same Polar account.
+                try? await polar.deactivate(key: key, activationId: activation.activationId)
+                throw LicenseError.notForViaduct
+            }
+            added = StoredKey(provider: .polar, key: key, activationId: activation.activationId, tier: tier,
+                              lastValidated: now())
+        } catch LicenseError.unknownKey {
+            do {
+                try await gumroad.verify(key: key)
+            } catch LicenseError.rejected {
+                throw LicenseError.unknownKey
+            }
+            added = StoredKey(provider: .gumroad, key: key, activationId: nil, tier: .mixed, lastValidated: now())
+        }
+        keys.append(added)
+        store.save(keys)
+        entitlements = Self.unlocked(by: keys, at: now())
+        problem = nil
+    }
+
+    /// Checks a stored key past its grace with its store and keeps what it
+    /// says, like the launch check does. Throws when the key isn't back.
+    private func checkAgain(_ stored: StoredKey) async throws {
+        let answer = await Self.check(stored, polar: polar, gumroad: gumroad, benefitIds: benefitIds)
+        // Removed in Settings while the check ran.
+        guard let i = keys.firstIndex(where: { $0.key == stored.key }) else { return }
+        let date = now()
+        switch answer {
+        case .good(let tier):
+            keys[i].tier = tier
+            keys[i].lastValidated = date
+        case .refused:
+            keys.remove(at: i)
+        case .unanswered:
+            throw LicenseError.unreachable
+        }
+        store.save(keys)
+        entitlements = Self.unlocked(by: keys, at: date)
+        problem = remainingProblem(at: date)
+        if case .refused(let reason) = answer {
+            throw reason.map(LicenseError.rejected) ?? .unknownKey
+        }
+    }
+
+    /// Forgets a key on this Mac. A Polar key gives its activation back
+    /// first, so it can go on another Mac, and goes anyway when Polar can't
+    /// be reached; `problem` then says the activation is still taken.
+    /// Gumroad has nothing to give back.
+    func removeKey(_ key: StoredKey) async {
+        var freed = true
+        if key.provider == .polar, let activationId = key.activationId {
+            do {
+                try await polar.deactivate(key: key.key, activationId: activationId)
+            } catch LicenseError.unreachable {
+                freed = false
+            } catch {
+                // Polar answered, so there's no activation left to free.
+            }
+        }
+        keys.removeAll { $0.key == key.key }
+        store.save(keys)
+        let date = now()
+        entitlements = Self.unlocked(by: keys, at: date)
+        problem = freed ? remainingProblem(at: date) : Self.activationNotFreed
     }
 
     // MARK: - Checkout
@@ -139,192 +290,34 @@ final class LicenseManager: ObservableObject {
         case paywall, settings
     }
 
-    /// Gumroad checkout link. `wanted=true` skips the product page and opens
-    /// the payment form. The other query items are anonymous usage counts;
-    /// Gumroad attaches them to the sale as `url_params`. Keep this list in
-    /// sync with the privacy page.
-    func checkoutURL(source: CheckoutSource, extensionCount: Int) -> URL {
-        var items = [
-            URLQueryItem(name: "wanted", value: "true"),
-            URLQueryItem(name: "conversions", value: String(freeConversionsUsed)),
-            URLQueryItem(name: "installed", value: String(extensionCount)),
-        ]
-        if let created = try? Self.supportDir.resourceValues(forKeys: [.creationDateKey]).creationDate {
-            let days = Calendar.current.dateComponents([.day], from: created, to: Date()).day ?? 0
-            items.append(URLQueryItem(name: "days", value: String(max(0, days))))
-        }
-        items.append(URLQueryItem(name: "source", value: source.rawValue))
-        if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
-            items.append(URLQueryItem(name: "app", value: version))
-        }
+    /// The tier's Polar checkout, or nil when this build has none. The utm_*
+    /// items are anonymous usage counts; Polar attaches them to the checkout's
+    /// metadata, which carries over to the order. Keep this list in sync with
+    /// the privacy page.
+    func checkoutURL(for tier: LicenseTier, source: CheckoutSource, extensionCount: Int) -> URL? {
+        guard let link = PolarConfig.checkoutURLs[tier],
+              var components = URLComponents(url: link, resolvingAgainstBaseURL: false) else { return nil }
+        let installed = try? LicenseStore.supportDir.resourceValues(forKeys: [.creationDateKey]).creationDate
+        let days = installed.flatMap { Calendar.current.dateComponents([.day], from: $0, to: now()).day } ?? 0
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         let os = ProcessInfo.processInfo.operatingSystemVersion
-        items.append(URLQueryItem(name: "macos", value: "\(os.majorVersion).\(os.minorVersion)"))
-
-        var components = URLComponents(string: "https://magicelk235.gumroad.com/l/viaduct")!
-        components.queryItems = items
-        return components.url!
+        components.queryItems = (components.queryItems ?? []) + [
+            URLQueryItem(name: "utm_source", value: "app"),
+            URLQueryItem(name: "utm_medium", value: source.rawValue),
+            URLQueryItem(name: "utm_content",
+                         value: "conversions-\(freeConversionsUsed)_installed-\(extensionCount)_days-\(max(0, days))"),
+            URLQueryItem(name: "utm_term", value: "app-\(version)_macos-\(os.majorVersion).\(os.minorVersion)"),
+        ]
+        return components.url
     }
 
-    // MARK: - Launch check
+    // MARK: - This Mac
 
-    /// Decide initial state. If we have a stored key, re-verify online;
-    /// fall back to the offline grace window when the network is down.
-    func bootstrap() {
-        guard let key = storedKey, !key.isEmpty else {
-            state = .unlicensed
-            hasLaunchAnswer = true
-            return
-        }
-        state = .checking
-        Task {
-            defer { hasLaunchAnswer = true }
-            do {
-                // Don't bump the uses counter on a routine launch re-check.
-                try await verify(key: key, incrementUses: false)
-                lastValidEpoch = Date().timeIntervalSince1970
-                state = .licensed
-            } catch let e as LicenseError where e.serverSaidNo {
-                // Server reached us and rejected it (refunded/disputed/invalid).
-                clear()
-                state = .unlicensed
-                lastError = e.message
-            } catch {
-                // Network failure — honor the offline grace window.
-                if withinOfflineGrace() {
-                    state = .licensed
-                } else {
-                    state = .unlicensed
-                    lastError = "Couldn't verify your license and the offline grace period expired. Reconnect and try again."
-                }
-            }
-        }
-    }
-
-    private func withinOfflineGrace() -> Bool {
-        guard lastValidEpoch > 0 else { return false }
-        let age = Date().timeIntervalSince1970 - lastValidEpoch
-        return age < offlineGraceDays * 86_400
-    }
-
-    // MARK: - Activate (first-run key entry)
-
-    func activate(key rawKey: String) {
-        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { lastError = "Enter a license key."; return }
-        lastError = nil
-        state = .checking
-        Task {
-            do {
-                // First activation: bump the uses counter so we can enforce a cap.
-                try await verify(key: key, incrementUses: maxActivations > 0)
-                storedKey = key
-                lastValidEpoch = Date().timeIntervalSince1970
-                state = .licensed
-            } catch let e as LicenseError {
-                lastError = e.message
-                state = .unlicensed
-            } catch {
-                lastError = "Activation failed: \(error.localizedDescription)"
-                state = .unlicensed
-            }
-        }
-    }
-
-    func clear() {
-        storedKey = nil
-        lastValidEpoch = 0
-    }
-
-    /// Gumroad has no server-side deactivation; this just forgets the key locally
-    /// so the user can enter a different one (e.g. moving machines).
-    func deactivateAndClear() {
-        clear()
-        state = .unlicensed
-    }
-
-    // MARK: - Networking
-
-    struct LicenseError: Error {
-        let message: String
-        /// True when the server explicitly rejected the key (vs a network failure).
-        /// Drives whether bootstrap clears the stored key or applies offline grace.
-        var serverSaidNo = false
-    }
-
-    /// POST /verify. Throws `LicenseError(serverSaidNo: true)` when Gumroad
-    /// rejects the key, plain `LicenseError` / transport error otherwise.
-    private func verify(key: String, incrementUses: Bool) async throws {
-        let body = "product_id=\(enc(productID))"
-            + "&license_key=\(enc(key))"
-            + "&increment_uses_count=\(incrementUses ? "true" : "false")"
-
-        var req = URLRequest(url: verifyURL)
-        req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.httpBody = body.data(using: .utf8)
-
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-
-        guard let http = resp as? HTTPURLResponse else {
-            throw LicenseError(message: "No response from license server.")
-        }
-
-        let success = (json["success"] as? Bool) ?? false
-        // Gumroad returns 404 + {success:false, message:"..."} for an unknown key.
-        if !success {
-            let msg = (json["message"] as? String) ?? "Invalid license key."
-            throw LicenseError(message: msg, serverSaidNo: http.statusCode != 0 && http.statusCode < 500)
-        }
-
-        // Refunded / disputed / chargebacked purchases must lose access.
-        if let purchase = json["purchase"] as? [String: Any] {
-            for flag in ["refunded", "disputed", "chargebacked"] where (purchase[flag] as? Bool) == true {
-                throw LicenseError(message: "This purchase was \(flag); the license is no longer valid.",
-                                   serverSaidNo: true)
-            }
-            // Subscription products: reject if cancelled/ended.
-            if let ended = purchase["subscription_ended_at"] as? String, !ended.isEmpty {
-                throw LicenseError(message: "This subscription has ended.", serverSaidNo: true)
-            }
-        }
-
-        // Optional activation cap.
-        if maxActivations > 0, let uses = json["uses"] as? Int, uses > maxActivations {
-            throw LicenseError(message: "This key has been activated on too many machines.",
-                               serverSaidNo: true)
-        }
-    }
-
-    private func enc(_ s: String) -> String {
-        s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s
-    }
-}
-
-// MARK: - Legacy Keychain migration (read-only, one-time)
-
-enum Keychain {
-    /// Read a license key an older (Keychain-backed) build may have stored, so a
-    /// paying user isn't logged out by the switch to file storage. Read-only:
-    /// nothing new is ever written to the Keychain. Checks both service names
-    /// ever used. Returns nil (no prompt) when no such item exists — the case
-    /// for essentially everyone.
-    static func readLegacyLicense() -> String? {
-        for service in ["com.magicelk235.viaduct.license", "com.viaduct.app.license"] {
-            let q: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service,
-                kSecAttrAccount as String: "license-key",
-                kSecReturnData as String: true,
-                kSecMatchLimit as String: kSecMatchLimitOne,
-            ]
-            var out: AnyObject?
-            if SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-               let data = out as? Data, let key = String(data: data, encoding: .utf8) {
-                return key
-            }
-        }
-        return nil
+    /// The Mac's name from Sharing settings, the label its Polar activation
+    /// goes by. Not `Host.current().localizedName`, which can block on the
+    /// network.
+    nonisolated static func computerName() -> String {
+        guard let name = SCDynamicStoreCopyComputerName(nil, nil) as String?, !name.isEmpty else { return "Mac" }
+        return name
     }
 }

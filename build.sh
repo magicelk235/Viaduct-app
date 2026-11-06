@@ -50,6 +50,8 @@ if [ -d "$SPARKLE" ]; then
   codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime "$SPARKLE"
 fi
 codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
+  "$APP/Contents/Helpers/ViaductHelper"
+codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
   --entitlements "$EXT_ENT" "$APPEX"
 codesign --force --sign "$SIGN_ID" --timestamp=none --options runtime \
   --entitlements "$APP_ENT" "$APP"

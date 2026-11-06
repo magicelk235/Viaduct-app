@@ -25,6 +25,9 @@ targets:
   Viaduct:
     type: application
     platform: macOS
+    scheme:
+      testTargets:
+        - ViaductTests
     sources:
       - path: Sources
       - path: AppIcon.icon
@@ -37,9 +40,27 @@ targets:
       - path: Resources/bin
         type: folder
         buildPhase: resources
+      # Firefox's helpers, built by the "Build Persist" phase. Optional because a
+      # fresh checkout doesn't have the folder until the first build makes it.
+      - path: Resources/firefox
+        type: folder
+        buildPhase: resources
+        optional: true
+      # The Firefox agent's launchd plist, where SMAppService.agent(plistName:)
+      # looks for it.
+      - path: Resources/LaunchAgents/com.magicelk235.viaduct.firefox-agent.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
     dependencies:
       - target: ViaductExtension
         embed: true
+      - target: ViaductHelper
+        embed: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
       - package: Sparkle
     info:
       path: Info.plist
@@ -61,11 +82,22 @@ targets:
         # macOS asks before one app reads another's data. Import from Chrome and
         # bringing settings over read the browser's profile folder, and without
         # a reason here the prompt reads like something to deny.
-        NSAppDataUsageDescription: "Viaduct reads the extensions installed in your browsers, and their saved settings, so it can bring them over to Safari."
+        NSAppDataUsageDescription: "Viaduct reads the extensions installed in your browsers, and their saved settings, so it can bring them over to Safari or Firefox."
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - viaduct
             CFBundleURLName: com.magicelk235.viaduct
+        # Polar license keys and checkout. Not secrets: the app only calls
+        # Polar's public customer-portal endpoints. The owner fills these in,
+        # and release.sh won't notarize a release while any is empty.
+        PolarOrganizationID: ""
+        PolarBenefitFirefox: ""
+        PolarBenefitSafari: ""
+        PolarBenefitMixed: ""
+        PolarCheckoutFirefox: ""
+        PolarCheckoutSafari: ""
+        PolarCheckoutMixed: ""
+        PolarPortalURL: ""
     entitlements:
       path: Viaduct.entitlements
       properties:
@@ -87,6 +119,16 @@ targets:
         # shipped .app carries its own runtime on either chip — the user never
         # installs Node. Idempotent.
         script: "\"$SRCROOT/Resources/bin/fetch-node.sh\""
+        basedOnDependencyAnalysis: false
+      - name: Build Persist
+        # Bundle persist (PERSIST_DIR, default ../c2f-persist) and the lavaduct modules it imports into
+        # Resources/firefox/persist.mjs for the bundled node. Needs npm on the
+        # build machine. Skips when the bundle is newer than its sources.
+        script: "\"$SRCROOT/Resources/bin/build-persist.sh\""
+        basedOnDependencyAnalysis: false
+      - name: Build Store Button
+        # The Add to Firefox add-on: Firefox/store-button plus the Safari extension's page script.
+        script: "\"$SRCROOT/Resources/bin/build-store-button.sh\""
         basedOnDependencyAnalysis: false
 
   ViaductExtension:
@@ -128,3 +170,40 @@ targets:
           grep -q "\"version\": \"$MARKETING_VERSION\"" "$manifest" \
             || { echo "error: manifest version not stamped in $manifest"; exit 1; }
         basedOnDependencyAnalysis: false
+
+  # The program the Firefox agent's plist runs. `ViaductHelper agent` turns
+  # into the bundled node running persist.mjs. When Firefox starts it, it's
+  # the Add to Firefox button's native messaging host, which shares the app's
+  # store-request code below.
+  ViaductHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Helper
+      - path: Sources/Features/Shared/Browser.swift
+      - path: Sources/Features/Shared/ExtensionIdentity.swift
+      - path: Sources/Features/Shared/StoreRequest.swift
+      - path: Sources/Features/FirefoxStoreButton/NativeHostProtocol.swift
+    settings:
+      base:
+        PRODUCT_NAME: ViaductHelper
+        PRODUCT_BUNDLE_IDENTIFIER: com.magicelk235.viaduct.helper
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        SKIP_INSTALL: YES
+        ENABLE_HARDENED_RUNTIME: false
+
+  ViaductTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/ViaductTests
+      - path: Helper/HelperAgent.swift
+    dependencies:
+      - target: Viaduct
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.magicelk235.viaduct.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Viaduct.app/Contents/MacOS/Viaduct"
+        BUNDLE_LOADER: "$(TEST_HOST)"

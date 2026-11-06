@@ -58,16 +58,45 @@ xcodebuild -project "$ROOT/Viaduct.xcodeproj" -scheme Viaduct \
   -destination 'generic/platform=macOS' \
   CODE_SIGNING_ALLOWED=NO >/dev/null
 
+# An empty Polar value ships an app that can't sell licenses or check keys.
+# A --no-notarize build never ships, so there it only warns.
+MISSING_POLAR=()
+for key in PolarOrganizationID PolarBenefitFirefox PolarBenefitSafari PolarBenefitMixed \
+           PolarCheckoutFirefox PolarCheckoutSafari PolarCheckoutMixed PolarPortalURL; do
+  value="$(/usr/libexec/PlistBuddy -c "Print :$key" "$REL/Viaduct.app/Contents/Info.plist" 2>/dev/null || true)"
+  # PolarConfig trims, so a value of only whitespace counts as empty there too.
+  [ -n "${value//[[:space:]]/}" ] || MISSING_POLAR+=("$key")
+done
+if [ ${#MISSING_POLAR[@]} -gt 0 ]; then
+  if [ "$NOTARIZE" = 1 ]; then
+    for key in "${MISSING_POLAR[@]}"; do
+      echo "FAILED: $key is empty. Fill in the Polar values in project.yml."
+    done
+    exit 1
+  fi
+  echo "WARNING: empty Polar values: ${MISSING_POLAR[*]}. This build can't sell licenses or check keys."
+fi
+
+# Conversions run on whatever lavaduct the latest viaduct carries; persist.mjs bundles the
+# pinned one. Persist's tests against npm latest are what keeps the two in step (spec 4.4).
+echo "==> Checking persist against npm latest lavaduct"
+# build-persist.sh skips without a persist checkout; a release must never ship that build.
+[ -f "$REL/Viaduct.app/Contents/Resources/firefox/persist.mjs" ] \
+  || { echo "FAILED: no persist.mjs in the app. Check out magicelk235/lavaduct-persist at ../c2f-persist or set PERSIST_DIR."; exit 1; }
+"${PERSIST_DIR:-$ROOT/../c2f-persist}/scripts/check-latest-lavaduct.sh" \
+  "$REL/Viaduct.app/Contents/Resources/bin/node" "$REL/Viaduct.app/Contents/Resources/firefox/persist.mjs" \
+  || { echo "FAILED: persist's tests fail against npm latest lavaduct; not releasing"; exit 1; }
+
 # Copy out of the iCloud-synced repo to /tmp, then sign there (see WORK note above).
 echo "==> Staging to $WORK for signing"
 rm -rf "$WORK" && mkdir -p "$WORK"
 ditto "$REL/Viaduct.app" "$APP"
 
-# Sign inside-out (Sparkle's helpers, then the framework, then the extension,
-# then the app). --timestamp (secure, not =none) and --options runtime are
-# MANDATORY for notarization. Nothing deep-signs for us here, so every nested
-# executable inside Sparkle.framework has to be named explicitly — an unsigned
-# one fails notarization for the whole app.
+# Sign inside-out (Sparkle's helpers, then the framework, then ViaductHelper
+# and the extension, then the app). --timestamp (secure, not =none) and
+# --options runtime are MANDATORY for notarization. Nothing deep-signs for us
+# here, so every nested executable inside Sparkle.framework has to be named
+# explicitly — an unsigned one fails notarization for the whole app.
 echo "==> Signing with Developer ID"
 xattr -cr "$APP"
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
@@ -80,6 +109,8 @@ if [ -d "$SPARKLE" ]; then
   done
   codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$SPARKLE"
 fi
+codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
+  "$APP/Contents/Helpers/ViaductHelper"
 codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
   --entitlements "$EXT_ENT" "$APPEX"
 codesign --force --sign "$SIGN_ID" --timestamp --options runtime \

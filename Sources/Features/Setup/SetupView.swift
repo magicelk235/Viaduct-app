@@ -9,17 +9,18 @@ struct SetupView: View {
     @ObservedObject var vm: ConverterViewModel
     @ObservedObject var flow: SetupFlow
     @ObservedObject private var license = LicenseManager.shared
+    @ObservedObject private var firefoxButton = FirefoxStoreButton.shared
 
     /// The step on screen and whether it's done, as last seen. A step that
     /// turns done while it's open moves setup on; picking a row that's
     /// already done doesn't.
     @State private var seen = Seen(step: .xcode, done: false)
-    @State private var licenseKey = ""
-    /// Errors only show for a key typed here, not one left over from launch.
-    @State private var triedKey = false
+    @StateObject private var keyEntry = KeyEntry()
     @FocusState private var keyFocused: Bool
+    @State private var showFirefoxDisclosure = false
 
     private var storeButtonOn: Bool { vm.storeButtonEnabled == true }
+    private var firefoxButtonOn: Bool { firefoxButton.state == .on }
     private var current: Seen { Seen(step: flow.step, done: flow.isDone(flow.step)) }
 
     var body: some View {
@@ -27,7 +28,8 @@ struct SetupView: View {
             AmbientBackground()
             Group {
                 if flow.showingWelcome {
-                    SetupWelcome(flow: flow, storeButtonOn: storeButtonOn)
+                    SetupWelcome(flow: flow,
+                                 storeButtonOn: flow.browser == .safari ? storeButtonOn : firefoxButtonOn)
                         .transition(.opacity)
                 } else {
                     checklist
@@ -53,6 +55,13 @@ struct SetupView: View {
             if now.done, !seen.done, now.step == seen.step, !flow.preparing { flow.stepCompleted() }
             seen = now
         }
+        .firefoxDisclosureAlert(isPresented: $showFirefoxDisclosure,
+                                onContinue: {
+                                    FirefoxDisclosure.accept()
+                                    flow.refresh()
+                                },
+                                onCancel: {})
+        .firefoxStoreButtonPrompts(.shared, host: .setup)
     }
 
     // MARK: - Checklist
@@ -63,6 +72,8 @@ struct SetupView: View {
                 .heading()
                 .font(Theme.Font.headingMD())
                 .foregroundStyle(Theme.Colors.ink)
+            BrowserPicker(selection: $vm.targetBrowser)
+                .onChange(of: vm.targetBrowser) { _ in flow.browserChanged() }
             VStack(spacing: 0) {
                 ForEach(flow.steps) { step in
                     if step != flow.steps.first {
@@ -148,30 +159,19 @@ struct SetupView: View {
 
     private var keyField: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
-            TextField("License key", text: $licenseKey)
+            TextField("License key", text: $keyEntry.text)
                 .textFieldStyle(.glass)
                 .focused($keyFocused)
-                .disabled(license.state == .checking)
+                .disabled(license.isAddingKey)
                 .onSubmit(activate)
                 .accessibilityLabel("License key")
                 .onAppear { keyFocused = true }
-            if triedKey, license.state != .checking, let error = license.lastError {
-                Text(error)
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.accentRed)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            KeyErrorText(error: keyEntry.error)
         }
     }
 
-    private var keyEntered: Bool {
-        !licenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     private func activate() {
-        guard keyEntered, license.state != .checking else { return }
-        triedKey = true
-        license.activate(key: licenseKey)
+        Task { await keyEntry.submit(to: license) }
     }
 
     // MARK: - Primary
@@ -210,8 +210,16 @@ struct SetupView: View {
                 }
             case .storeButton:
                 wide("Turn On in Safari") { StoreButton.openSafariSettings() }
+            case .firefoxStoreButton:
+                firefoxButtonAction
+            case .firefox:
+                if flow.firefox == nil {
+                    wide("Get Firefox") { NSWorkspace.shared.open(FirefoxLocator.downloadURL) }
+                } else {
+                    wide("Set Up Firefox") { showFirefoxDisclosure = true }
+                }
             case .license:
-                if license.state == .checking {
+                if license.isAddingKey {
                     Button {} label: {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
@@ -223,7 +231,7 @@ struct SetupView: View {
                     .disabled(true)
                 } else {
                     wide("Activate", action: activate)
-                        .disabled(!keyEntered)
+                        .disabled(!keyEntry.hasText)
                         .keyboardShortcut(.defaultAction)
                 }
             }
@@ -257,6 +265,26 @@ struct SetupView: View {
         }
     }
 
+    @ViewBuilder
+    private var firefoxButtonAction: some View {
+        switch firefoxButton.state {
+        case .needsFirefox:
+            wide("Get Firefox") { NSWorkspace.shared.open(FirefoxLocator.downloadURL) }
+        case .installing, .removing:
+            Button {} label: {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(firefoxButton.state == .removing ? "Removing" : "Installing")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.raycastPrimary)
+            .disabled(true)
+        default:
+            wide("Add to Firefox") { Task { await FirefoxStoreButton.shared.requestInstall(from: .setup) } }
+        }
+    }
+
     // MARK: - Copy
 
     /// Only the open step shows a spinner, and only before its first answer.
@@ -265,7 +293,8 @@ struct SetupView: View {
         case .xcode:        return flow.xcode == nil
         case .appleAccount: return flow.account == nil
         case .diskAccess:   return flow.checkingDiskAccess
-        case .storeButton, .license: return false
+        case .firefoxStoreButton: return firefoxButton.state == .checking
+        case .storeButton, .license, .firefox: return false
         }
     }
 
@@ -291,12 +320,17 @@ struct SetupView: View {
             return flow.isDone(.diskAccess) ? "Viaduct can read your browsers" : "Let Viaduct read your browsers"
         case .storeButton:
             return storeButtonOn ? "Add to Safari is on" : "Add to Safari button"
+        case .firefoxStoreButton:
+            return firefoxButtonOn ? "Add to Firefox is on" : "Add to Firefox button"
         case .license:
-            return license.isLicensed ? "Viaduct Pro is active" : "Activate Pro"
+            return license.unlimited(flow.browser) ? "\(flow.browser.displayName) is unlimited" : "Activate a license"
+        case .firefox:
+            if flow.firefox == nil { return "Install Firefox" }
+            return flow.isDone(.firefox) ? "Firefox is ready" : "Keep add-ons in Firefox"
         }
     }
 
-    /// Nil when the title says enough, like Activate Pro over its key field.
+    /// Nil when the title says enough, like Activate a license over its key field.
     private func explanation(_ step: SetupFlow.Step) -> String? {
         switch step {
         case .xcode:
@@ -329,7 +363,7 @@ struct SetupView: View {
             case nil:
                 return "To list the extensions in Chrome and your other browsers, and bring their settings along. macOS will ask you once."
             case let blocked? where blocked.isEmpty:
-                return "Your extensions and their settings can come over to Safari."
+                return "Your extensions and their settings can come over to \(flow.browser.displayName)."
             case let blocked?:
                 return "macOS is still keeping Viaduct out of \(ListFormatter.localizedString(byJoining: blocked.map(\.name))). Turn Viaduct on under Full Disk Access, then come back."
             }
@@ -337,10 +371,23 @@ struct SetupView: View {
             return storeButtonOn
                 ? "Chrome Web Store pages show the button."
                 : "Puts a button on Chrome Web Store pages, so extensions install straight from the store."
+        case .firefoxStoreButton:
+            if case .failed(let message) = firefoxButton.state { return message }
+            guard firefoxButtonOn else {
+                return "Puts a button on Chrome Web Store pages, so extensions install straight from the store."
+            }
+            return firefoxButton.arrivesLater
+                ? "It arrives the next time you open Firefox."
+                : "Chrome Web Store pages in Firefox show the button."
         case .license:
-            return license.isLicensed
+            return license.unlimited(flow.browser)
                 ? "No conversion limit, and your extensions stay on this Mac."
                 : nil
+        case .firefox:
+            if flow.firefox == nil { return "Viaduct puts your extensions in Firefox. Firefox is free to download." }
+            return flow.isDone(.firefox)
+                ? "Your add-ons stay in Firefox when it quits."
+                : "Firefox restarts once when your first add-on goes in. Your tabs come back."
         }
     }
 
@@ -357,7 +404,9 @@ struct SetupView: View {
         case .appleAccount: return "person.crop.circle.fill"
         case .diskAccess:   return "lock.open.fill"
         case .storeButton:  return "safari.fill"
+        case .firefoxStoreButton: return "puzzlepiece.extension.fill"
         case .license:      return "key.fill"
+        case .firefox:      return "flame.fill"
         }
     }
 
@@ -402,6 +451,7 @@ private struct StepGlyph: View {
 /// on this Mac, then Import from Chrome when there's anything to import.
 private struct SetupWelcome: View {
     let flow: SetupFlow
+    /// The picked browser's store button, never the other one's.
     let storeButtonOn: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -424,9 +474,13 @@ private struct SetupWelcome: View {
                         title: "Drop one on the window",
                         detail: "A .zip, .crx or an unpacked folder.")]
         if storeButtonOn {
-            ways.append(Way(symbol: "safari.fill",
-                            title: "Add to Safari on the Chrome Web Store",
-                            detail: "The button sits on every extension's page."))
+            ways.append(flow.browser == .safari
+                ? Way(symbol: "safari.fill",
+                      title: "Add to Safari on the Chrome Web Store",
+                      detail: "The button sits on every extension's page.")
+                : Way(symbol: "puzzlepiece.extension.fill",
+                      title: "Add to Firefox on the Chrome Web Store",
+                      detail: "The button sits on every extension's page."))
         }
         if flow.canImport {
             ways.append(Way(symbol: "square.and.arrow.down.on.square.fill",

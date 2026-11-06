@@ -14,6 +14,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// so instance access via `NSApp.delegate as? AppDelegate` can fail.
     static var allowRealQuit = false
 
+    /// True when this process is only hosting the unit tests.
+    static let isHostingTests: Bool = {
+        let env = ProcessInfo.processInfo.environment
+        return env["XCTestConfigurationFilePath"] != nil || env["XCTestBundlePath"] != nil
+    }()
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
     }
@@ -22,6 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// window at all (at login, or relaunched after quitting to the menu bar),
     /// and the background timers and store-page handler are needed either way.
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A test run launches the app only to host the tests. Bootstrapping
+        // would check the license, fetch from npm and register the login
+        // item, reaching the network and changing the real app's settings.
+        // With no launch answer the window just shows LaunchGateView.
+        guard !Self.isHostingTests else { return }
         ViaductApp.bootstrap()
     }
 
@@ -116,10 +127,12 @@ struct ViaductApp: App {
             }
             // If the Xcode gate is up, a finished download / component install /
             // toolchain switch usually happens while the user is away in the App
-            // Store or Xcode. Re-diagnose on focus so the card clears itself.
+            // Store or Xcode. Re-diagnose on focus so the card clears itself. The
+            // same goes for Firefox: installed, opened, or let into Login Items.
             .onReceive(NotificationCenter.default.publisher(
                 for: NSApplication.didBecomeActiveNotification)) { _ in
                 vm.recheckXcode()
+                vm.recheckFirefox(resume: false)
             }
             // Pre-convert warning: no Apple account in Xcode means ad-hoc
             // signing, which Safari disables on every quit. "Convert Anyway" is
@@ -170,12 +183,17 @@ struct ViaductApp: App {
                 → Apple Account is a different thing and won't work.
                 """)
             }
-            // Paywall: shown when an unlicensed user hits the free-quota wall.
-            // Dismisses itself once activation flips the license to .licensed.
-            .sheet(isPresented: $vm.showPaywall) {
-                ActivationView(license: license, extensionCount: vm.history.records.count) { vm.showPaywall = false }
-                    .onChange(of: license.state) { newState in
-                        if newState == .licensed { vm.showPaywall = false }
+            // The Firefox disclosure and restart notice, on the main window for
+            // the same reason as the signing alert.
+            .firefoxPrompts(vm: vm)
+            // Paywall: shown when a browser runs out of free conversions, and
+            // from the menu bar. It closes once a key covers the browser that
+            // hit the limit, or, opened without one, once any key goes in.
+            .sheet(isPresented: $vm.showPaywall, onDismiss: { vm.paywallDidClose() }) {
+                ActivationView(license: license, blockedBrowser: vm.paywallBrowser,
+                               extensionCount: vm.history.records.count) { vm.showPaywall = false }
+                    .onChange(of: license.entitlements) { owned in
+                        if vm.paywallBrowser.map(owned.unlimited) ?? (owned != Entitlements.none) { vm.showPaywall = false }
                     }
             }
             // Brand teal as the app-wide accent for in-app SwiftUI controls.
@@ -222,16 +240,14 @@ struct ViaductApp: App {
         InstallProgressBridge.shared.snapshot = { [weak vm] queryId in
             ViaductApp.progressSnapshot(vm, queryId: queryId)
         }
+        Task { await FirefoxStoreButton.shared.syncAfterLaunch() }
         AppDelegate.openURLHandler = { handleOpenURL($0, vm: vm) }
     }
 
     private static func handleOpenURL(_ url: URL, vm: ConverterViewModel) {
-        guard url.scheme == "viaduct" else { return }
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
-        let id = items?.first(where: { $0.name == "id" })?.value
-        switch url.host {
-        case "install":
-            guard let id else { return }
+        guard let request = StoreRequest(url: url) else { return }
+        switch request.action {
+        case .install(let name):
             // Starting a store install resets the flow, which would wipe the
             // conversion or batch already running (and record its app under
             // this one's name). Show what's running instead.
@@ -241,31 +257,38 @@ struct ViaductApp: App {
                 MainWindow.show()
                 return
             }
-            // The store URL is /detail/NAME/ID — pass NAME so the app isn't named
-            // after the random-looking ID when the manifest name is an __MSG_ i18n key.
-            let name = items?.first(where: { $0.name == "name" })?.value
-            OfficialVersionPrompt.shared.checkBeforeStoreInstall(chromeId: id) {
-                // Install came from the Safari extension on the store page — the
-                // page renders the progress bar (via InstallProgressBridge), so
-                // keep the app out of the user's way instead of coming forward.
+            // The store URL is /detail/NAME/ID, and `name` is that NAME, so the
+            // app isn't named after the random-looking ID when the manifest
+            // name is an __MSG_ i18n key.
+            let start = {
+                // The store page renders the progress bar (via
+                // InstallProgressBridge), so keep the app out of the user's
+                // way instead of coming forward.
                 NSApp.hide(nil)
                 vm.resetUserFlow()
                 InstallProgressBridge.shared.downloading = true
-                downloadAndConvert(extensionId: id, displayName: name, vm: vm)
+                downloadAndConvert(extensionId: request.storeId, displayName: name,
+                                   browser: request.browser, vm: vm)
             }
-        case "remove":
-            // Store-page "Remove from Safari": delete every install for this CWS
-            // id (its .app + archived source + history record). Headless like
-            // install — the page confirms the result by re-polling installed state.
-            if let id { vm.history.removeByStoreId(id) }
-        default:
-            break
+            switch request.browser {
+            case .safari:
+                OfficialVersionPrompt.shared.checkBeforeStoreInstall(chromeId: request.storeId, convert: start)
+            case .firefox:
+                // The official-version list only knows Safari versions.
+                start()
+            }
+        case .remove:
+            // Store-page Remove: delete every install of this CWS id in that
+            // browser. Headless like install; the page confirms the result by
+            // re-polling installed state.
+            Task { await vm.history.removeByStoreId(request.storeId, browser: request.browser) }
         }
     }
 
-    /// The state dict the Safari extension polls for; rendered as the install
-    /// bar on the Chrome Web Store page. When `queryId` is set, also answers
-    /// whether that CWS id is installed (drives the Add/Remove button).
+    /// The state dict the store-page extensions poll for; rendered as the
+    /// install bar on the Chrome Web Store page. When `queryId` is set (an
+    /// `InstalledQuery` object), also answers whether that CWS id is installed
+    /// in that browser (drives the Add/Remove button).
     @MainActor
     private static func progressSnapshot(_ vm: ConverterViewModel?, queryId: String?) -> [String: Any] {
         var dict = baseSnapshot(vm)
@@ -273,8 +296,9 @@ struct ViaductApp: App {
         // bus, so we never volunteer the user's full installed set — just a
         // yes/no for the single id they queried.
         if let queryId {
+            let query = InstalledQuery.parse(queryId)
             dict["forId"] = queryId
-            dict["installed"] = vm?.history.isInstalled(storeId: queryId) ?? false
+            dict["installed"] = vm?.history.isInstalled(storeId: query.storeId, browser: query.browser) ?? false
         }
         return dict
     }
@@ -289,7 +313,8 @@ struct ViaductApp: App {
             // state. The full reason shows only in the app window.
             return ["state": "failed", "message": "Open Viaduct to continue."]
         }
-        if vm.showAdhocWarning || OfficialVersionPrompt.shared.question != nil {
+        if vm.showAdhocWarning || vm.showFirefoxDisclosure || vm.showFirefoxRestartPrompt
+            || OfficialVersionPrompt.shared.question != nil {
             return ["state": "active", "fraction": 0.04,
                     "title": "Needs your answer",
                     "subtitle": "Open Viaduct to continue"]
@@ -306,7 +331,9 @@ struct ViaductApp: App {
                 // visible — the animation gets to finish on screen.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { vm.completeFinishing() }
             }
-            return ["state": "done"]
+            // `pending`: a Firefox install still waiting on Firefox to pick it
+            // up. Just a yes/no, safe on the open bus.
+            return ["state": "done", "pending": vm.firefoxInstallPending]
         case .idle:
             // The engine downloads on first launch, and a store-page install can
             // land in the middle of it. Say so, otherwise the page's bar drops
@@ -324,11 +351,13 @@ struct ViaductApp: App {
             return ["state": "idle"]
         default:
             return ["state": "active", "fraction": vm.phase.fraction,
-                    "title": vm.phase.title, "subtitle": vm.phase.subtitle]
+                    "title": vm.phase.title(for: vm.options.browser),
+                    "subtitle": vm.phase.subtitle(for: vm.options.browser)]
         }
     }
 
-    private static func downloadAndConvert(extensionId: String, displayName: String?, vm: ConverterViewModel) {
+    private static func downloadAndConvert(extensionId: String, displayName: String?, browser: Browser,
+                                           vm: ConverterViewModel) {
         Task {
             do {
                 let downloaded = try await ChromeStore.downloadCRX(id: extensionId)
@@ -345,6 +374,10 @@ struct ViaductApp: App {
                     // stops before the convert phases start (e.g. ad-hoc alert).
                     InstallProgressBridge.shared.downloading = false
                     vm.resetUserFlow()
+                    // The browser the store page asked for, whatever the window
+                    // has picked. Set before selectInput: its compatibility
+                    // check reads it.
+                    vm.options.browser = browser
                     if let settingsNote { vm.appendLog("→ \(settingsNote)") }
                     vm.selectInput(path: finalURL.path)
                     // Store name beats the manifest's __MSG_ key / the .crx filename.
@@ -407,12 +440,10 @@ struct StatusMenu: View {
         } else {
             Section("Extensions") {
                 ForEach(sortedRecords.prefix(8)) { rec in
-                    if let removesAt = rec.freeRemovesAt {
-                        Text("\(rec.name): removed \(removesAt.formatted(.relative(presentation: .numeric)))")
-                    } else if rec.lastUpdateFailed == true {
-                        Text("⚠︎ \(rec.name): update failed")
-                    } else {
-                        Text(rec.name)
+                    Label {
+                        Text(Self.menuLine(for: rec))
+                    } icon: {
+                        Image(nsImage: rec.browser.appIcon)
                     }
                 }
                 if history.records.count > 8 {
@@ -421,13 +452,13 @@ struct StatusMenu: View {
             }
         }
 
-        if !license.isLicensed {
+        if !license.unlimited(vm.targetBrowser) {
             Divider()
-            Button("Unlock with Pro") {
+            Button("Upgrade") {
                 NSApp.setActivationPolicy(.regular)
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
-                vm.showPaywall = true
+                vm.presentPaywall(for: vm.targetBrowser)
             }
         }
 
@@ -443,6 +474,20 @@ struct StatusMenu: View {
             AppDelegate.allowRealQuit = true
             NSApp.terminate(nil)
         }
+    }
+
+    private static func menuLine(for rec: ConversionRecord) -> String {
+        if let removesAt = rec.freeRemovesAt { return removalLine(name: rec.name, removesAt: removesAt) }
+        if rec.lastUpdateFailed == true { return "⚠︎ \(rec.name): update failed" }
+        return rec.name
+    }
+
+    /// The menu line for an extension the free plan removes. A removal that
+    /// didn't go through, say because Firefox held on to the add-on, keeps its
+    /// date until the next try.
+    nonisolated static func removalLine(name: String, removesAt: Date, now: Date = Date()) -> String {
+        guard removesAt > now else { return "\(name): removal pending" }
+        return "\(name): removed \(removesAt.formatted(.relative(presentation: .numeric)))"
     }
 }
 
