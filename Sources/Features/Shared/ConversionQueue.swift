@@ -74,6 +74,26 @@ final class ConversionQueue: ObservableObject {
         case needsXcode
         case needsFirefox(FirefoxGate)
         case cancelled
+
+        /// The browser whose items it stops; nil stops every item.
+        var browser: Browser? {
+            switch self {
+            case .needsUpgrade(let browser): return browser
+            case .needsXcode: return .safari   // Firefox never uses Xcode
+            case .needsFirefox: return .firefox
+            case .cancelled: return nil
+            }
+        }
+
+        /// What the items it skips say.
+        var skippedNote: String {
+            switch self {
+            case .needsUpgrade(let browser): return "Needs a \(browser.displayName) license"
+            case .needsXcode: return "Needs Xcode"
+            case .needsFirefox(let gate): return gate.skippedNote
+            case .cancelled: return "Cancelled"
+            }
+        }
     }
 
     @Published private(set) var items: [QueueItem] = []
@@ -94,9 +114,10 @@ final class ConversionQueue: ObservableObject {
     /// so a task from a stopped batch can resume after the next one started;
     /// it checks this before touching `items`.
     private var batchID = UUID()
-    /// A Firefox gate one item ran into. The Firefox items after it are
-    /// skipped, Safari ones keep going, and the batch ends on this gate.
-    private var firefoxGateHit: FirefoxGate?
+    /// The first per-browser stop the batch ran into. That browser's items
+    /// after it are skipped, the other browser's keep going, and the batch
+    /// ends on this reason.
+    private var firstStop: StopReason?
 
     var doneCount: Int { items.filter { $0.status == .done }.count }
     var finishedCount: Int { items.filter { $0.status.isFinished }.count }
@@ -109,7 +130,7 @@ final class ConversionQueue: ObservableObject {
         items = newItems
         stopReason = nil
         batchID = UUID()
-        firefoxGateHit = nil
+        firstStop = nil
         isRunning = true
         isPresented = true
         vm.batchActive = true
@@ -202,13 +223,15 @@ final class ConversionQueue: ObservableObject {
             let browser = vm.paywallBrowser ?? .safari
             vm.showPaywall = false
             items[index].status = .pending
-            finish(reason: .needsUpgrade(browser))
+            stop(.needsUpgrade(browser))
+            runNext()
         } else if vm.needsXcode {
             items[index].status = .failed(vm.failureSummary ?? "Xcode is required.")
-            finish(reason: .needsXcode)
+            stop(.needsXcode)
+            runNext()
         } else if let gate = vm.firefoxGate {
             items[index].status = .failed(vm.failureSummary ?? gate.headline)
-            hitFirefoxGate(gate)
+            stop(.needsFirefox(gate))
             runNext()
         } else {
             items[index].status = .failed(vm.failureSummary ?? "The conversion didn't start.")
@@ -238,12 +261,13 @@ final class ConversionQueue: ObservableObject {
                     let browser = vm.paywallBrowser ?? .safari
                     vm.showPaywall = false
                     self.items[index].status = .pending
-                    self.finish(reason: .needsUpgrade(browser))
+                    self.stop(.needsUpgrade(browser))
+                    self.runNext()
                 } else if let gate = vm.firefoxGate {
                     self.phaseWatch = nil
                     self.expectingEnd = false
                     self.items[index].status = .failed(vm.failureSummary ?? gate.headline)
-                    self.hitFirefoxGate(gate)
+                    self.stop(.needsFirefox(gate))
                     self.runNext()
                 } else if phase == .failed {
                     self.phaseWatch = nil
@@ -268,7 +292,7 @@ final class ConversionQueue: ObservableObject {
             // No profile, or Viaduct off in Login Items, found once the run was
             // going. The Firefox items left would only stop on it again.
             items[index].status = .failed(vm.failureSummary ?? gate.headline)
-            hitFirefoxGate(gate)
+            stop(.needsFirefox(gate))
         } else {
             items[index].status = .failed(vm.failureSummary ?? "Conversion failed.")
         }
@@ -277,30 +301,29 @@ final class ConversionQueue: ObservableObject {
         DispatchQueue.main.async { [weak self] in self?.runNext() }
     }
 
-    /// Every Firefox item still waiting would stop on the same gate; Safari
-    /// items don't care about it.
-    static func skippedByFirefoxGate(_ items: [QueueItem]) -> [Int] {
-        items.indices.filter { items[$0].browser == .firefox && items[$0].status == .pending }
+    /// The items `reason` leaves untried: only the waiting ones for the browser
+    /// it's about, or, for a stop that isn't about one browser, all that
+    /// haven't finished.
+    static func skipped(by reason: StopReason, in items: [QueueItem]) -> [Int] {
+        guard let browser = reason.browser else {
+            return items.indices.filter { !items[$0].status.isFinished }
+        }
+        return items.indices.filter { items[$0].browser == browser && items[$0].status == .pending }
     }
 
-    private func hitFirefoxGate(_ gate: FirefoxGate) {
-        firefoxGateHit = gate
-        for i in Self.skippedByFirefoxGate(items) { items[i].status = .skipped(gate.skippedNote) }
+    /// A stop that's about one browser: skip that browser's items and remember
+    /// the first one for the end of the batch.
+    private func stop(_ reason: StopReason) {
+        if firstStop == nil { firstStop = reason }
+        for i in Self.skipped(by: reason, in: items) { items[i].status = .skipped(reason.skippedNote) }
     }
 
     private func finish(reason: StopReason?) {
-        let reason = reason ?? firefoxGateHit.map(StopReason.needsFirefox)
+        let reason = reason ?? firstStop
         phaseWatch = nil
         currentIndex = nil
         stopReason = reason
-        let leftover: String
-        switch reason {
-        case .needsUpgrade(let browser): leftover = "Needs a \(browser.displayName) license"
-        case .needsXcode:                leftover = "Needs Xcode"
-        case .needsFirefox(let gate):    leftover = gate.skippedNote
-        case .cancelled:                 leftover = "Cancelled"
-        case nil:                        leftover = ""
-        }
+        let leftover = reason?.skippedNote ?? ""
         for i in items.indices where !items[i].status.isFinished {
             items[i].status = .skipped(leftover)
         }

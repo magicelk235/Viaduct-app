@@ -98,6 +98,7 @@ struct ConversionQueueView: View {
                 Spacer()
                 switch queue.stopReason {
                 case .needsUpgrade(let browser):
+                    safariSettingsBesideStop
                     Button("Upgrade") {
                         queue.dismiss()
                         // One sheet at a time per window: let this one leave first.
@@ -105,12 +106,26 @@ struct ConversionQueueView: View {
                     }
                     .buttonStyle(.raycastPrimary)
                 case .needsFirefox(let gate):
+                    safariSettingsBesideStop
                     Button(gate.actionTitle) { gate.perform() }
                         .buttonStyle(.raycastPrimary)
                 default:
                     afterBatchButtons
                 }
             }
+        }
+    }
+
+    /// A batch that ended on a stop still had Safari items finish: they still
+    /// need turning on, next to the stop's own action.
+    @ViewBuilder
+    private var safariSettingsBesideStop: some View {
+        if ConversionQueue.doneBrowsers(queue.items).contains(.safari) {
+            Button("Open Safari Settings") {
+                queue.openSafariExtensionSettings()
+                queue.dismiss()
+            }
+            .buttonStyle(.raycastTertiary)
         }
     }
 

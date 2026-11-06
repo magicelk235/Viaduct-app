@@ -50,13 +50,19 @@ final class FirefoxBatchTests: XCTestCase {
         XCTAssertEqual(ConversionQueue.doneBrowsers([x]), [])
     }
 
-    func test_firefoxGateSkipsOnlyTheFirefoxItemsLeft() {
+    func test_aStopSkipsOnlyItsBrowsersItemsLeft() {
         func item(_ browser: Browser, _ status: QueueItem.Status) -> QueueItem {
             var i = QueueItem(name: "x", browser: browser) { URL(fileURLWithPath: "/") }; i.status = status; return i
         }
-        let items = [item(.firefox, .done), item(.firefox, .failed("gate")), item(.safari, .pending),
-                     item(.firefox, .pending), item(.safari, .pending), item(.firefox, .pending)]
-        XCTAssertEqual(ConversionQueue.skippedByFirefoxGate(items), [3, 5])
+        let items = [item(.firefox, .done), item(.safari, .failed("stop")), item(.safari, .pending),
+                     item(.firefox, .pending), item(.safari, .pending), item(.firefox, .pending), item(.safari, .converting)]
+        XCTAssertEqual(ConversionQueue.skipped(by: .needsFirefox(.noProfile), in: items), [3, 5])
+        XCTAssertEqual(ConversionQueue.skipped(by: .needsXcode, in: items), [2, 4])
+        XCTAssertEqual(ConversionQueue.skipped(by: .needsUpgrade(.firefox), in: items), [3, 5])
+        XCTAssertEqual(ConversionQueue.skipped(by: .needsUpgrade(.safari), in: items), [2, 4])
+        XCTAssertEqual(ConversionQueue.skipped(by: .cancelled, in: items), [2, 3, 4, 5, 6])
+        XCTAssertEqual(ConversionQueue.StopReason.needsXcode.skippedNote, "Needs Xcode")
+        XCTAssertEqual(ConversionQueue.StopReason.needsUpgrade(.firefox).skippedNote, "Needs a Firefox license")
     }
 
     func test_gatesWordTheBatchStop() {
