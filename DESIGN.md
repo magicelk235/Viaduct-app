@@ -187,6 +187,7 @@ components:
     status-pill: "glass pill, green check / red octagon, for run results."
     value-row: "SF Symbol in an 18pt frame + the value in mono + a trailing control (VersionRow). Mono covers any opaque identifier — a version, a team id — not just numerals. The card title labels the row, so the row carries no label of its own."
     tier-row: "one license (TierRow): surface-elevated, sm radius, hairline edge, 52pt tall. The browser's own app icon (Mixed overlaps Safari's and Firefox's) → name in body-strong → price in mute → Buy, primary when highlighted and tertiary otherwise. A highlighted row trades the hairline for a 1.5pt teal edge; a tier already owned shows ACTIVE in place of the price and Buy. Browser icons come from the apps installed on the Mac, never from bundled logos."
+    browser-glyph: "BrowserGlyph: the browser's own app icon at 12pt, before the date line of every converted-extension row (Recently converted, Settings, the detail sheet, whose line ends in \"in Safari\" or \"in Firefox\"). The menu-bar list shows it as each item's icon. VoiceOver reads the browser's name. Taken from the installed app (any Firefox edition), a globe when it isn't installed."
     keycap: "small glass keyboard glyph (⌘K, ⏎) for shortcut hints."
   backdrop:
     ambient-background: "the neutral adaptive canvas + one faint teal crown glow behind User mode."

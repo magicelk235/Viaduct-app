@@ -65,6 +65,7 @@
 		7974A26A5768F2BB83B9F07C /* ConvertOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2A0A414CC85860A87063B5 /* ConvertOptions.swift */; };
 		7BBEEE24261712E7252EC0D9 /* ConvertPhaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF9AA60CBACC4A5E939B9C1F /* ConvertPhaseTests.swift */; };
 		7D9576B0A7C6AA761D157642 /* firefox in Resources */ = {isa = PBXBuildFile; fileRef = CBA59D7B65A758FCE5E2BC03 /* firefox */; };
+		7FA566D6E9A4E9287BBBFBB1 /* BrowserGlyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01BFE2E5DBDA00203F5431F5 /* BrowserGlyph.swift */; };
 		81D3146B4ED290AF0540B801 /* FirefoxDisclosureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0EB96891F52D94EEECD00C5 /* FirefoxDisclosureTests.swift */; };
 		8305D547CB19BFDB37A9B391 /* HelperAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6507B1D31A509FB9B597D5DD /* HelperAgent.swift */; };
 		88FF27AFCBE2D89DE8E568D9 /* ViaductExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 58D150FB914882216A502FBE /* ViaductExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -195,6 +196,7 @@
 
 /* Begin PBXFileReference section */
 		0160905AC1C99F7388603E81 /* FirefoxAddonsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirefoxAddonsTests.swift; sourceTree = "<group>"; };
+		01BFE2E5DBDA00203F5431F5 /* BrowserGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserGlyph.swift; sourceTree = "<group>"; };
 		04E0DC146811DD698771FEBF /* PersistClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistClient.swift; sourceTree = "<group>"; };
 		05B8E43BC93347A3075A2DF1 /* BrowserPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPicker.swift; sourceTree = "<group>"; };
 		07B2F7021473E1663D5B4213 /* MigrationArchiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationArchiveTests.swift; sourceTree = "<group>"; };
@@ -423,6 +425,7 @@
 			isa = PBXGroup;
 			children = (
 				BFA63102EF2636A922324AEC /* Browser.swift */,
+				01BFE2E5DBDA00203F5431F5 /* BrowserGlyph.swift */,
 				05B8E43BC93347A3075A2DF1 /* BrowserPicker.swift */,
 				799B3B59BD4186C14CED6F4B /* ChromiumBrowsers.swift */,
 				B821C2B773F3666C36EAF5E3 /* ConversionQueue.swift */,
@@ -964,6 +967,7 @@
 				E8CBB693C42EBF0EAF81870C /* BatchConvert.swift in Sources */,
 				36E5ADFF795C6C764BDE4AE8 /* Browser.swift in Sources */,
 				149CA37E3C610C997E55ABF5 /* BrowserExtensionScanner.swift in Sources */,
+				7FA566D6E9A4E9287BBBFBB1 /* BrowserGlyph.swift in Sources */,
 				92F890FA594F60836AE596D3 /* BrowserPicker.swift in Sources */,
 				380DF86B2C777A78CFE2122E /* CLIRunner.swift in Sources */,
 				E200E4056A21FDD6CCE1D87F /* CLIUpdater.swift in Sources */,

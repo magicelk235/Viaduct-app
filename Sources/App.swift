@@ -440,12 +440,10 @@ struct StatusMenu: View {
         } else {
             Section("Extensions") {
                 ForEach(sortedRecords.prefix(8)) { rec in
-                    if let removesAt = rec.freeRemovesAt {
-                        Text(Self.removalLine(name: rec.name, removesAt: removesAt))
-                    } else if rec.lastUpdateFailed == true {
-                        Text("⚠︎ \(rec.name): update failed")
-                    } else {
-                        Text(rec.name)
+                    Label {
+                        Text(Self.menuLine(for: rec))
+                    } icon: {
+                        Image(nsImage: rec.browser.appIcon)
                     }
                 }
                 if history.records.count > 8 {
@@ -476,6 +474,12 @@ struct StatusMenu: View {
             AppDelegate.allowRealQuit = true
             NSApp.terminate(nil)
         }
+    }
+
+    private static func menuLine(for rec: ConversionRecord) -> String {
+        if let removesAt = rec.freeRemovesAt { return removalLine(name: rec.name, removesAt: removesAt) }
+        if rec.lastUpdateFailed == true { return "⚠︎ \(rec.name): update failed" }
+        return rec.name
     }
 
     /// The menu line for an extension the free plan removes. A removal that

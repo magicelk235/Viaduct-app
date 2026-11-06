@@ -134,10 +134,10 @@ struct TierIcon: View {
         let browsers = Browser.allCases.filter(tier.entitlements.unlimited)
         ZStack {
             if browsers.count == 1 {
-                BrowserAppIcon(browser: browsers[0], size: 24)
+                BrowserGlyph(browser: browsers[0], size: 24)
             } else {
                 ForEach(browsers) { browser in
-                    BrowserAppIcon(browser: browser, size: 20)
+                    BrowserGlyph(browser: browser, size: 20)
                         .frame(maxWidth: .infinity, maxHeight: .infinity,
                                alignment: browser == browsers.first ? .topLeading : .bottomTrailing)
                 }
@@ -146,53 +146,5 @@ struct TierIcon: View {
         .frame(width: 28, height: 28)
         // The tier's name sits right beside it.
         .accessibilityHidden(true)
-    }
-}
-
-/// A browser's icon, from the copy installed on this Mac, so Viaduct never
-/// ships another company's logo. A browser that isn't installed gets a
-/// symbol on a plain disc.
-private struct BrowserAppIcon: View {
-    let browser: Browser
-    let size: CGFloat
-
-    var body: some View {
-        if let icon = Self.installedIcon(of: browser) {
-            Image(nsImage: icon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: size, height: size)
-        } else {
-            Image(systemName: symbol)
-                .font(.system(size: size * 0.6, weight: .medium))
-                .foregroundStyle(Theme.Colors.primary)
-                .frame(width: size, height: size)
-                .background(Circle().fill(Theme.Colors.surface))
-                .overlay(Circle().strokeBorder(Theme.Colors.hairline, lineWidth: 1))
-        }
-    }
-
-    private var symbol: String {
-        switch browser {
-        case .safari: return "safari"
-        case .firefox: return "globe"
-        }
-    }
-
-    /// Icons found so far. A browser that wasn't found is looked for again
-    /// next time, in case it's been installed since.
-    @MainActor private static var found: [Browser: NSImage] = [:]
-
-    @MainActor private static func installedIcon(of browser: Browser) -> NSImage? {
-        if let icon = found[browser] { return icon }
-        let bundleID: String
-        switch browser {
-        case .safari: bundleID = "com.apple.Safari"
-        case .firefox: bundleID = "org.mozilla.firefox"
-        }
-        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
-        let icon = NSWorkspace.shared.icon(forFile: app.path)
-        found[browser] = icon
-        return icon
     }
 }

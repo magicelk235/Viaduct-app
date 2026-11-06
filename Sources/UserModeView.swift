@@ -619,9 +619,12 @@ struct RecentConversions: View {
                     .font(Theme.Font.body())
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1).truncationMode(.middle)
-                Text(rec.date.formatted(date: .abbreviated, time: .shortened))
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.stone)
+                HStack(spacing: 4) {
+                    BrowserGlyph(browser: rec.browser)
+                    Text(rec.date.formatted(date: .abbreviated, time: .shortened))
+                        .font(Theme.Font.caption())
+                        .foregroundStyle(Theme.Colors.stone)
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
@@ -666,9 +669,14 @@ struct HistoryDetailSheet: View {
                     .font(Theme.Font.headingMD())
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1).truncationMode(.middle)
-                Text("Converted \(record.date.formatted(date: .abbreviated, time: .shortened))")
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.mute)
+                HStack(spacing: 4) {
+                    BrowserGlyph(browser: record.browser)
+                        // The line already names the browser.
+                        .accessibilityHidden(true)
+                    Text("Converted \(record.date.formatted(date: .abbreviated, time: .shortened)) in \(record.browser.displayName)")
+                        .font(Theme.Font.caption())
+                        .foregroundStyle(Theme.Colors.mute)
+                }
             }
 
             HStack(spacing: Theme.Space.sm) {

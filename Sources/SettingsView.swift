@@ -441,9 +441,12 @@ struct SettingsView: View {
                     .font(Theme.Font.bodyStrong())
                     .foregroundStyle(Theme.Colors.ink)
                     .lineLimit(1).truncationMode(.middle)
-                Text(rec.date.formatted(date: .abbreviated, time: .shortened))
-                    .font(Theme.Font.caption())
-                    .foregroundStyle(Theme.Colors.mute)
+                HStack(spacing: 4) {
+                    BrowserGlyph(browser: rec.browser)
+                    Text(rec.date.formatted(date: .abbreviated, time: .shortened))
+                        .font(Theme.Font.caption())
+                        .foregroundStyle(Theme.Colors.mute)
+                }
                 rowStatus(rec)
             }
             Spacer()
