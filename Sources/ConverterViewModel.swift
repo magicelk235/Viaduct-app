@@ -1209,7 +1209,7 @@ final class ConverterViewModel: ObservableObject {
             do {
                 let result = try await FirefoxAddons.shared.install(
                     staged: staged, profile: run.target.profilePath, firefox: run.firefox.appURL.path,
-                    restart: run.restart, launch: true)
+                    restart: run.restart, launch: true, streamLog: true)
                 // The add-on is in Firefox now, so it's recorded even if the run
                 // was cancelled meanwhile.
                 record(draft, installedPath: nil, adHoc: nil, firefox: result)

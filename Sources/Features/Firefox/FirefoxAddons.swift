@@ -72,13 +72,17 @@ final class FirefoxAddons {
 
     var agentNeedsApproval: Bool { agentStatus == .requiresApproval }
 
-    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool) async throws -> PersistResult {
+    /// Background installs (auto-update, the store button) leave
+    /// `streamLog` off so they stay out of the conversion log.
+    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool,
+                 streamLog: Bool = false) async throws -> PersistResult {
         callsInFlight += 1
         var reachedPersist = false
         do {
             try await readyAgent()
             reachedPersist = true
-            let result = try await persist.install(staged: staged, profile: profile, firefox: firefox, restart: restart, launch: launch)
+            let result = try await persist.install(staged: staged, profile: profile, firefox: firefox, restart: restart,
+                                                   launch: launch, streamLog: streamLog)
             setPendingSince(result.pending ? Date() : nil, profilePath: result.profilePath)
             await endCall()
             return result

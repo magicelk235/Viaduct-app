@@ -25,7 +25,8 @@ final class FakeEvents { var events: [String] = [] }
 
     init(log: FakeEvents = FakeEvents()) { self.log = log }
 
-    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool) async throws -> PersistResult {
+    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool,
+                 streamLog: Bool) async throws -> PersistResult {
         log.events.append("install")
         installs.append(Install(staged: staged, profile: profile, firefox: firefox, restart: restart, launch: launch))
         if case .success(let result) = installResult {

@@ -57,7 +57,10 @@ enum PersistError: LocalizedError, Equatable {
 }
 
 protocol PersistClientProtocol: Sendable {
-    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool) async throws -> PersistResult
+    /// `streamLog` sends persist's lines to the conversion log; only the
+    /// install the user is watching does.
+    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool,
+                 streamLog: Bool) async throws -> PersistResult
     func uninstall(id: String, profile: String?, restart: Bool) async throws -> PersistResult
     func list() async throws -> [PersistAddon]
     func status() async throws -> PersistStatus
@@ -174,11 +177,12 @@ struct PersistClient: PersistClientProtocol {
 
     // MARK: - Commands
 
-    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool) async throws -> PersistResult {
+    func install(staged: URL, profile: String?, firefox: String, restart: Bool, launch: Bool,
+                 streamLog: Bool) async throws -> PersistResult {
         let args = Self.installArguments(staged: staged, profile: profile, firefox: firefox, restart: restart, launch: launch)
         // Exit 1 carries `"ok":false` with persist's own message, so the
         // status code alone says nothing useful.
-        return try Self.decodeOutcome(try await run(args, streamLog: true).stdout)
+        return try Self.decodeOutcome(try await run(args, streamLog: streamLog).stdout)
     }
 
     func uninstall(id: String, profile: String?, restart: Bool) async throws -> PersistResult {
