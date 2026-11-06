@@ -199,6 +199,33 @@ final class FirefoxStoreButtonTests: XCTestCase {
         XCTAssertEqual(b.state, .failed("Persist couldn't read its list."))
     }
 
+    func test_refreshLeavesAnInstallUnderWayAlone() async {   // accepted; no restart needed
+        FirefoxDisclosure.accept(defaults)
+        let b = make()
+        var stateDuringInstall: FirefoxStoreButton.State?
+        // The fake keeps the button before this runs, so a refresh would read it as on.
+        persist.onInstall = { await b.refresh(); stateDuringInstall = b.state }
+        await b.requestInstall()
+        XCTAssertEqual(stateDuringInstall, .installing)
+        XCTAssertEqual(b.state, .on)
+    }
+
+    func test_arrivesLaterClearsOnceFirefoxLoadsTheProfile() async {   // accepted; P1 open; install comes back pending
+        FirefoxDisclosure.accept(defaults)
+        persist.profilesResult = twoProfiles(p1InUse: true)
+        persist.installResult = .success(FirefoxFixtures.result(id: button, profilePath: P1, pending: true))
+        let b = make(); await b.requestInstall()
+        await b.answerRestart(restartNow: false)
+        XCTAssertTrue(b.arrivesLater)
+        // Firefox hasn't loaded the profile since.
+        await b.refresh()
+        XCTAssertTrue(b.arrivesLater); XCTAssertEqual(b.state, .on)
+        persist.statusResult = PersistStatus(agent: .init(running: true, pid: 1),
+                                             profiles: [.init(profilePath: P1, lastLoad: Date().addingTimeInterval(60), lastError: nil)])
+        await b.refresh()
+        XCTAssertFalse(b.arrivesLater); XCTAssertEqual(b.state, .on)
+    }
+
     // MARK: - Launch
 
     func test_launchSyncRefreshesWithoutStartingOrRestartingFirefox() async {   // kept: button 1.4.0 in P1, current in P2
@@ -277,6 +304,9 @@ final class FirefoxStoreButtonTests: XCTestCase {
         let b = make(); await b.remove()
         XCTAssertEqual(b.state, .failed("Quit Firefox, then try again."))
         XCTAssertTrue(manifestExists)
+        // Try Again re-reads the state, so it offers Remove again rather than an install.
+        await b.refresh()
+        XCTAssertEqual(b.state, .on); XCTAssertTrue(persist.installs.isEmpty)
     }
 
     // MARK: - No record, so the free plan and the agent leave it be

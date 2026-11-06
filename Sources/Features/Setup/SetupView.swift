@@ -61,7 +61,7 @@ struct SetupView: View {
                                     flow.refresh()
                                 },
                                 onCancel: {})
-        .firefoxStoreButtonPrompts(.shared)
+        .firefoxStoreButtonPrompts(.shared, host: .setup)
     }
 
     // MARK: - Checklist
@@ -281,7 +281,7 @@ struct SetupView: View {
             .buttonStyle(.raycastPrimary)
             .disabled(true)
         default:
-            wide("Add to Firefox") { Task { await FirefoxStoreButton.shared.requestInstall() } }
+            wide("Add to Firefox") { Task { await FirefoxStoreButton.shared.requestInstall(from: .setup) } }
         }
     }
 

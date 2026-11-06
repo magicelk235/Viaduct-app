@@ -15,7 +15,7 @@ struct FirefoxStoreButtonCard: View {
             content
         }
         .task { await button.refresh() }
-        .firefoxStoreButtonPrompts(button)
+        .firefoxStoreButtonPrompts(button, host: .settings)
     }
 
     @ViewBuilder
@@ -30,7 +30,7 @@ struct FirefoxStoreButtonCard: View {
             Button("Get Firefox") { NSWorkspace.shared.open(FirefoxLocator.downloadURL) }
                 .buttonStyle(.raycastTertiary)
         case .off:
-            Button("Install") { Task { await button.requestInstall() } }
+            Button("Install") { Task { await button.requestInstall(from: .settings) } }
                 .buttonStyle(.raycastPrimary)
         case .installing:
             working("Installing…")
@@ -53,7 +53,8 @@ struct FirefoxStoreButtonCard: View {
                 .font(Theme.Font.body())
                 .foregroundStyle(Theme.Colors.accentRed)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Try Again") { Task { await button.requestInstall() } }
+            // Whatever failed, install or remove, the fresh state offers it again.
+            Button("Try Again") { Task { await button.refresh() } }
                 .buttonStyle(.raycastPrimary)
         }
     }
@@ -70,14 +71,17 @@ struct FirefoxStoreButtonCard: View {
 
 extension View {
     /// The disclosure and the restart question an install of the button can
-    /// stop on. Firefox only restarts once the user picks Restart Firefox.
-    func firefoxStoreButtonPrompts(_ button: FirefoxStoreButton) -> some View {
-        modifier(FirefoxStoreButtonPrompts(button: button))
+    /// stop on, shown only on the surface that asked for it. Firefox only
+    /// restarts once the user picks Restart Firefox.
+    func firefoxStoreButtonPrompts(_ button: FirefoxStoreButton,
+                                   host: FirefoxStoreButton.PromptHost) -> some View {
+        modifier(FirefoxStoreButtonPrompts(button: button, host: host))
     }
 }
 
 private struct FirefoxStoreButtonPrompts: ViewModifier {
     @ObservedObject var button: FirefoxStoreButton
+    let host: FirefoxStoreButton.PromptHost
 
     func body(content: Content) -> some View {
         content
@@ -91,7 +95,7 @@ private struct FirefoxStoreButtonPrompts: ViewModifier {
     /// Dismissing clears the prompt, unless the answer has already moved it
     /// on to the next question.
     private func shows(_ prompt: FirefoxStoreButton.Prompt) -> Binding<Bool> {
-        Binding(get: { button.prompt == prompt },
+        Binding(get: { button.prompt == prompt && (button.promptHost == nil || button.promptHost == host) },
                 set: { if !$0, button.prompt == prompt { button.prompt = nil } })
     }
 }

@@ -30,12 +30,16 @@ final class FirefoxStoreButton: ObservableObject {
 
     enum State: Equatable { case checking, needsFirefox, off, installing, on, removing, failed(String) }
     enum Prompt: Equatable { case disclosure, restart }
+    /// Where an install was asked for. Its questions show there and nowhere else.
+    enum PromptHost: Equatable { case settings, setup }
 
     /// `.checking` until the first refresh.
     @Published private(set) var state: State = .checking
     /// The last install only arrives the next time Firefox starts.
     @Published private(set) var arrivesLater = false
     @Published var prompt: Prompt?
+    /// The surface the current request came from. Nil shows the questions anywhere.
+    @Published private(set) var promptHost: PromptHost?
 
     private let addons: FirefoxAddons
     private let files: Files
@@ -60,19 +64,36 @@ final class FirefoxStoreButton: ObservableObject {
 
     // MARK: - State
 
+    /// Leaves an install or removal that's under way alone: its own answer is the newer one.
     func refresh() async {
-        guard let firefox = locate() else { state = .needsFirefox; return }
+        guard !isBusy else { return }
+        let next = await currentState()
+        guard !isBusy else { return }
+        state = next
+    }
+
+    private var isBusy: Bool { state == .installing || state == .removing }
+
+    private func currentState() async -> State {
+        guard let firefox = locate() else { return .needsFirefox }
         let profilePath = try? await addons.target(firefox: firefox).profilePath
+        // target() forgets a pending install once Firefox has loaded the
+        // profile since, which is when the button has arrived.
+        if arrivesLater, let profilePath, addons.pendingSince(profilePath: profilePath) == nil {
+            arrivesLater = false
+        }
         do {
-            state = Self.isOn(kept: try await addons.persist.list(), profilePath: profilePath) ? .on : .off
+            return Self.isOn(kept: try await addons.persist.list(), profilePath: profilePath) ? .on : .off
         } catch {
-            state = .failed(error.localizedDescription)
+            return .failed(error.localizedDescription)
         }
     }
 
     // MARK: - Installing
 
-    func requestInstall() async {
+    /// `host` is the surface asking. The disclosure's own follow-up keeps it.
+    func requestInstall(from host: PromptHost? = nil) async {
+        if let host { promptHost = host }
         prompt = nil
         guard let firefox = locate() else { state = .needsFirefox; return }
         guard FirefoxDisclosure.isAccepted(defaults) else { prompt = .disclosure; return }
@@ -150,7 +171,8 @@ final class FirefoxStoreButton: ObservableObject {
         if let kept = try? await addons.persist.list(), !kept.contains(where: { $0.id == NativeHostProtocol.storeButtonId }) {
             deleteHostManifest()
         }
-        await refresh()
+        arrivesLater = false
+        state = await currentState()
     }
 
     // MARK: - Launch
