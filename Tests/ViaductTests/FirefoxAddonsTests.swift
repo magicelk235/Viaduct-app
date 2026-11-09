@@ -109,7 +109,34 @@ final class FirefoxAddonsTests: XCTestCase {
         persist.installResult = .success(FirefoxFixtures.result(pending: true))   // "Later"
         _ = try await addons.install(staged: staged, profile: "/profiles/a", firefox: "/Applications/Firefox.app", restart: false, launch: true)
         let target = try await addons.target(firefox: FirefoxFixtures.install())
-        XCTAssertEqual(target, FirefoxTarget(profilePath: "/profiles/a", askRestart: true))
+        XCTAssertEqual(target, FirefoxTarget(profilePath: "/profiles/a", askRestart: true, waitsForProfile: nil))
+    }
+
+    // MARK: - A second Firefox
+
+    /// Persist starts Firefox for a profile nothing has open, which makes a
+    /// second Firefox while another profile is open.
+    func testSecondFirefox() {
+        XCTAssertTrue(FirefoxAddons.wouldStartSecondFirefox(targetInUse: false, otherProfileInUse: true))
+        XCTAssertFalse(FirefoxAddons.wouldStartSecondFirefox(targetInUse: false, otherProfileInUse: false))
+        XCTAssertFalse(FirefoxAddons.wouldStartSecondFirefox(targetInUse: true, otherProfileInUse: false))
+        XCTAssertFalse(FirefoxAddons.wouldStartSecondFirefox(targetInUse: true, otherProfileInUse: true))
+    }
+
+    func testAProfileFirefoxDoesntHaveOpenWaitsWhileAnotherIsOpen() async throws {
+        let (addons, persist, _, _) = make(agent: .enabled)
+        persist.profilesResult = PersistProfiles(firefoxes: [], profiles: [
+            FirefoxFixtures.profile(name: "default-release", path: "/profiles/a", isDefault: true, inUse: true),
+            FirefoxFixtures.profile(name: "default", path: "/profiles/b", isDefault: false)])
+        let target = try await addons.target(firefox: FirefoxFixtures.install(), preferring: "/profiles/b")
+        // Nothing has the profile open, so there's no restart to ask about either.
+        XCTAssertEqual(target, FirefoxTarget(profilePath: "/profiles/b", askRestart: false, waitsForProfile: "default"))
+    }
+
+    func testTheArrivalNoteNamesTheProfileItWaitsFor() {
+        XCTAssertEqual(FirefoxTarget.arrivalNote(waitingFor: nil), "Arrives the next time you open Firefox.")
+        XCTAssertEqual(FirefoxTarget.arrivalNote(waitingFor: "default"),
+                       "Arrives the next time you open Firefox with the default profile.")
     }
 
     // MARK: - Pending add-ons
@@ -132,7 +159,7 @@ final class FirefoxAddonsTests: XCTestCase {
         let loaded = PersistStatus.Profile(profilePath: "/profiles/a", lastLoad: Date().addingTimeInterval(60), lastError: nil)
         persist.statusResult = PersistStatus(agent: .init(running: true, pid: 1), profiles: [loaded])
         let target = try await addons.target(firefox: FirefoxFixtures.install())
-        XCTAssertEqual(target, FirefoxTarget(profilePath: "/profiles/a", askRestart: false))
+        XCTAssertEqual(target, FirefoxTarget(profilePath: "/profiles/a", askRestart: false, waitsForProfile: nil))
         XCTAssertNil(addons.pendingSince(profilePath: "/profiles/a"))
     }
 

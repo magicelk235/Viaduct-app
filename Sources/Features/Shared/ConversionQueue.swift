@@ -290,8 +290,8 @@ final class ConversionQueue: ObservableObject {
         if ok {
             items[index].status = .done
             items[index].installedPath = vm.installedAppPath
-            if items[index].browser == .firefox, vm.firefoxInstallPending {
-                items[index].note = "Arrives the next time you open Firefox"
+            if items[index].browser == .firefox, let note = vm.firefoxArrivalNote {
+                items[index].note = note
             }
         } else if let gate = vm.firefoxGate {
             // A Firefox gate found once the run was going. The Firefox items

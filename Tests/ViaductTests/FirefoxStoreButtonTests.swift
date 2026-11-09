@@ -152,6 +152,23 @@ final class FirefoxStoreButtonTests: XCTestCase {
         XCTAssertEqual(persist.installs.last?.restart, false); XCTAssertTrue(b.arrivesLater)
         XCTAssertEqual(persist.installs.last?.launch, false); XCTAssertEqual(persist.installs.last?.profile, P1)
         XCTAssertNil(b.prompt); XCTAssertEqual(b.state, .on)
+        // Firefox has the profile open, so its next start brings the button.
+        XCTAssertEqual(b.arrivalNote, "Arrives the next time you open Firefox.")
+    }
+
+    /// Starting Firefox for a profile it doesn't have open would put a second
+    /// Firefox beside the one already running.
+    func test_whileFirefoxHasAnotherProfileOpenTheButtonWaitsForItsOwn() async {   // accepted; P1 open, P2 chosen
+        FirefoxDisclosure.accept(defaults)
+        persist.profilesResult = twoProfiles(p1InUse: true)
+        defaults.set(P2, forKey: FirefoxAddons.profileKey)
+        persist.installResult = .success(FirefoxFixtures.result(id: button, profilePath: P2, pending: true))
+        let b = make(); await b.requestInstall()
+        XCTAssertNil(b.prompt)
+        XCTAssertEqual(persist.installs.map(\.profile), [P2])
+        XCTAssertEqual(persist.installs.last?.launch, false); XCTAssertEqual(persist.installs.last?.restart, false)
+        XCTAssertEqual(b.state, .on)
+        XCTAssertEqual(b.arrivalNote, "Arrives the next time you open Firefox with the work profile.")
     }
 
     /// Persist only restarts a Firefox it may start again, so the restart the
@@ -236,7 +253,7 @@ final class FirefoxStoreButtonTests: XCTestCase {
         persist.statusResult = PersistStatus(agent: .init(running: true, pid: 1),
                                              profiles: [.init(profilePath: P1, lastLoad: Date().addingTimeInterval(60), lastError: nil)])
         await b.refresh()
-        XCTAssertFalse(b.arrivesLater); XCTAssertEqual(b.state, .on)
+        XCTAssertFalse(b.arrivesLater); XCTAssertNil(b.arrivalNote); XCTAssertEqual(b.state, .on)
     }
 
     // MARK: - Launch

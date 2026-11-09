@@ -382,9 +382,7 @@ struct SetupView: View {
             guard firefoxButtonOn else {
                 return "Puts a button on Chrome Web Store pages, so extensions install straight from the store."
             }
-            return firefoxButton.arrivesLater
-                ? "It arrives the next time you open Firefox."
-                : "Chrome Web Store pages in Firefox show the button."
+            return firefoxButton.arrivalNote ?? "Chrome Web Store pages in Firefox show the button."
         case .license:
             return license.unlimited(flow.browser)
                 ? "No conversion limit, and your extensions stay on this Mac."

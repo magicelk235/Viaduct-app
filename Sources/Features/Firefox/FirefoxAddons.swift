@@ -21,10 +21,22 @@ enum FirefoxAddonsError: LocalizedError, Equatable {
     }
 }
 
-/// Where the next install goes, and whether to ask before Firefox restarts for it.
+/// Where the next install goes, whether to ask before Firefox restarts for
+/// it, and whether it has to wait for the profile to open.
 struct FirefoxTarget: Equatable {
     let profilePath: String?
     let askRestart: Bool
+    /// The profile's name, while Firefox has another profile open. Persist
+    /// would start a second Firefox for this one, so the install leaves
+    /// Firefox alone and the add-on arrives when the profile next opens.
+    let waitsForProfile: String?
+
+    /// The line under an install that only arrives later. One waiting for its
+    /// profile names it: opening Firefox brings back the profile it has open.
+    static func arrivalNote(waitingFor profile: String?) -> String {
+        guard let profile else { return "Arrives the next time you open Firefox." }
+        return "Arrives the next time you open Firefox with the \(profile) profile."
+    }
 }
 
 enum FirefoxProfileChoice {
@@ -139,8 +151,9 @@ final class FirefoxAddons {
         status == .enabled && agentBuild != appBuild
     }
 
-    /// The profile the next install goes into, and whether Firefox has it open
-    /// in a way that needs the restart question.
+    /// The profile the next install goes into, whether Firefox has it open in
+    /// a way that needs the restart question, and whether it has to wait for
+    /// Firefox to open it.
     func target(firefox: FirefoxLocator.Install, preferring profilePath: String? = nil) async throws -> FirefoxTarget {
         let profiles = try await persist.profiles(firefox: firefox.appURL.path).profiles
         guard let profile = FirefoxProfileChoice.resolve(stored: profilePath ?? defaults.string(forKey: Self.profileKey),
@@ -163,7 +176,16 @@ final class FirefoxAddons {
         }
         let ask = Self.restartQuestionNeeded(profileInUse: profile.inUse, keptInProfile: kept,
                                              pendingSince: pending, lastLoad: lastLoad)
-        return FirefoxTarget(profilePath: profile.path, askRestart: ask)
+        let waits = Self.wouldStartSecondFirefox(targetInUse: profile.inUse,
+                                                 otherProfileInUse: profiles.contains { $0.inUse && $0.path != profile.path })
+        return FirefoxTarget(profilePath: profile.path, askRestart: ask, waitsForProfile: waits ? profile.name : nil)
+    }
+
+    /// Persist starts Firefox for an install into a profile no Firefox has
+    /// open. While Firefox has another profile open, that's a second Firefox,
+    /// so the add-on waits for its profile to open instead.
+    nonisolated static func wouldStartSecondFirefox(targetInUse: Bool, otherProfileInUse: Bool) -> Bool {
+        !targetInUse && otherProfileInUse
     }
 
     /// When an install into the profile came back pending, until Firefox loads it.

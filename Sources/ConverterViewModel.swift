@@ -154,8 +154,11 @@ final class ConverterViewModel: ObservableObject {
     @Published var showFirefoxDisclosure = false
     /// The restart notice. The run waits for the answer before converting.
     @Published var showFirefoxRestartPrompt = false
-    /// The last install only arrives the next time Firefox opens.
-    @Published private(set) var firefoxInstallPending = false
+    /// When the last install arrives, while it's still waiting on Firefox:
+    /// Firefox's next start, or the next time its profile opens.
+    @Published private(set) var firefoxArrivalNote: String?
+    /// The last install only arrives once Firefox loads it.
+    var firefoxInstallPending: Bool { firefoxArrivalNote != nil }
     /// The bundled persist's version, for problem reports. Nil until launch
     /// has asked it, and when it can't run.
     @Published private(set) var persistVersion: String?
@@ -769,7 +772,7 @@ final class ConverterViewModel: ObservableObject {
         needsXcode = false
         needsAppleAccount = false
         firefoxGate = nil
-        firefoxInstallPending = false
+        firefoxArrivalNote = nil
         pendingFirefoxProfile = nil
         lastBuildAdHoc = false
         options.inputPath = ""
@@ -790,7 +793,7 @@ final class ConverterViewModel: ObservableObject {
         failureSummary = nil
         lastReachedTrackPhase = nil
         lastBuildAdHoc = false
-        firefoxInstallPending = false
+        firefoxArrivalNote = nil
         firefoxGate = nil
         phase = .extracting
     }
@@ -813,7 +816,7 @@ final class ConverterViewModel: ObservableObject {
             phase = .idle
             failureSummary = nil
             installedAppPath = nil
-            firefoxInstallPending = false
+            firefoxArrivalNote = nil
             lastBuildAdHoc = false
         }
         // Switching browsers dropped the old verdict, so check this one.
@@ -1207,14 +1210,16 @@ final class ConverterViewModel: ObservableObject {
         let draft = draftConversion()
         Task {
             do {
+                // Persist starts Firefox for a profile nothing has open, which
+                // would be a second Firefox while it has another profile open.
                 let result = try await FirefoxAddons.shared.install(
                     staged: staged, profile: run.target.profilePath, firefox: run.firefox.appURL.path,
-                    restart: run.restart, launch: true, streamLog: true)
+                    restart: run.restart, launch: run.target.waitsForProfile == nil, streamLog: true)
                 // The add-on is in Firefox now, so it's recorded even if the run
                 // was cancelled meanwhile.
                 record(draft, installedPath: nil, adHoc: nil, firefox: result)
                 guard generation == runGeneration else { return }
-                firefoxInstallPending = result.pending
+                firefoxArrivalNote = result.pending ? FirefoxTarget.arrivalNote(waitingFor: run.target.waitsForProfile) : nil
                 isRunning = false
                 finishUserPhase(code: 0)
                 userRunEnded?(true)

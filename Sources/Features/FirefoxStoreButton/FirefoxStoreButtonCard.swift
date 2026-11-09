@@ -37,10 +37,11 @@ struct FirefoxStoreButtonCard: View {
         case .removing:
             working("Removing…")
         case .on:
-            if button.arrivesLater {
-                Text("It arrives the next time you open Firefox.")
+            if let note = button.arrivalNote {
+                Text(note)
                     .font(Theme.Font.body())
                     .foregroundStyle(Theme.Colors.body)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: Theme.Space.sm) {
                 Button("Open the Chrome Web Store") { button.openWebStore() }

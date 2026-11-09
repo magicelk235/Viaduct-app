@@ -35,8 +35,11 @@ final class FirefoxStoreButton: ObservableObject {
 
     /// `.checking` until the first refresh.
     @Published private(set) var state: State = .checking
-    /// The last install only arrives the next time Firefox starts.
-    @Published private(set) var arrivesLater = false
+    /// When the last install arrives, while it's still waiting on Firefox:
+    /// Firefox's next start, or the next time its profile opens.
+    @Published private(set) var arrivalNote: String?
+    /// The last install only arrives once Firefox loads it.
+    var arrivesLater: Bool { arrivalNote != nil }
     @Published var prompt: Prompt?
     /// The surface the current request came from. Nil shows the questions anywhere.
     @Published private(set) var promptHost: PromptHost?
@@ -80,7 +83,7 @@ final class FirefoxStoreButton: ObservableObject {
         // target() forgets a pending install once Firefox has loaded the
         // profile since, which is when the button has arrived.
         if arrivesLater, let profilePath, addons.pendingSince(profilePath: profilePath) == nil {
-            arrivesLater = false
+            arrivalNote = nil
         }
         do {
             return Self.isOn(kept: try await addons.persist.list(), profilePath: profilePath) ? .on : .off
@@ -132,10 +135,12 @@ final class FirefoxStoreButton: ObservableObject {
             // In place first, so the button reaches the app the moment it loads.
             try writeHostManifest()
             // Persist only restarts a Firefox it may start again, so a restart
-            // the user agreed to comes with launch. Otherwise Firefox is left alone.
+            // the user agreed to comes with launch. Otherwise Firefox is left
+            // alone and never started, which would be a second Firefox while
+            // it has another profile open.
             let result = try await addons.install(staged: files.addon, profile: target.profilePath,
                                                   firefox: firefox.appURL.path, restart: restartNow, launch: restartNow)
-            arrivesLater = result.pending
+            arrivalNote = result.pending ? FirefoxTarget.arrivalNote(waitingFor: target.waitsForProfile) : nil
             state = .on
         } catch {
             state = .failed(error.localizedDescription)
@@ -171,7 +176,7 @@ final class FirefoxStoreButton: ObservableObject {
         if let kept = try? await addons.persist.list(), !kept.contains(where: { $0.id == NativeHostProtocol.storeButtonId }) {
             deleteHostManifest()
         }
-        arrivesLater = false
+        arrivalNote = nil
         state = await currentState()
     }
 

@@ -214,11 +214,12 @@ struct UserModeView: View {
                     .lineLimit(1).truncationMode(.middle)
                 if vm.phase == .done {
                     DoneBadge(browser: vm.options.browser)
-                    if vm.firefoxInstallPending {
-                        Text("Arrives the next time you open Firefox.")
+                    if let note = vm.firefoxArrivalNote {
+                        Text(note)
                             .font(Theme.Font.caption())
                             .foregroundStyle(Theme.Colors.mute)
                             .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     // A run can succeed and still come out ad-hoc: the CLI
                     // rebuilds that way when the team it found can't sign.
