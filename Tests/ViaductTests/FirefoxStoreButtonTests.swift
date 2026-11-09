@@ -23,10 +23,14 @@ final class FirefoxStoreButtonTests: XCTestCase {
                                         helper: URL(fileURLWithPath: "/Applications/Viaduct.app/Contents/Helpers/ViaductHelper"))
     }()
 
+    /// Whether Viaduct is kept out of Firefox's folder, as the next `make` sees it.
+    private var dataBlocked = false
+
     private func make() -> FirefoxStoreButton { make(firefox: firefox) }
 
     private func make(firefox: FirefoxLocator.Install?) -> FirefoxStoreButton {
-        FirefoxStoreButton(addons: FirefoxAddons(persist: persist, agent: agent, defaults: defaults),
+        FirefoxStoreButton(addons: FirefoxAddons(persist: persist, agent: agent, defaults: defaults,
+                                                 dataBlocked: { [dataBlocked] in dataBlocked }),
                            files: files, defaults: defaults, locate: { firefox })
     }
 
@@ -126,6 +130,15 @@ final class FirefoxStoreButtonTests: XCTestCase {
         persist.profilesResult = PersistProfiles(firefoxes: [], profiles: [])
         let b = make(); await b.requestInstall()
         XCTAssertEqual(b.state, .failed(FirefoxAddonsError.noProfile.localizedDescription))
+        XCTAssertTrue(persist.installs.isEmpty); XCTAssertFalse(manifestExists)
+    }
+
+    func test_aFirefoxFolderViaductCantReadAsksForFullDiskAccess() async {
+        FirefoxDisclosure.accept(defaults)
+        persist.profilesResult = PersistProfiles(firefoxes: [], profiles: [])
+        dataBlocked = true
+        let b = make(); await b.requestInstall()
+        XCTAssertEqual(b.state, .failed(FirefoxAddonsError.needsDiskAccess.localizedDescription))
         XCTAssertTrue(persist.installs.isEmpty); XCTAssertFalse(manifestExists)
     }
 

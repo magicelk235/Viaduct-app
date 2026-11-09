@@ -1250,16 +1250,12 @@ final class ConverterViewModel: ObservableObject {
         Feedback.failure()
     }
 
-    /// A Firefox run that started ends without an install. No profile, or the
-    /// agent off in Login Items, is a gate with a fix; anything else is a
-    /// plain failure with persist's own words.
+    /// A Firefox run that started ends without an install. FirefoxAddons'
+    /// own refusals (no profile, Firefox's folder closed to Viaduct, Viaduct
+    /// off in Login Items) are gates with a fix; anything else is a plain
+    /// failure with persist's own words.
     private func endFirefoxRun(_ error: Error) {
-        let gate: FirefoxGate?
-        switch error as? FirefoxAddonsError {
-        case .noProfile?: gate = .noProfile
-        case .loginItemOff?: gate = .loginItemOff
-        case nil: gate = nil
-        }
+        let gate = (error as? FirefoxAddonsError).map(FirefoxGate.init)
         // Set before the run ends, so whoever hears about it sees the gate.
         firefoxGate = gate
         failRun(gate?.message ?? error.localizedDescription)
@@ -1324,12 +1320,12 @@ final class ConverterViewModel: ObservableObject {
             if firefoxInstall != nil { clearFirefoxGate(resume: resume) }
         case .loginItemOff:
             if !FirefoxAddons.shared.agentNeedsApproval { clearFirefoxGate(resume: resume) }
-        case .noProfile:
+        case .noProfile, .needsDiskAccess:
             guard let firefox = firefoxInstall else { return }
             Task {
                 let found = try? await FirefoxAddons.shared.persist.profiles(firefox: firefox.appURL.path)
                 // The user may have moved on while persist looked.
-                guard found?.profiles.isEmpty == false, firefoxGate == .noProfile else { return }
+                guard found?.profiles.isEmpty == false, firefoxGate == gate else { return }
                 clearFirefoxGate(resume: resume)
             }
         }

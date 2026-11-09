@@ -5,12 +5,16 @@ import ServiceManagement
 /// messages: anything else that explains these cases shows `errorDescription`.
 enum FirefoxAddonsError: LocalizedError, Equatable {
     case noProfile
+    /// Firefox has a folder of profiles, but Viaduct isn't allowed to read it.
+    case needsDiskAccess
     case loginItemOff
 
     var errorDescription: String? {
         switch self {
         case .noProfile:
             return "Open Firefox once so it can set up your profile, then try again."
+        case .needsDiskAccess:
+            return "Turn on Full Disk Access for Viaduct in System Settings, then try again."
         case .loginItemOff:
             return "Firefox only keeps your add-ons while Viaduct can run in the background. Turn Viaduct on in Login Items, then try again."
         }
@@ -53,16 +57,20 @@ final class FirefoxAddons {
     private let agent: FirefoxAgentControlling
     private let defaults: UserDefaults
     private let appBuild: String
+    /// Whether Firefox's folder is there but closed to Viaduct.
+    private let dataBlocked: @Sendable () -> Bool
     private var callsInFlight = 0
     /// An agent check was skipped while other calls ran, so the last one to end does it.
     private var agentCheckDeferred = false
 
     init(persist: PersistClientProtocol, agent: FirefoxAgentControlling, defaults: UserDefaults,
-         appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") {
+         appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+         dataBlocked: @escaping @Sendable () -> Bool = { FirefoxLocator.dataBlocked() }) {
         self.persist = persist
         self.agent = agent
         self.defaults = defaults
         self.appBuild = appBuild
+        self.dataBlocked = dataBlocked
     }
 
     /// A persist install or uninstall is running.
@@ -137,7 +145,12 @@ final class FirefoxAddons {
         let profiles = try await persist.profiles(firefox: firefox.appURL.path).profiles
         guard let profile = FirefoxProfileChoice.resolve(stored: profilePath ?? defaults.string(forKey: Self.profileKey),
                                                          in: profiles)
-        else { throw FirefoxAddonsError.noProfile }
+        else {
+            // Persist lists nothing for a folder it can't read, the same as
+            // for a Firefox that has never run. Only the first needs Full Disk Access.
+            let blocked = await Task.detached(priority: .userInitiated) { [dataBlocked] in dataBlocked() }.value
+            throw blocked ? FirefoxAddonsError.needsDiskAccess : FirefoxAddonsError.noProfile
+        }
 
         // A list that fails counts as nothing kept, so the user is asked rather
         // than having Firefox restart by surprise.

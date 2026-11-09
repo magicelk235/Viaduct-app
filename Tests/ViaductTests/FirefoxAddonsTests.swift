@@ -8,11 +8,13 @@ final class FirefoxAddonsTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_793_664_000)
 
     private func make(kept: [PersistAddon] = [], agent status: SMAppService.Status = .notRegistered,
-                      test: String = #function) -> (FirefoxAddons, FakePersist, FakeAgent, FakeEvents) {
+                      dataBlocked: Bool = false, test: String = #function) -> (FirefoxAddons, FakePersist, FakeAgent, FakeEvents) {
         let events = FakeEvents()
         let persist = FakePersist(log: events); persist.kept = kept
         let agent = FakeAgent(log: events, status: status)
-        return (FirefoxAddons(persist: persist, agent: agent, defaults: TestDefaults.make(test)), persist, agent, events)
+        let addons = FirefoxAddons(persist: persist, agent: agent, defaults: TestDefaults.make(test),
+                                   dataBlocked: { dataBlocked })
+        return (addons, persist, agent, events)
     }
 
     private func install(_ addons: FirefoxAddons, restart: Bool = true) async throws -> PersistResult {
@@ -76,6 +78,21 @@ final class FirefoxAddonsTests: XCTestCase {
         persist.profilesResult = PersistProfiles(firefoxes: [], profiles: [])
         do { _ = try await addons.target(firefox: FirefoxFixtures.install()); XCTFail("no error") }
         catch { XCTAssertEqual(error as? FirefoxAddonsError, .noProfile) }
+    }
+
+    /// Persist lists nothing for a folder it can't read, the same as for a
+    /// Firefox that has never run.
+    func testAFirefoxFolderViaductCantReadNeedsFullDiskAccess() async {
+        let (addons, persist, _, _) = make(dataBlocked: true)
+        persist.profilesResult = PersistProfiles(firefoxes: [], profiles: [])
+        do { _ = try await addons.target(firefox: FirefoxFixtures.install()); XCTFail("no error") }
+        catch { XCTAssertEqual(error as? FirefoxAddonsError, .needsDiskAccess) }
+    }
+
+    func testTheFolderOnlyMattersWhenPersistListsNoProfiles() async throws {
+        let (addons, _, _, _) = make(dataBlocked: true)
+        let target = try await addons.target(firefox: FirefoxFixtures.install())
+        XCTAssertEqual(target.profilePath, "/profiles/a")
     }
 
     func testRestartQuestion() {
@@ -228,8 +245,56 @@ final class FirefoxAddonsTests: XCTestCase {
     func testErrorsReadAsTheirCopy() {
         XCTAssertEqual(FirefoxAddonsError.noProfile.localizedDescription,
                        "Open Firefox once so it can set up your profile, then try again.")
+        XCTAssertEqual(FirefoxAddonsError.needsDiskAccess.localizedDescription,
+                       "Turn on Full Disk Access for Viaduct in System Settings, then try again.")
         XCTAssertEqual(FirefoxAddonsError.loginItemOff.localizedDescription,
                        "Firefox only keeps your add-ons while Viaduct can run in the background. Turn Viaduct on in Login Items, then try again.")
+    }
+
+    /// A gate stands for the error that stopped the install, in its words.
+    func testGatesReadAsTheirErrors() {
+        XCTAssertEqual(FirefoxGate(.noProfile), .noProfile)
+        XCTAssertEqual(FirefoxGate(.needsDiskAccess), .needsDiskAccess)
+        XCTAssertEqual(FirefoxGate(.loginItemOff), .loginItemOff)
+        for error in [FirefoxAddonsError.noProfile, .needsDiskAccess, .loginItemOff] {
+            XCTAssertEqual(FirefoxGate(error).message, error.localizedDescription)
+        }
+    }
+
+    // MARK: - Firefox's folder
+
+    func testAFolderThatIsntThereIsntBlocked() {
+        XCTAssertFalse(FirefoxLocator.dataBlocked(at: TempDir.make().appendingPathComponent("Firefox", isDirectory: true)))
+    }
+
+    func testAFolderViaductCanReadIsntBlocked() throws {
+        let folder = TempDir.make()
+        try Data("[General]\n".utf8).write(to: folder.appendingPathComponent("profiles.ini"))
+        XCTAssertFalse(FirefoxLocator.dataBlocked(at: folder))
+    }
+
+    /// macOS answers EPERM for a folder it keeps Viaduct out of. A folder
+    /// without read permission answers EACCES, which counts the same.
+    func testAFolderViaductCantListIsBlocked() throws {
+        let folder = TempDir.make()
+        try lockOut(folder)
+        XCTAssertTrue(FirefoxLocator.dataBlocked(at: folder))
+    }
+
+    func testAProfileListViaductCantReadIsBlocked() throws {
+        let folder = TempDir.make()
+        let ini = folder.appendingPathComponent("profiles.ini")
+        try Data("[General]\n".utf8).write(to: ini)
+        try lockOut(ini)
+        XCTAssertTrue(FirefoxLocator.dataBlocked(at: folder))
+    }
+
+    /// Takes every permission off `url` until the test ends.
+    private func lockOut(_ url: URL) throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+        addTeardownBlock {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
     }
 }
 

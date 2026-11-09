@@ -294,8 +294,8 @@ final class ConversionQueue: ObservableObject {
                 items[index].note = "Arrives the next time you open Firefox"
             }
         } else if let gate = vm.firefoxGate {
-            // No profile, or Viaduct off in Login Items, found once the run was
-            // going. The Firefox items left would only stop on it again.
+            // A Firefox gate found once the run was going. The Firefox items
+            // left would only stop on it again.
             items[index].status = .failed(vm.failureSummary ?? gate.headline)
             stop(.needsFirefox(gate))
         } else {
@@ -402,6 +402,7 @@ extension FirefoxGate {
         switch self {
         case .notInstalled: return "install Firefox, then run the rest again"
         case .noProfile: return "open Firefox once, then run the rest again"
+        case .needsDiskAccess: return "turn on Full Disk Access for Viaduct, then run the rest again"
         case .loginItemOff: return "turn Viaduct on in Login Items, then run the rest again"
         }
     }
@@ -411,6 +412,7 @@ extension FirefoxGate {
         switch self {
         case .notInstalled: return "Needs Firefox"
         case .noProfile: return "Needs a Firefox profile"
+        case .needsDiskAccess: return "Needs Full Disk Access"
         case .loginItemOff: return "Needs Viaduct in Login Items"
         }
     }

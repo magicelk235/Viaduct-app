@@ -69,8 +69,10 @@ final class FirefoxBatchTests: XCTestCase {
         XCTAssertEqual(FirefoxGate.notInstalled.batchHint, "install Firefox, then run the rest again")
         XCTAssertEqual(FirefoxGate.noProfile.batchHint, "open Firefox once, then run the rest again")
         XCTAssertEqual(FirefoxGate.loginItemOff.batchHint, "turn Viaduct on in Login Items, then run the rest again")
+        XCTAssertEqual(FirefoxGate.needsDiskAccess.batchHint, "turn on Full Disk Access for Viaduct, then run the rest again")
         XCTAssertEqual(FirefoxGate.notInstalled.skippedNote, "Needs Firefox")
         XCTAssertEqual(FirefoxGate.noProfile.skippedNote, "Needs a Firefox profile")
         XCTAssertEqual(FirefoxGate.loginItemOff.skippedNote, "Needs Viaduct in Login Items")
+        XCTAssertEqual(FirefoxGate.needsDiskAccess.skippedNote, "Needs Full Disk Access")
     }
 }
