@@ -27,7 +27,7 @@ struct FirefoxSection: View {
                             .foregroundStyle(Theme.Colors.body)
                         Spacer(minLength: Theme.Space.sm)
                         Picker("Profile", selection: profileSelection) {
-                            ForEach(profiles) { Text($0.name).tag($0.path) }
+                            ForEach(profiles) { Text(Self.label(of: $0)).tag($0.path) }
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
@@ -59,6 +59,13 @@ struct FirefoxSection: View {
     private func loadProfiles() async {
         guard let firefox else { return }
         profiles = (try? await FirefoxAddons.shared.persist.profiles(firefox: firefox.appURL.path).profiles) ?? []
+    }
+
+    /// A profile's entry in the picker: its name, then whether it's the one
+    /// Firefox opens by default and whether Firefox has it open now.
+    nonisolated static func label(of profile: PersistProfiles.Profile) -> String {
+        let marks = [profile.isDefault ? "Firefox's default" : nil, profile.inUse ? "open now" : nil].compactMap { $0 }
+        return marks.isEmpty ? profile.name : "\(profile.name) — \(marks.joined(separator: ", "))"
     }
 }
 

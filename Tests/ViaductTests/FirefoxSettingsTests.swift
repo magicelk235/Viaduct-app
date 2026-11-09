@@ -17,6 +17,17 @@ final class FirefoxSettingsTests: XCTestCase {
         XCTAssertEqual(FirefoxAgentSection.name(of: "/profiles/abc.default-release", in: known), "abc.default-release")
     }
 
+    /// One line each: which profile Firefox opens by default, and which it has open.
+    func testProfileLabelsMarkTheDefaultAndTheOpenProfile() {
+        func label(_ name: String, isDefault: Bool, inUse: Bool) -> String {
+            FirefoxSection.label(of: PersistProfiles.Profile(name: name, path: "/profiles/\(name)", isDefault: isDefault, inUse: inUse))
+        }
+        XCTAssertEqual(label("default-release", isDefault: true, inUse: true), "default-release — Firefox's default, open now")
+        XCTAssertEqual(label("default-release", isDefault: true, inUse: false), "default-release — Firefox's default")
+        XCTAssertEqual(label("work", isDefault: false, inUse: true), "work — open now")
+        XCTAssertEqual(label("default", isDefault: false, inUse: false), "default")
+    }
+
     func testNeverLoadedProfile() {
         let state = FirefoxAgentSection.loadState(of: profile(), firefox: firefox, now: now)
         XCTAssertEqual(state.text, "Not loaded yet")
