@@ -201,7 +201,7 @@ struct SetupView: View {
                 wide("Open Xcode") { openXcode() }
                     .disabled(flow.xcode != .ready)
             case .diskAccess:
-                if flow.blockedBrowsers == nil {
+                if flow.blockedNames == nil {
                     wide("Allow Access") { flow.checkDiskAccess() }
                 } else {
                     wide("Open Full Disk Access") {
@@ -359,13 +359,19 @@ struct SetupView: View {
                 return "In Xcode, open Settings, then Accounts, and add your Apple ID. A free one works."
             }
         case .diskAccess:
-            switch flow.blockedBrowsers {
+            switch flow.blockedNames {
             case nil:
-                return "To list the extensions in Chrome and your other browsers, and bring their settings along. macOS will ask you once."
+                guard flow.browser == .firefox else {
+                    return "To list the extensions in Chrome and your other browsers, and bring their settings along. macOS will ask you once."
+                }
+                return flow.canImport
+                    ? "To add extensions to Firefox, list the ones in Chrome and your other browsers, and bring their settings along. macOS will ask you once."
+                    : "To add extensions to Firefox."
             case let blocked? where blocked.isEmpty:
+                if flow.browser == .firefox, !flow.canImport { return "Viaduct can add extensions to Firefox." }
                 return "Your extensions and their settings can come over to \(flow.browser.displayName)."
             case let blocked?:
-                return "macOS is still keeping Viaduct out of \(ListFormatter.localizedString(byJoining: blocked.map(\.name))). Turn Viaduct on under Full Disk Access, then come back."
+                return "Viaduct still can't read \(ListFormatter.localizedString(byJoining: blocked)). Turn Viaduct on under Full Disk Access, then come back."
             }
         case .storeButton:
             return storeButtonOn

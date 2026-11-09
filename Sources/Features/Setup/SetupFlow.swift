@@ -38,6 +38,9 @@ final class SetupFlow: ObservableObject {
     /// Browsers macOS won't let Viaduct read. Nil until the user has been
     /// asked, because the check itself is what raises the macOS prompt.
     @Published private(set) var blockedBrowsers: [ChromiumBrowser]?
+    /// Whether Firefox's folder is closed to Viaduct. Only a check for
+    /// Firefox setup looks, so it's nil until one has.
+    @Published private(set) var firefoxBlocked: Bool?
     @Published private(set) var checkingDiskAccess = false
     /// The Firefox conversions would go to, if there is one.
     @Published private(set) var firefox: FirefoxLocator.Install?
@@ -91,15 +94,30 @@ final class SetupFlow: ObservableObject {
     /// The steps this Mac needs for the picked browser.
     var steps: [Step] { Self.steps(for: browser, hasBrowsers: ChromeImport.hasBrowsers) }
 
-    /// Firefox needs neither Xcode nor an Apple account. Disk access only
-    /// makes sense with a Chromium browser installed.
+    /// Firefox needs neither Xcode nor an Apple account, but always needs disk
+    /// access: Viaduct reads Firefox's profiles to put add-ons in them. For
+    /// Safari it only makes sense with a Chromium browser installed.
     static func steps(for browser: Browser, hasBrowsers: Bool) -> [Step] {
-        let steps: [Step]
         switch browser {
-        case .safari:  steps = [.xcode, .appleAccount, .diskAccess, .storeButton, .license]
-        case .firefox: steps = [.firefox, .diskAccess, .firefoxStoreButton, .license]
+        case .safari:
+            return [.xcode, .appleAccount, .diskAccess, .storeButton, .license].filter { $0 != .diskAccess || hasBrowsers }
+        case .firefox:
+            return [.firefox, .diskAccess, .firefoxStoreButton, .license]
         }
-        return steps.filter { $0 != .diskAccess || hasBrowsers }
+    }
+
+    /// What the disk access step still waits on, by name. Nil until it has
+    /// checked for the picked browser.
+    var blockedNames: [String]? { Self.blockedNames(chromium: blockedBrowsers, firefox: firefoxBlocked, for: browser) }
+
+    /// Firefox setup waits on Firefox's folder, then on the browsers it can
+    /// import from. Safari setup never needs Firefox's folder.
+    static func blockedNames(chromium: [ChromiumBrowser]?, firefox: Bool?, for browser: Browser) -> [String]? {
+        guard let chromium else { return nil }
+        let names = chromium.map(\.name)
+        guard browser == .firefox else { return names }
+        guard let firefox else { return nil }
+        return (firefox ? ["Firefox"] : []) + names
     }
 
     /// Whether the welcome screen offers Import from Chrome.
@@ -185,15 +203,19 @@ final class SetupFlow: ObservableObject {
         if step == .diskAccess, blockedBrowsers != nil { checkDiskAccess() }
     }
 
-    /// Reads each browser's folder. The first read is what makes macOS show its
-    /// "access data from other apps" question, and it waits for the answer.
+    /// Reads each browser's folder, and Firefox's for Firefox setup. The first
+    /// read is what makes macOS show its "access data from other apps"
+    /// question, and it waits for the answer.
     func checkDiskAccess() {
         guard !checkingDiskAccess else { return }
         checkingDiskAccess = true
+        let checksFirefox = browser == .firefox
         Task.detached(priority: .userInitiated) {
             let blocked = BrowserProfiles.blocked()
+            let firefoxBlocked = checksFirefox ? FirefoxLocator.dataBlocked() : nil
             await MainActor.run {
                 self.blockedBrowsers = blocked
+                if let firefoxBlocked { self.firefoxBlocked = firefoxBlocked }
                 self.checkingDiskAccess = false
             }
         }
@@ -204,7 +226,7 @@ final class SetupFlow: ObservableObject {
         switch step {
         case .xcode:        return xcode == .ready
         case .appleAccount: return account == .signedIn
-        case .diskAccess:   return blockedBrowsers?.isEmpty == true
+        case .diskAccess:   return blockedNames?.isEmpty == true
         case .storeButton:  return ConverterViewModel.shared.storeButtonEnabled == true
         case .license:      return LicenseManager.shared.unlimited(browser)
         case .firefox:      return firefox != nil && FirefoxDisclosure.isAccepted()
