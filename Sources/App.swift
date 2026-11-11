@@ -248,15 +248,19 @@ struct ViaductApp: App {
         guard let request = StoreRequest(url: url) else { return }
         switch request.action {
         case .install(let name):
+            let bridge = InstallProgressBridge.shared
             // Starting a store install resets the flow, which would wipe the
             // conversion or batch already running (and record its app under
-            // this one's name). Show what's running instead.
+            // this one's name). Show what's running instead, and tell this
+            // page so its card ends rather than waiting on someone else's run.
             guard !vm.isRunning, !ConversionQueue.shared.isRunning,
-                  !InstallProgressBridge.shared.downloading,
+                  !bridge.downloading,
                   OfficialVersionPrompt.shared.question == nil else {
+                bridge.refuse(storeId: request.storeId, browser: request.browser)
                 MainWindow.show()
                 return
             }
+            bridge.begin(storeId: request.storeId, browser: request.browser)
             // The store URL is /detail/NAME/ID, and `name` is that NAME, so the
             // app isn't named after the random-looking ID when the manifest
             // name is an __MSG_ i18n key.
@@ -266,7 +270,8 @@ struct ViaductApp: App {
                 // way instead of coming forward.
                 NSApp.hide(nil)
                 vm.resetUserFlow()
-                InstallProgressBridge.shared.downloading = true
+                bridge.downloading = true
+                bridge.advance(to: .downloading)
                 downloadAndConvert(extensionId: request.storeId, displayName: name,
                                    browser: request.browser, vm: vm)
             }
@@ -286,12 +291,27 @@ struct ViaductApp: App {
     }
 
     /// The state dict the store-page extensions poll for; rendered as the
-    /// install bar on the Chrome Web Store page. When `queryId` is set (an
-    /// `InstalledQuery` object), also answers whether that CWS id is installed
-    /// in that browser (drives the Add/Remove button).
+    /// install bar on the Chrome Web Store page. `queryId` (an `InstalledQuery`
+    /// object) names the page's extension and browser: it gets progress only
+    /// for the store install the app is running, plus whether that CWS id is
+    /// installed in that browser (drives the Add/Remove button).
     @MainActor
     private static func progressSnapshot(_ vm: ConverterViewModel?, queryId: String?) -> [String: Any] {
-        var dict = baseSnapshot(vm)
+        let bridge = InstallProgressBridge.shared
+        let current = bridge.install.flatMap { install in
+            install.isCurrent(inputPath: vm?.options.inputPath ?? "",
+                              browser: vm?.options.browser ?? install.browser,
+                              asking: OfficialVersionPrompt.shared.question != nil) ? install : nil
+        }
+        var dict: [String: Any]
+        switch InstallProgressBridge.answer(to: queryId, current: current, refused: bridge.refused) {
+        case .snapshot:
+            dict = baseSnapshot(vm)
+        case .idle:
+            dict = ["state": "idle"]
+        case .refused:
+            dict = ["state": "failed", "message": "Viaduct is busy with another install. Try again when it's done."]
+        }
         // Only added when asked: this snapshot is broadcast on an unauthenticated
         // bus, so we never volunteer the user's full installed set — just a
         // yes/no for the single id they queried.
@@ -380,6 +400,9 @@ struct ViaductApp: App {
                     vm.options.browser = browser
                     if let settingsNote { vm.appendLog("→ \(settingsNote)") }
                     vm.selectInput(path: finalURL.path)
+                    // From here the store page follows this input; if the
+                    // window swaps it out, the progress is no longer the page's.
+                    InstallProgressBridge.shared.advance(to: .converting(inputPath: vm.options.inputPath))
                     // Store name beats the manifest's __MSG_ key / the .crx filename.
                     if let displayName, !displayName.isEmpty {
                         vm.options.appName = displayName

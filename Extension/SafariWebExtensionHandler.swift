@@ -38,11 +38,18 @@ public class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             return
         }
 
-        // An installed-check carries the queried CWS id as the notification
-        // object; a progress poll carries none. The app replies on stateNote
-        // with a JSON snapshot; installed-check replies echo `forId`, so we
-        // accept only the reply for our own id (the bus is shared/broadcast).
-        let queryId = type == "installed" ? (message?["id"] as? String) : nil
+        // Both carry the page's CWS id, posted as the notification object (a
+        // bare id is how the app spells a Safari query). The app answers on
+        // stateNote with a JSON snapshot echoing that id as `forId`, so we take
+        // only the reply to our own question: the bus is shared by every tab
+        // and browser, and the app only reports progress to the page whose
+        // install it's running. A progress poll with no id comes from a page
+        // script older than the app and takes only an unscoped reply.
+        let queryId = message?["id"] as? String
+        if type == "installed" && queryId == nil {
+            respond(context, ["state": "unknown"])
+            return
+        }
         let timeoutPayload: [String: Any] = type == "installed"
             ? ["installed": false, "state": "unreachable"]
             : ["state": "unreachable"]
@@ -66,13 +73,8 @@ public class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                   let data = json.data(using: .utf8),
                   let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             else { return }
-            if let queryId {
-                // Ignore progress replies (and other ids) racing on the bus.
-                guard dict["forId"] as? String == queryId else { return }
-                finish(["installed": dict["installed"] as? Bool ?? false])
-            } else {
-                finish(dict)
-            }
+            guard dict["forId"] as? String == queryId else { return }
+            finish(type == "installed" ? ["installed": dict["installed"] as? Bool ?? false] : dict)
         }
         center.postNotificationName(Self.requestNote, object: queryId, userInfo: nil,
                                     deliverImmediately: true)

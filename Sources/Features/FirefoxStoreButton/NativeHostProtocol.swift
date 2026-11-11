@@ -40,8 +40,9 @@ enum NativeHostProtocol {
     enum Action: Equatable {
         /// Hand this viaduct:// link to the app.
         case open(URL)
-        /// Pass on the app's progress snapshot.
-        case progress
+        /// Ask the app for progress with this object on the progress bus; nil
+        /// from an add-on built before progress polls named their extension.
+        case progress(busObject: String?)
         /// Ask the app whether the extension is installed, with this object on the progress bus.
         case installed(busObject: String)
         /// Turn the message away with this error.
@@ -49,7 +50,7 @@ enum NativeHostProtocol {
     }
 
     /// What to do with one message from the add-on: `{type:"install", id, name?}`,
-    /// `{type:"remove", id}`, `{type:"progress"}` or `{type:"installed", id}`.
+    /// `{type:"remove", id}`, `{type:"progress", id}` or `{type:"installed", id}`.
     static func action(for message: [String: Any]) -> Action {
         switch message["type"] as? String {
         case "install":
@@ -66,7 +67,11 @@ enum NativeHostProtocol {
                 .installed(busObject: InstalledQuery.busObject(storeId: $0, browser: .firefox))
             }
         case "progress":
-            return .progress
+            // An add-on from before progress was scoped polls with no id.
+            guard message["id"] != nil else { return .progress(busObject: nil) }
+            return withStoreId(in: message) {
+                .progress(busObject: InstalledQuery.busObject(storeId: $0, browser: .firefox))
+            }
         case let type:
             return .reject("Unknown request type: \(type ?? "none")")
         }
@@ -76,6 +81,13 @@ enum NativeHostProtocol {
     static func installedReply(from state: [String: Any], busObject: String) -> [String: Any]? {
         guard state["forId"] as? String == busObject else { return nil }
         return ["installed": state["installed"] as? Bool ?? false]
+    }
+
+    /// The progress to pass on, or nil when the bus reply answers someone else.
+    /// A poll without a bus object only takes a reply to another unscoped poll.
+    static func progressReply(from state: [String: Any], busObject: String?) -> [String: Any]? {
+        guard state["forId"] as? String == busObject else { return nil }
+        return state
     }
 
     /// The id ends up in a viaduct:// link or on the progress bus, so anything

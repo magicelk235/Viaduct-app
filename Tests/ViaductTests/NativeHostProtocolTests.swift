@@ -36,8 +36,26 @@ final class NativeHostProtocolTests: XCTestCase {
         guard case .reject = NativeHostProtocol.action(for: ["type": "hello"]) else { return XCTFail() }
     }
 
-    func test_progressNeedsNoId() {
-        XCTAssertEqual(NativeHostProtocol.action(for: ["type": "progress"]), .progress)
+    func test_progressPollUsesTheFirefoxBusObject() {
+        XCTAssertEqual(NativeHostProtocol.action(for: ["type": "progress", "id": id]), .progress(busObject: "firefox:\(id)"))
+    }
+
+    func test_progressPollFromAnOlderAddonStillWorks() {
+        XCTAssertEqual(NativeHostProtocol.action(for: ["type": "progress"]), .progress(busObject: nil))
+    }
+
+    func test_progressPollWithABadIdIsRejected() {
+        guard case .reject = NativeHostProtocol.action(for: ["type": "progress", "id": "../../x"]) else { return XCTFail() }
+    }
+
+    func test_progressReplyIgnoresOtherPolls() {
+        let mine = "firefox:\(id)"
+        XCTAssertNil(NativeHostProtocol.progressReply(from: ["state": "active", "forId": id], busObject: mine))
+        XCTAssertNil(NativeHostProtocol.progressReply(from: ["state": "active"], busObject: mine))
+        XCTAssertEqual(NativeHostProtocol.progressReply(from: ["state": "done", "forId": mine], busObject: mine)?["state"] as? String, "done")
+        // An unscoped poll never takes another page's answer.
+        XCTAssertNil(NativeHostProtocol.progressReply(from: ["state": "active", "forId": mine], busObject: nil))
+        XCTAssertEqual(NativeHostProtocol.progressReply(from: ["state": "idle"], busObject: nil)?["state"] as? String, "idle")
     }
 
     func test_installedQueryUsesTheFirefoxBusObject() {
@@ -61,5 +79,71 @@ final class NativeHostProtocolTests: XCTestCase {
     func test_appBundleFromHelperPath() {
         XCTAssertEqual(NativeHostProtocol.appBundle(helperExecutable: URL(fileURLWithPath: "/Applications/Viaduct.app/Contents/Helpers/ViaductHelper")).path,
                        "/Applications/Viaduct.app")
+    }
+}
+
+/// Which store page gets the app's install progress.
+final class InstallProgressScopeTests: XCTestCase {
+    typealias Install = InstallProgressBridge.StoreInstall
+    let x = "eimadpbcbfnmbkopoojfekhnkhdbieeh"
+    let y = "cjpalhdlnbpafiamejdnhcphjbkeiagm"
+
+    func answer(_ query: String?, _ current: Install?, refused: Set<String> = []) -> InstallProgressBridge.Answer {
+        InstallProgressBridge.answer(to: query, current: current, refused: refused)
+    }
+
+    func test_onlyThePageWhoseInstallIsRunningGetsProgress() {
+        let firefoxX = Install(storeId: x, browser: .firefox, stage: .downloading)
+        XCTAssertEqual(answer(InstalledQuery.busObject(storeId: x, browser: .firefox), firefoxX), .snapshot)
+        XCTAssertEqual(answer(InstalledQuery.busObject(storeId: y, browser: .safari), firefoxX), .idle)
+        XCTAssertEqual(answer(InstalledQuery.busObject(storeId: y, browser: .firefox), firefoxX), .idle)
+        // Same extension, other browser.
+        XCTAssertEqual(answer(InstalledQuery.busObject(storeId: x, browser: .safari), firefoxX), .idle)
+    }
+
+    func test_nothingRunningMeansIdle() {
+        XCTAssertEqual(answer(InstalledQuery.busObject(storeId: x, browser: .safari), nil), .idle)
+    }
+
+    func test_aRefusedInstallEndsItsCard() {
+        let firefoxX = Install(storeId: x, browser: .firefox, stage: .converting(inputPath: "/tmp/x.crx"))
+        let safariY = InstalledQuery.busObject(storeId: y, browser: .safari)
+        XCTAssertEqual(answer(safariY, firefoxX, refused: [safariY]), .refused)
+        XCTAssertEqual(answer(safariY, nil, refused: [safariY]), .refused)
+        // A second tab asking for the running install follows it instead.
+        let firefoxXQuery = InstalledQuery.busObject(storeId: x, browser: .firefox)
+        XCTAssertEqual(answer(firefoxXQuery, firefoxX, refused: [firefoxXQuery]), .snapshot)
+    }
+
+    func test_unscopedPollFromAnOlderPageScriptKeepsTheSnapshot() {
+        XCTAssertEqual(answer(nil, nil), .snapshot)
+        XCTAssertEqual(answer(nil, Install(storeId: x, browser: .firefox, stage: .downloading)), .snapshot)
+    }
+
+    func test_anInstallStopsBeingCurrentWhenTheFlowMovesOn() {
+        let asking = Install(storeId: x, browser: .safari, stage: .asking)
+        XCTAssertTrue(asking.isCurrent(inputPath: "", browser: .safari, asking: true))
+        XCTAssertFalse(asking.isCurrent(inputPath: "", browser: .safari, asking: false))
+
+        let downloading = Install(storeId: x, browser: .firefox, stage: .downloading)
+        XCTAssertTrue(downloading.isCurrent(inputPath: "", browser: .safari, asking: false))
+        XCTAssertFalse(downloading.isCurrent(inputPath: "/tmp/other.crx", browser: .safari, asking: false))
+
+        let converting = Install(storeId: x, browser: .firefox, stage: .converting(inputPath: "/tmp/x.crx"))
+        XCTAssertTrue(converting.isCurrent(inputPath: "/tmp/x.crx", browser: .firefox, asking: false))
+        XCTAssertFalse(converting.isCurrent(inputPath: "/tmp/other.crx", browser: .firefox, asking: false))
+        XCTAssertFalse(converting.isCurrent(inputPath: "/tmp/x.crx", browser: .safari, asking: false))
+        XCTAssertFalse(converting.isCurrent(inputPath: "", browser: .firefox, asking: false))
+    }
+
+    func test_bridgeForgetsARefusalOnceThatInstallIsTakenOn() {
+        let bridge = InstallProgressBridge()
+        bridge.refuse(storeId: y, browser: .safari)
+        XCTAssertEqual(bridge.refused, [y])
+        bridge.begin(storeId: y, browser: .safari)
+        XCTAssertEqual(bridge.refused, [])
+        XCTAssertEqual(bridge.install, Install(storeId: y, browser: .safari, stage: .asking))
+        bridge.advance(to: .downloading)
+        XCTAssertEqual(bridge.install?.stage, .downloading)
     }
 }

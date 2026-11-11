@@ -6,14 +6,16 @@ browser.runtime
   .catch(() => {});
 
 // Relay: content scripts can't call sendNativeMessage in Safari, so progress
-// polls route through here to the native SafariWebExtensionHandler.
+// polls route through here to the native SafariWebExtensionHandler. A poll
+// names the extension the page is installing; the app only reports progress
+// for the install it's running.
 // sendResponse + `return true` (not a returned Promise) — Safari resolves the
 // content script's sendMessage() only via sendResponse; a returned Promise can
 // leave the caller's await hanging forever.
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message && message.type === 'viaduct-progress') {
     browser.runtime
-      .sendNativeMessage('com.magicelk235.viaduct.Extension', { type: 'progress' })
+      .sendNativeMessage('com.magicelk235.viaduct.Extension', { type: 'progress', id: message.id })
       .then(sendResponse,
             // Pass the real failure through — the page shows it after repeated
             // misses, which beats debugging a generic "couldn't reach".

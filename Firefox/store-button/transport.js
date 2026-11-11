@@ -16,8 +16,8 @@ var viaductTransport = {
     browser.runtime.sendMessage({ type: 'viaduct-open', action: 'remove', id }).catch(() => {});
   },
 
-  progress() {
-    return browser.runtime.sendMessage({ type: 'viaduct-progress' });
+  progress(id) {
+    return browser.runtime.sendMessage({ type: 'viaduct-progress', id });
   },
 
   installed(id) {

@@ -574,8 +574,10 @@ function startProgressPolling(btn, id) {
     try {
       // Race a timeout: if anything between here and the app stalls, the
       // transport's promise may never settle, and an await with no timeout
-      // would wedge the loop at "Contacting…" forever.
-      const req = viaductTransport.progress();
+      // would wedge the loop at "Contacting…" forever. The poll names this
+      // page's extension, so the app never hands it another install's
+      // progress (or its "done").
+      const req = viaductTransport.progress(id);
       req.catch(() => {});
       state = await Promise.race([
         req,

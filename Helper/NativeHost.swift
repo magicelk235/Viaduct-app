@@ -14,8 +14,9 @@ enum NativeHost {
         switch NativeHostProtocol.action(for: message) {
         case .open(let url):
             send(open(url))
-        case .progress:
-            send(ask(busObject: nil) { $0 } ?? ["state": "unreachable"])
+        case .progress(let busObject):
+            send(ask(busObject: busObject) { NativeHostProtocol.progressReply(from: $0, busObject: busObject) }
+                 ?? ["state": "unreachable"])
         case .installed(let busObject):
             send(ask(busObject: busObject) { NativeHostProtocol.installedReply(from: $0, busObject: busObject) }
                  ?? ["installed": false, "state": "unreachable"])

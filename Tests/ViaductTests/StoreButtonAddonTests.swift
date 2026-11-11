@@ -78,13 +78,13 @@ final class StoreButtonAddonTests: XCTestCase {
         ctx.evaluateScript("""
             viaductTransport.install('abcdefghijklmnopabcdefghijklmnop', 'Dark Reader');
             viaductTransport.remove('abcdefghijklmnopabcdefghijklmnop');
-            viaductTransport.progress();
+            viaductTransport.progress('abcdefghijklmnopabcdefghijklmnop');
             viaductTransport.installed('abcdefghijklmnopabcdefghijklmnop');
             """)
         XCTAssertEqual(json(ctx, "sent"), """
             [{"type":"viaduct-open","action":"install","id":"abcdefghijklmnopabcdefghijklmnop","name":"Dark Reader"},\
             {"type":"viaduct-open","action":"remove","id":"abcdefghijklmnopabcdefghijklmnop"},\
-            {"type":"viaduct-progress"},\
+            {"type":"viaduct-progress","id":"abcdefghijklmnopabcdefghijklmnop"},\
             {"type":"viaduct-installed","id":"abcdefghijklmnopabcdefghijklmnop"}]
             """)
         XCTAssertEqual(ctx.evaluateScript("viaductTransport.browser").toString(), "Firefox")
@@ -100,7 +100,7 @@ final class StoreButtonAddonTests: XCTestCase {
         ctx.evaluateScript(try String(contentsOf: firefox("background.js")))
         ctx.evaluateScript("""
             var replies = [], kept = [];
-            for (const m of [{ type: 'viaduct-progress' },
+            for (const m of [{ type: 'viaduct-progress', id: 'abcdefghijklmnopabcdefghijklmnop' },
                              { type: 'viaduct-installed', id: 'abcdefghijklmnopabcdefghijklmnop' },
                              { type: 'viaduct-open', action: 'install', id: 'abcdefghijklmnopabcdefghijklmnop', name: 'Dark Reader' },
                              { type: 'viaduct-open', action: 'remove', id: 'abcdefghijklmnopabcdefghijklmnop' }]) {
@@ -108,7 +108,7 @@ final class StoreButtonAddonTests: XCTestCase {
             }
             """)
         XCTAssertEqual(json(ctx, "native"), """
-            [{"host":"\(NativeHostProtocol.hostName)","m":{"type":"progress"}},\
+            [{"host":"\(NativeHostProtocol.hostName)","m":{"type":"progress","id":"abcdefghijklmnopabcdefghijklmnop"}},\
             {"host":"\(NativeHostProtocol.hostName)","m":{"type":"installed","id":"abcdefghijklmnopabcdefghijklmnop"}},\
             {"host":"\(NativeHostProtocol.hostName)","m":{"type":"install","id":"abcdefghijklmnopabcdefghijklmnop","name":"Dark Reader"}},\
             {"host":"\(NativeHostProtocol.hostName)","m":{"type":"remove","id":"abcdefghijklmnopabcdefghijklmnop"}}]
@@ -134,6 +134,25 @@ final class StoreButtonAddonTests: XCTestCase {
         ctx.evaluateScript(try String(contentsOf: firefox("background.js")))
         XCTAssertTrue(ctx.evaluateScript("listener({ type: 'hello' }, {}, () => {})").isUndefined)
         XCTAssertEqual(json(ctx, "native"), "[]")
+    }
+
+    func test_safariBackgroundNamesTheExtensionInAProgressPoll() throws {
+        let ctx = context()
+        ctx.evaluateScript(try String(contentsOf: appex("background.js")))
+        ctx.evaluateScript("""
+            native = [];
+            listener({ type: 'viaduct-progress', id: 'abcdefghijklmnopabcdefghijklmnop' }, {}, () => {});
+            """)
+        XCTAssertEqual(json(ctx, "native"), """
+            [{"host":"com.magicelk235.viaduct.Extension","m":{"type":"progress","id":"abcdefghijklmnopabcdefghijklmnop"}}]
+            """)
+    }
+
+    func test_safariTransportNamesTheExtensionInAProgressPoll() throws {
+        let ctx = context()
+        ctx.evaluateScript(try String(contentsOf: appex("transport.js")))
+        ctx.evaluateScript("viaductTransport.progress('abcdefghijklmnopabcdefghijklmnop')")
+        XCTAssertEqual(json(ctx, "sent"), #"[{"type":"viaduct-progress","id":"abcdefghijklmnopabcdefghijklmnop"}]"#)
     }
 
     // MARK: - The shared page script against an unreachable app
@@ -183,5 +202,15 @@ final class StoreButtonAddonTests: XCTestCase {
         let ctx = try pageScript(installedReply: "{ installed: false }")
         ctx.evaluateScript("removeViaduct('abcdefghijklmnopabcdefghijklmnop', null)")
         XCTAssertEqual(json(ctx, "states"), #"["Removing…","Removed ✓"]"#)
+    }
+
+    func test_installProgressPollsNameTheExtension() throws {
+        let ctx = try pageScript(installedReply: "{ installed: false }")
+        ctx.evaluateScript("""
+            var polled = [];
+            viaductTransport.progress = function (id) { polled.push(id); return new Promise(() => {}); };
+            startProgressPolling(null, 'abcdefghijklmnopabcdefghijklmnop');
+            """)
+        XCTAssertEqual(json(ctx, "polled"), #"["abcdefghijklmnopabcdefghijklmnop"]"#)
     }
 }

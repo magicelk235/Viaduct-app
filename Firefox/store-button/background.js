@@ -9,7 +9,7 @@ const HOST = 'com.magicelk235.viaduct';
 function hostRequest(message) {
   switch (message && message.type) {
     case 'viaduct-progress':
-      return { type: 'progress' };
+      return { type: 'progress', id: message.id };
     case 'viaduct-installed':
       return { type: 'installed', id: message.id };
     case 'viaduct-open':

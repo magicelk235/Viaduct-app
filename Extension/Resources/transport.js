@@ -18,8 +18,8 @@ var viaductTransport = {
     window.location.href = `viaduct://remove?id=${id}`;
   },
 
-  progress() {
-    return browser.runtime.sendMessage({ type: 'viaduct-progress' });
+  progress(id) {
+    return browser.runtime.sendMessage({ type: 'viaduct-progress', id });
   },
 
   installed(id) {
