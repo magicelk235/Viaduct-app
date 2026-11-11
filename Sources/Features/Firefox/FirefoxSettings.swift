@@ -8,6 +8,8 @@ struct FirefoxSection: View {
     @State private var firefox = FirefoxLocator.find()
     @State private var profiles: [PersistProfiles.Profile] = []
     @AppStorage(FirefoxAddons.profileKey) private var storedProfile: String?
+    /// Firefox's folder is there, but Viaduct isn't allowed to read it.
+    @State private var blocked = false
 
     var body: some View {
         SettingsSection(title: "Firefox", symbol: "flame") {
@@ -18,6 +20,19 @@ struct FirefoxSection: View {
                     Text(firefox.displayName).foregroundColor(Theme.Colors.ink)
                         + Text(firefox.version.map { " \($0)" } ?? "").font(Theme.Font.mono())
                             .foregroundColor(Theme.Colors.body)
+                }
+                if blocked {
+                    let gate = FirefoxGate.needsDiskAccess
+                    Divider().overlay(Theme.Colors.hairlineSoft)
+                    FirefoxValueRow {
+                        StateDot(color: Theme.Colors.accentRed)
+                    } value: {
+                        Text(gate.headline).foregroundColor(Theme.Colors.ink)
+                    } trailing: {
+                        Button(gate.actionTitle) { gate.perform() }
+                            .buttonStyle(.raycastTertiary)
+                            .fixedSize()
+                    }
                 }
                 if profiles.count > 1 {
                     Divider().overlay(Theme.Colors.hairlineSoft)
@@ -47,6 +62,10 @@ struct FirefoxSection: View {
             }
         }
         .task { await loadProfiles() }
+        // Back from System Settings, a Full Disk Access grant may have landed.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await loadProfiles() }
+        }
     }
 
     /// Shows the profile the next install goes into, so a profile that's
@@ -59,6 +78,10 @@ struct FirefoxSection: View {
     private func loadProfiles() async {
         guard let firefox else { return }
         profiles = (try? await FirefoxAddons.shared.persist.profiles(firefox: firefox.appURL.path).profiles) ?? []
+        // Persist lists nothing for a folder it can't read, which here would
+        // look the same as a Firefox with one profile.
+        guard profiles.isEmpty else { blocked = false; return }
+        blocked = await Task.detached(priority: .userInitiated) { FirefoxLocator.dataBlocked() }.value
     }
 
     /// A profile's entry in the picker: its name, then whether it's the one
