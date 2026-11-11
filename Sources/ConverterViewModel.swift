@@ -888,11 +888,15 @@ final class ConverterViewModel: ObservableObject {
             runGeneration += 1
             let generation = runGeneration
             Task {
-                await applyUpdate()
+                let updated = await applyUpdate()
                 guard isRunning, runGeneration == generation else { return }
                 isRunning = false
                 guard !engineOlder(than: floor) else {
-                    failureSummary = "Firefox needs a newer converter, and Viaduct couldn't download it. Check your internet connection and try again."
+                    // An update that went through and is still too old means
+                    // npm has nothing newer yet, which no connection fixes.
+                    failureSummary = updated
+                        ? "Firefox needs a newer converter than Viaduct can get right now. Try again later."
+                        : "Firefox needs a newer converter, and Viaduct couldn't download it. Check your internet connection and try again."
                     phase = .failed
                     userRunEnded?(false)
                     return
@@ -1370,23 +1374,26 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
-    /// Download + swap the latest CLI. Shared by auto-update and the manual button.
-    private func applyUpdate() async {
+    /// Download + swap the latest CLI. Shared by auto-update and the manual
+    /// button. False when the download or the install failed.
+    @discardableResult
+    private func applyUpdate() async -> Bool {
         // Nothing installed yet, so this is the first install rather than an
         // update; that path owns the "installing" UI and coalesces racing
         // callers onto one download.
         guard updater.isInstalled else {
-            await ensureCLIInstalled()
-            return
+            return await ensureCLIInstalled()
         }
         appendLog("→ Auto-updating CLI…")
         do {
             try await updater.update(rawLog: { [weak self] line in self?.appendLog(line) })
             installedVersion = updater.installedVersion ?? "not installed"
             updateAvailable = false
+            return true
         } catch {
             // Kept in the log: Settings re-checks, and the next launch retries.
             appendLog("✗ \(error.localizedDescription)")
+            return false
         }
     }
 

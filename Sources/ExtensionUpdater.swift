@@ -140,6 +140,11 @@ final class ExtensionUpdater {
                 history.stampUpdateCheck(id: rec.id)
                 return
             }
+            // An engine from before Firefox support can't build it. The engine
+            // updates itself at launch, so this waits for the next pass rather
+            // than reporting a failed update.
+            guard !CLIUpdater.semverLess(CLIUpdater.shared.installedVersion ?? "0",
+                                         FirefoxConversion.minimumEngine) else { return }
         }
         // Poll the CWS. Any failure: stamp the check (don't retry until next week)
         // and move on — a transient store hiccup shouldn't spin.
