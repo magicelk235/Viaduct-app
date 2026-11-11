@@ -377,7 +377,9 @@ final class ConverterViewModel: ObservableObject {
         guard LicenseManager.shared.hasLaunchAnswer else { return }
         syncLoginItem()
         guard autoUpdateEnabled else { return }
-        extensionUpdater.updateIfNeeded()
+        // The daily tick's guard too: started under a conversion the user is
+        // running, an update would race it into persist and the output folder.
+        if !isRunning, !batchActive { extensionUpdater.updateIfNeeded() }
         guard updateTimer == nil else { return }
         updateTimer = Timer.scheduledTimer(withTimeInterval: 24 * 3600, repeats: true) { [weak self] _ in
             Task { @MainActor in

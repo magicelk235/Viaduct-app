@@ -201,7 +201,31 @@ final class FirefoxAddonsTests: XCTestCase {
         XCTAssertEqual(agent.status, .requiresApproval)
     }
 
-    /// Persist hasn't kept anything for the running install yet, and it still might.
+    /// Persist saves its list without a lock, so a second call waits for the
+    /// first: two installs at once could lose one's record.
+    func testPersistCallsRunOneAtATime() async throws {
+        let (addons, persist, _, _) = make(kept: [FirefoxFixtures.addon()], agent: .enabled)
+        let hold = Hold()
+        persist.onInstall = { await hold.wait() }
+        let first = Task { try await install(addons) }
+        await hold.reached()
+        persist.onInstall = nil
+        let second = Task { try await install(addons) }
+        let removing = Task { try await addons.uninstall(id: "store-button@viaduct.magicelklabs.com", profile: nil, restart: false) }
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertEqual(persist.installs.count, 1)
+        XCTAssertTrue(persist.uninstalls.isEmpty)
+
+        hold.release()
+        _ = try await first.value
+        _ = try await second.value
+        try await removing.value
+        XCTAssertEqual(persist.installs.count, 2)
+        XCTAssertEqual(persist.uninstalls.count, 1)
+    }
+
+    /// Persist hasn't kept anything for the running install yet, and it still
+    /// might, so the agent check waits for the uninstall queued behind it.
     func testAnUninstallLeavesTheAgentWhileAnInstallRuns() async throws {
         let (addons, persist, agent, _) = make(kept: [FirefoxFixtures.addon()], agent: .enabled)
         persist.installResult = .failure(.failed("Firefox is busy"))
@@ -210,15 +234,17 @@ final class FirefoxAddonsTests: XCTestCase {
         let installing = Task { try await install(addons) }
         await hold.reached()
 
-        try await addons.uninstall(id: "darkreader@viaduct", profile: "/profiles/a", restart: false)
+        let removing = Task { try await addons.uninstall(id: "darkreader@viaduct", profile: "/profiles/a", restart: false) }
+        for _ in 0..<100 { await Task.yield() }
         XCTAssertEqual(agent.unregisterCount, 0)
 
         hold.release()
         _ = try? await installing.value
+        try await removing.value
         XCTAssertEqual(agent.unregisterCount, 1)
     }
 
-    /// Persist kept the install's add-on, then the uninstall took it out and ended first.
+    /// Persist kept the install's add-on, then the uninstall queued behind it took it out.
     func testTheLastCallToEndChecksTheAgentAgain() async throws {
         let (addons, persist, agent, _) = make()
         let hold = Hold()
@@ -226,11 +252,13 @@ final class FirefoxAddonsTests: XCTestCase {
         let installing = Task { try await install(addons) }
         await hold.reached()
 
-        try await addons.uninstall(id: "darkreader@viaduct", profile: "/profiles/a", restart: false)
+        let removing = Task { try await addons.uninstall(id: "darkreader@viaduct", profile: "/profiles/a", restart: false) }
+        for _ in 0..<100 { await Task.yield() }
         XCTAssertEqual(agent.unregisterCount, 0)
 
         hold.release()
         _ = try await installing.value
+        try await removing.value
         XCTAssertEqual(agent.unregisterCount, 1)
     }
 
@@ -267,6 +295,30 @@ final class FirefoxAddonsTests: XCTestCase {
         try launch("1.5.0").restartAgentAfterUpdate()
         try launch("1.5.0").restartAgentAfterUpdate()
         XCTAssertEqual(events.events, ["register", "install", "unregister", "register"])
+    }
+
+    /// Every prerelease build carries the same version, and the agent still
+    /// has to move onto the new helper and persist.
+    func testARebuildOfTheSameVersionIsANewBuild() throws {
+        let app = TempDir.make().appendingPathComponent("Viaduct.app", isDirectory: true)
+        let contents = app.appendingPathComponent("Contents", isDirectory: true)
+        let helper = contents.appendingPathComponent("Helpers/ViaductHelper")
+        let persist = contents.appendingPathComponent("Resources/firefox/persist.mjs")
+        for file in [helper, persist] {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data().write(to: file)
+        }
+        let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleVersion": "1.5.0"], format: .xml, options: 0)
+        try plist.write(to: contents.appendingPathComponent("Info.plist"))
+        func built(_ helperDate: Date) throws -> String {
+            try FileManager.default.setAttributes([.modificationDate: helperDate], ofItemAtPath: helper.path)
+            return FirefoxAddons.build(of: try XCTUnwrap(Bundle(url: app)))
+        }
+
+        let first = try built(t0)
+        XCTAssertTrue(first.hasPrefix("1.5.0 "))
+        XCTAssertEqual(try built(t0), first)
+        XCTAssertNotEqual(try built(t0 + 3600), first)
     }
 
     func testErrorsReadAsTheirCopy() {

@@ -62,7 +62,7 @@ final class FirefoxAddons {
     static let profileKey = "firefoxProfilePath"
     /// When an install last came back pending, as seconds since 1970 per profile path.
     private static let pendingKey = "firefoxPendingSince"
-    /// The app build that last registered the agent.
+    /// The app build that last registered the agent, as `build(of:)` puts it.
     private static let agentBuildKey = "firefoxAgentBuild"
 
     let persist: PersistClientProtocol
@@ -74,9 +74,13 @@ final class FirefoxAddons {
     private var callsInFlight = 0
     /// An agent check was skipped while other calls ran, so the last one to end does it.
     private var agentCheckDeferred = false
+    /// The persist install or uninstall that runs or waits last. Persist
+    /// saves its list of kept add-ons without a lock, so two calls at once
+    /// can lose one: each waits for the one before it.
+    private var lastCall: Task<Void, Never>?
 
     init(persist: PersistClientProtocol, agent: FirefoxAgentControlling, defaults: UserDefaults,
-         appBuild: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+         appBuild: String = FirefoxAddons.build(of: .main),
          dataBlocked: @escaping @Sendable () -> Bool = { FirefoxLocator.dataBlocked() }) {
         self.persist = persist
         self.agent = agent
@@ -101,8 +105,10 @@ final class FirefoxAddons {
         do {
             try await readyAgent()
             reachedPersist = true
-            let result = try await persist.install(staged: staged, profile: profile, firefox: firefox, restart: restart,
-                                                   launch: launch, streamLog: streamLog)
+            let result = try await oneAtATime {
+                try await self.persist.install(staged: staged, profile: profile, firefox: firefox, restart: restart,
+                                               launch: launch, streamLog: streamLog)
+            }
             setPendingSince(result.pending ? Date() : nil, profilePath: result.profilePath)
             await endCall()
             return result
@@ -118,7 +124,7 @@ final class FirefoxAddons {
     func uninstall(id: String, profile: String?, restart: Bool) async throws {
         callsInFlight += 1
         do {
-            _ = try await persist.uninstall(id: id, profile: profile, restart: restart)
+            _ = try await oneAtATime { try await self.persist.uninstall(id: id, profile: profile, restart: restart) }
         } catch {
             // Gone from persist's list is as good as removed. A list that
             // fails says nothing, so the error stands.
@@ -149,6 +155,19 @@ final class FirefoxAddons {
     nonisolated static func agentNeedsRestart(status: SMAppService.Status, startedBy agentBuild: String?,
                                               appBuild: String) -> Bool {
         status == .enabled && agentBuild != appBuild
+    }
+
+    /// What the agent runs: the app's version, and when the helper and persist
+    /// in `bundle` were built. A reinstall of the same version, which is what
+    /// every prerelease build is, still reads as a new build.
+    nonisolated static func build(of bundle: Bundle) -> String {
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        let built = ["Contents/Helpers/ViaductHelper", "Contents/Resources/firefox/persist.mjs"].map { path in
+            let file = bundle.bundleURL.appendingPathComponent(path)
+            let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            return date.map { String(Int($0.timeIntervalSince1970)) } ?? "-"
+        }
+        return ([version] + built).joined(separator: " ")
     }
 
     /// The profile the next install goes into, whether Firefox has it open in
@@ -245,6 +264,17 @@ final class FirefoxAddons {
         guard let kept = try? await persist.list(), kept.isEmpty else { return }
         guard callsInFlight == 1 else { agentCheckDeferred = true; return }
         try? agent.unregister()
+    }
+
+    /// Runs `call` once every persist call started before it has ended.
+    private func oneAtATime<T: Sendable>(_ call: @escaping @MainActor () async throws -> T) async throws -> T {
+        let previous = lastCall
+        let next = Task { @MainActor () async throws -> T in
+            await previous?.value
+            return try await call()
+        }
+        lastCall = Task { _ = try? await next.value }
+        return try await next.value
     }
 
     // MARK: - Pending installs
