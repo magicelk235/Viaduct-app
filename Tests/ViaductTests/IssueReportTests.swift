@@ -21,11 +21,6 @@ final class IssueReportTests: XCTestCase {
         XCTAssertTrue(section(report, "Versions")!.contains("CLI 2.0.0 · persist 0.2.0 (lavaduct 0.1.0) · Firefox"))
         let os = section(report, "OS & Xcode/Firefox version")!
         XCTAssertTrue(os.hasPrefix("macOS ")); XCTAssertTrue(os.contains("Firefox")); XCTAssertFalse(os.contains("Xcode"))
-
-        let q = items(report.fallback(""))
-        XCTAssertEqual(q["template"], "conversion-failure.yml")
-        XCTAssertEqual(q["browser"], "Firefox")
-        XCTAssertTrue(q["error"]!.hasSuffix("✗ boom"))
     }
 
     func test_safariFailureReportKeepsXcodeAndLeavesPersistOut() {
@@ -45,15 +40,22 @@ final class IssueReportTests: XCTestCase {
         XCTAssertTrue(section(report, "Versions")!.contains("CLI 2.0.0 · persist ? · Firefox"))
     }
 
-    func test_failureFallbackLinkCarriesWhatTheUserWroteAndFitsGitHub() {
+    func test_fallbackLinkOpensAViaductAppIssueThatFitsGitHub() {
         let log = (0..<500).map { "line \($0) " + String(repeating: "x", count: 100) }
         let report = IssueReport.conversionFailure(extensionName: "Dark Reader", version: nil, storeId: nil, summary: nil,
                                                    log: log, cliVersion: "2.0.0", browser: .safari, persistVersion: nil)
-        let url = report.fallback("It hangs at signing")
-        XCTAssertLessThanOrEqual(url.absoluteString.count, 7_500)
-        let error = items(url)["error"]!
-        XCTAssertTrue(error.hasPrefix("What happened: It hangs at signing\n"))
-        XCTAssertTrue(error.hasSuffix(log.last!))
+        let url = report.fallbackURL(description: "It hangs at signing")
+        XCTAssertTrue(url.absoluteString.hasPrefix("https://github.com/magicelk235/viaduct-app/issues/new?"))
+        XCTAssertLessThanOrEqual(url.absoluteString.count, ProblemReport.urlBudget)
+        let q = items(url)
+        XCTAssertEqual(q["title"], "Conversion failed: Dark Reader")
+        XCTAssertTrue(q["body"]!.hasPrefix("### What happened\n\nIt hangs at signing\n\n### Extension"))
+        XCTAssertTrue(q["body"]!.hasSuffix(log.last! + "\n```"))
+    }
+
+    func test_fallbackLinkKeepsPlusSigns() {
+        let report = IssueReport.general(browser: .safari, cliVersion: "2.0.0", persistVersion: nil, lastError: nil)
+        XCTAssertEqual(items(report.fallbackURL(description: "C++ page"))["title"], "C++ page")
     }
 
     func test_brokenFirefoxExtensionReport() {
@@ -65,11 +67,6 @@ final class IssueReportTests: XCTestCase {
         XCTAssertTrue(steps.contains("Opened it in Firefox"))
         XCTAssertTrue(steps.contains("(CLI 2.0.0, persist 0.2.0 (lavaduct 0.1.0))"))
         XCTAssertTrue(section(report, "Browser & OS version")!.hasPrefix("Firefox "))
-
-        let q = items(report.fallback("Pages stay white"))
-        XCTAssertEqual(q["template"], "converted-but-broken.yml")
-        XCTAssertEqual(q["actual"], "Pages stay white")
-        XCTAssertTrue(q["safari-version"]!.contains(", macOS "))
     }
 
     func test_brokenSafariExtensionReport() {
@@ -87,7 +84,8 @@ final class IssueReportTests: XCTestCase {
         XCTAssertEqual(report.title(describing: "  Settings won't open\nmore detail"), "Settings won't open")
         XCTAssertEqual(report.title(describing: ""), "Problem report")
         XCTAssertEqual(section(report, "Last error"), "Signing failed")
-        XCTAssertTrue(items(report.fallback("Settings won't open"))["body"]!.hasPrefix("Settings won't open\n\n"))
+        XCTAssertTrue(items(report.fallbackURL(description: "Settings won't open"))["body"]!
+            .hasPrefix("### What happened\n\nSettings won't open\n\n"))
     }
 
     func test_generalReportCarriesThePickedBrowser() {
@@ -110,7 +108,7 @@ final class IssueReportTests: XCTestCase {
             extensionName: "Dark Reader", version: nil, storeId: nil, summary: "Couldn't read \(home)/Downloads/x.zip",
             log: ["✗ \(home)/Library/Viaduct/out failed", "other user /Users/alice/x", "shared /Users/Shared/y"],
             cliVersion: "2.0.0", browser: .safari, persistVersion: nil)
-        let everything = report.preview + items(report.fallback("")).values.joined()
+        let everything = report.preview + items(report.fallbackURL(description: "")).values.joined()
         XCTAssertFalse(everything.contains(home))
         XCTAssertFalse(everything.contains("alice"))
         XCTAssertTrue(report.log[0].contains("~/Library/Viaduct/out"))
@@ -119,7 +117,7 @@ final class IssueReportTests: XCTestCase {
 
     func test_longLogsKeepTheNewestLinesWithinTheRelayLimits() {
         let log = (0..<3_000).map { "line \($0) " + String(repeating: "é", count: 2_000) }
-        let report = ProblemReport(kind: .conversionFailure, title: "t", sections: [], log: log) { _ in URL(string: "https://x")! }
+        let report = ProblemReport(kind: .conversionFailure, title: "t", sections: [], log: log)
         XCTAssertEqual(report.log.last?.hasPrefix("line 2999 "), true)
         XCTAssertTrue(report.log.allSatisfy { $0.utf16.count <= ProblemReport.maxLogLine })
         XCTAssertLessThanOrEqual(report.log.reduce(0) { $0 + $1.utf8.count + 1 }, ProblemReport.logBudget)

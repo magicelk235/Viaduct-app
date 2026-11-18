@@ -22,9 +22,6 @@ struct ProblemReport: Identifiable {
     let title: String?
     let sections: [Section]
     let log: [String]
-    /// The prefilled GitHub form for when the relay can't be reached, with
-    /// what the user wrote folded in.
-    let fallback: (_ description: String) -> URL
 
     /// A failed conversion's log already says what went wrong.
     var needsDescription: Bool { kind != .conversionFailure }
@@ -36,15 +33,36 @@ struct ProblemReport: Identifiable {
     static let maxLogLine = 1_000
     static let logBudget = 40_000
 
-    init(kind: Kind, title: String?, sections: [Section], log: [String] = [],
-         fallback: @escaping (_ description: String) -> URL) {
+    init(kind: Kind, title: String?, sections: [Section], log: [String] = []) {
         self.kind = kind
         self.title = title.map { Self.clip(Self.scrub($0), Self.maxTitle) }
         self.sections = sections.map {
             Section(heading: $0.heading, text: Self.clip(Self.scrub($0.text), Self.maxSectionText), code: $0.code)
         }
         self.log = Self.fit(log.map { Self.clip(Self.scrub($0), Self.maxLogLine) }, budget: Self.logBudget)
-        self.fallback = fallback
+    }
+
+    private static let newIssue = "https://github.com/magicelk235/viaduct-app/issues/new"
+    /// GitHub turns away URLs much past 8 KB, and the log is what gives.
+    static let urlBudget = 7_500
+
+    /// A new GitHub issue with the title and body filled in, for when the
+    /// relay can't be reached.
+    func fallbackURL(description: String) -> URL {
+        let lead = ([description.isEmpty ? nil : "### What happened\n\n\(Self.scrub(description))"]
+            + sections.map { "### \($0.heading)\n\n\($0.text)" }).compactMap { $0 }.joined(separator: "\n\n")
+        // The newest lines carry the failure; drop older ones until it fits.
+        var tail = Array(log.suffix(80))
+        while true {
+            let body = tail.isEmpty ? lead : lead + "\n\n### Log\n\n```\n" + tail.joined(separator: "\n") + "\n```"
+            var c = URLComponents(string: Self.newIssue)!
+            c.queryItems = [.init(name: "title", value: title(describing: description)), .init(name: "body", value: body)]
+            // URLComponents leaves "+" alone, but GitHub reads it as a space,
+            // so "C++" would arrive as "C  ".
+            c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            if c.url!.absoluteString.count <= Self.urlBudget || tail.isEmpty { return c.url! }
+            tail.removeFirst(max(1, tail.count / 5))
+        }
     }
 
     func title(describing description: String) -> String {

@@ -157,7 +157,7 @@ struct ReportSheet: View {
             // no answer at all isn't, so GitHub takes it instead.
             if error == .unreachable {
                 Button("Open on GitHub Instead") {
-                    NSWorkspace.shared.open(report.fallback(trimmedDescription))
+                    NSWorkspace.shared.open(report.fallbackURL(description: trimmedDescription))
                     dismiss()
                 }
                 .buttonStyle(.raycastTertiary)
