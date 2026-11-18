@@ -76,12 +76,17 @@ enum IssueReport {
         }
     }
 
-    /// Anything else, from Settings: the versions and the last error, if any.
-    static func general(cliVersion: String, persistVersion: String?, lastError: String?) -> ProblemReport {
-        var versions = "Viaduct \(appVersion) · CLI \(cliVersion)"
-        if let persistVersion { versions += " · persist \(persistVersion)" }
-        versions += "\nmacOS \(osVersion)"
-        var sections = [ProblemReport.Section(heading: "Versions", text: versions)]
+    /// Anything else, from Settings: the browser the user picks, the versions
+    /// that matter for it, and the last error, if any.
+    static func general(browser: Browser, cliVersion: String, persistVersion: String?, lastError: String?) -> ProblemReport {
+        let versions = engines(cliVersion: cliVersion, browser: browser, persistVersion: persistVersion, separator: " · ")
+        let browserLine: String
+        switch browser {
+        case .safari: browserLine = "Safari \(safariVersion)"
+        case .firefox: browserLine = "Firefox \(firefoxVersion)"
+        }
+        var sections = [ProblemReport.Section(heading: "Browser", text: browser.displayName),
+                        .init(heading: "Versions", text: "Viaduct \(appVersion) · \(versions)\nmacOS \(osVersion), \(browserLine)")]
         if let lastError { sections.append(.init(heading: "Last error", text: lastError)) }
         return ProblemReport(kind: .general, title: nil, sections: sections) { description in
             var body = description.isEmpty ? "" : description + "\n\n"

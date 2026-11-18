@@ -83,11 +83,23 @@ final class IssueReportTests: XCTestCase {
     }
 
     func test_generalReportIsTitledByWhatTheUserWrote() {
-        let report = IssueReport.general(cliVersion: "2.0.0", persistVersion: nil, lastError: "Signing failed")
+        let report = IssueReport.general(browser: .safari, cliVersion: "2.0.0", persistVersion: nil, lastError: "Signing failed")
         XCTAssertEqual(report.title(describing: "  Settings won't open\nmore detail"), "Settings won't open")
         XCTAssertEqual(report.title(describing: ""), "Problem report")
         XCTAssertEqual(section(report, "Last error"), "Signing failed")
         XCTAssertTrue(items(report.fallback("Settings won't open"))["body"]!.hasPrefix("Settings won't open\n\n"))
+    }
+
+    func test_generalReportCarriesThePickedBrowser() {
+        let safari = IssueReport.general(browser: .safari, cliVersion: "2.0.0", persistVersion: "0.2.0", lastError: nil)
+        XCTAssertEqual(section(safari, "Browser"), "Safari")
+        XCTAssertTrue(section(safari, "Versions")!.contains(", Safari "))
+        XCTAssertFalse(section(safari, "Versions")!.contains("persist"))
+
+        let firefox = IssueReport.general(browser: .firefox, cliVersion: "2.0.0", persistVersion: "0.2.0", lastError: nil)
+        XCTAssertEqual(section(firefox, "Browser"), "Firefox")
+        XCTAssertTrue(section(firefox, "Versions")!.contains("CLI 2.0.0 · persist 0.2.0"))
+        XCTAssertTrue(section(firefox, "Versions")!.contains(", Firefox "))
     }
 
     // MARK: - Privacy and size

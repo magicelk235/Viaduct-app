@@ -56,7 +56,7 @@ struct SettingsView: View {
     @State private var visited: [SettingsTab] = [.general]
     @State private var visitedIndex = 0
     @State private var steppingThroughHistory = false
-    @State private var report: ProblemReport?
+    @State private var showsReport = false
 
     init(vm: ConverterViewModel) {
         self.vm = vm
@@ -91,8 +91,11 @@ struct SettingsView: View {
         // shows, so the store-button state can't rely on the launch hook.
         .task { vm.refreshStoreButton() }
         .removalFailureAlert($removalFailure) { remove($0, restartingFirefox: true) }
-        .sheet(item: $report) { report in
-            ReportSheet(report: report) { self.report = nil }
+        .sheet(isPresented: $showsReport) {
+            ReportSheet(browser: vm.targetBrowser, makeReport: { browser in
+                IssueReport.general(browser: browser, cliVersion: vm.installedVersion,
+                                    persistVersion: vm.persistVersion, lastError: vm.failureSummary)
+            }) { showsReport = false }
         }
     }
 
@@ -380,11 +383,8 @@ struct SettingsView: View {
 
     private var supportCard: some View {
         SettingsSection(title: "Support", symbol: "ladybug") {
-            Button("Report a Problem") {
-                report = IssueReport.general(cliVersion: vm.installedVersion, persistVersion: vm.persistVersion,
-                                             lastError: vm.failureSummary)
-            }
-            .buttonStyle(.raycastTertiary)
+            Button("Report a Problem") { showsReport = true }
+                .buttonStyle(.raycastTertiary)
         }
     }
 

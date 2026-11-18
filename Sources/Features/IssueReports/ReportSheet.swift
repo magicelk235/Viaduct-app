@@ -3,10 +3,28 @@ import SwiftUI
 
 /// Sends a problem report without leaving the app or needing a GitHub account:
 /// one box for what happened, an optional email, and the details Viaduct adds.
+/// A report that isn't about one conversion asks which browser it's about.
 struct ReportSheet: View {
-    let report: ProblemReport
     let dismiss: () -> Void
     var client = ReportClient()
+    /// Set when the user picks the browser; rebuilds the report for it.
+    private let makeReport: ((Browser) -> ProblemReport)?
+    @State private var report: ProblemReport
+    @State private var browser: Browser
+
+    init(report: ProblemReport, dismiss: @escaping () -> Void) {
+        self.dismiss = dismiss
+        makeReport = nil
+        _report = State(initialValue: report)
+        _browser = State(initialValue: .safari)
+    }
+
+    init(browser: Browser, makeReport: @escaping (Browser) -> ProblemReport, dismiss: @escaping () -> Void) {
+        self.dismiss = dismiss
+        self.makeReport = makeReport
+        _report = State(initialValue: makeReport(browser))
+        _browser = State(initialValue: browser)
+    }
 
     private enum Phase: Equatable {
         case editing
@@ -45,9 +63,17 @@ struct ReportSheet: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: Theme.Space.md) {
-            Text("Report a Problem")
-                .font(Theme.Font.headingMD())
-                .foregroundStyle(Theme.Colors.ink)
+            HStack {
+                Text("Report a Problem")
+                    .font(Theme.Font.headingMD())
+                    .foregroundStyle(Theme.Colors.ink)
+                Spacer()
+                if let makeReport {
+                    BrowserPicker(selection: $browser)
+                        .disabled(phase == .sending)
+                        .onChange(of: browser) { report = makeReport($0) }
+                }
+            }
 
             ZStack(alignment: .topLeading) {
                 if description.isEmpty {
