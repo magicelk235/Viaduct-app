@@ -16,6 +16,7 @@
 		08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC67CD1790FCD1A2DBD5B113 /* Updater.swift */; };
 		0B40C6E7278A0B07295EF71E /* FirefoxAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6C2EDE51EFD41F45415DBF /* FirefoxAgent.swift */; };
 		0FDD2E2220E7EE7313DC98A8 /* MigrationArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB47406C1BC6E1DFBB936ED /* MigrationArchive.swift */; };
+		118476D4A4B37BBE128207D3 /* CLIUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC79B758FA67D5738A6F2DC8 /* CLIUpdaterTests.swift */; };
 		11E4647DC67FFBBDF9921A0B /* Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFA63102EF2636A922324AEC /* Browser.swift */; };
 		140CF0BFAC96C7F885941567 /* FirefoxConversionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3F262046B4C7E067CAAFCB /* FirefoxConversionTests.swift */; };
 		149CA37E3C610C997E55ABF5 /* BrowserExtensionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F238F28D6B436BEA1FDEC7 /* BrowserExtensionScanner.swift */; };
@@ -307,6 +308,7 @@
 		D34F4D6605E9CC563F29DACA /* CompatibilityNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatibilityNotice.swift; sourceTree = "<group>"; };
 		D5DF22DC54CA787439C7D93E /* icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = icon.png; sourceTree = "<group>"; };
 		D6A5AD59DEEF416F7494A43E /* UserModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserModeView.swift; sourceTree = "<group>"; };
+		DC79B758FA67D5738A6F2DC8 /* CLIUpdaterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIUpdaterTests.swift; sourceTree = "<group>"; };
 		DC84FA4723A0433A0B7361E0 /* NativeHostProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHostProtocol.swift; sourceTree = "<group>"; };
 		DF2B7969794EF0B93CC897FE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlanBookkeepingTests.swift; sourceTree = "<group>"; };
@@ -376,6 +378,7 @@
 			isa = PBXGroup;
 			children = (
 				85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */,
+				DC79B758FA67D5738A6F2DC8 /* CLIUpdaterTests.swift */,
 				10E98F8FC7BC3BA1B2B9E87D /* CompatibilityCheckTests.swift */,
 				4069D5979D285640F694A243 /* ConversionHistoryTests.swift */,
 				BF9AA60CBACC4A5E939B9C1F /* ConvertPhaseTests.swift */,
@@ -905,6 +908,7 @@
 			files = (
 				51D4D9CB507BD8995E8C28E5 /* AsyncAssertions.swift in Sources */,
 				B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */,
+				118476D4A4B37BBE128207D3 /* CLIUpdaterTests.swift in Sources */,
 				9CF4B739156F47352BEB7345 /* CompatibilityCheckTests.swift in Sources */,
 				24EFA3D4D3E42B9B3D3B3878 /* ConversionHistoryTests.swift in Sources */,
 				7BBEEE24261712E7252EC0D9 /* ConvertPhaseTests.swift in Sources */,

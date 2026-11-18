@@ -24,14 +24,6 @@ final class CLIRunner {
             .appendingPathComponent("cli", isDirectory: true)
     }
 
-    /// Version marker `CLIUpdater` writes next to the installed copy.
-    static var cliVersion: String? {
-        guard let s = try? String(contentsOf: cliDir.appendingPathComponent("version.txt"),
-                                  encoding: .utf8) else { return nil }
-        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? nil : t
-    }
-
     /// cli.js, or nil while the engine hasn't been installed yet.
     static func resolveCLIScript() -> URL? {
         let script = cliDir.appendingPathComponent("dist/cli.js")
