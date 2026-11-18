@@ -201,11 +201,6 @@ final class ConverterViewModel: ObservableObject {
     /// detection lands, and on a Mac with no Apple account at all.
     @Published var signingTeams: [SigningAccount.Team] = []
 
-    /// The team the next conversion signs with.
-    var signingTeam: SigningAccount.Team? {
-        SigningAccount.signingTeam(from: signingTeams)
-    }
-
     /// Auto-update installed store extensions when the Chrome Web Store ships a
     /// newer version. Off by default — it polls the CWS, so it's opt-in. Needs
     /// a license.
@@ -503,10 +498,9 @@ final class ConverterViewModel: ObservableObject {
         // Past the gate, so the pass has done its job.
         adhocBypassOnce = false
 
-        // Sign with the best team this Mac has. The id goes to the CLI explicitly:
-        // left to detect a team itself it takes whichever Xcode cached first, which
-        // on a Mac with a personal team and a paid one isn't the paid one.
-        options.useTeam(signingTeam?.id)
+        // Sign with the best team this Mac has. Left to the CLI's detection
+        // unless the app's paid-first pick differs from it; see useTeam.
+        options.useTeam(from: signingTeams)
 
         // The run analyzes it anyway, and a refusal is read off its log.
         cancelCompatibilityCheck()

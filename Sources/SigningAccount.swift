@@ -20,10 +20,10 @@ enum SigningAccount: String, Codable {
     }
 
     /// Every team this Mac can sign with, best first — index 0 is the team the
-    /// CLI's own detection would land on. Mirrors viaduct's `detectXcodeTeam()`
-    /// (`src/build/packager.ts`, as of 1.11.4), with the difference that the app
-    /// hands the chosen id back as `--team <id>`: once there is a list, the two
-    /// cannot disagree about which account signed.
+    /// CLI's own detection would land on. Mirrors aqueduct's `detectXcodeTeam()`
+    /// (`src/build/packager.ts`). A conversion leaves the CLI to detect that
+    /// team itself and names one only when `signingTeam(from:)` picks another
+    /// (`ConvertOptions.useTeam(from:)`).
     ///
     /// A team id lying on disk is not proof this Mac can sign for it. Profiles
     /// outlive the account that installed them, and installers drop profiles for
@@ -89,9 +89,6 @@ enum SigningAccount: String, Codable {
     static func signingTeam(from teams: [Team]) -> Team? {
         teams.first { $0.account == .paid } ?? teams.first
     }
-
-    /// Same, detected fresh.
-    static func signingTeam() -> Team? { signingTeam(from: availableTeams()) }
 
     /// True when the machine can team-sign — i.e. there is a team to hand
     /// xcodebuild instead of falling back to ad-hoc signing.

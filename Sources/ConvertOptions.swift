@@ -20,11 +20,19 @@ struct ConvertOptions {
         return args
     }
 
-    /// Sign with a named Apple team, or let the CLI detect one when there is
-    /// nothing to name. Naming it is what stops a Mac with two accounts from
-    /// signing with whichever team Xcode cached first.
-    mutating func useTeam(_ id: String?) {
-        if let id, !id.isEmpty { team = id } else { team = "auto" }
+    /// Sign with the best team this Mac has. The id is named only when the app
+    /// overrides the CLI's own pick: on a Mac holding a personal team and a paid
+    /// one, the CLI left alone takes whichever Xcode cached first. Every other
+    /// time it's "auto" — the CLI lands on the same team, and an auto-detected
+    /// team that turns out unable to sign (no Xcode account, a revoked
+    /// certificate) is rebuilt ad-hoc instead of failing the run. A named team
+    /// gets no such fallback (aqueduct 1.18.3, Viaduct-CLI issue #19).
+    mutating func useTeam(from teams: [SigningAccount.Team]) {
+        if let chosen = SigningAccount.signingTeam(from: teams), chosen != teams.first {
+            team = chosen.id
+        } else {
+            team = "auto"
+        }
     }
 
     /// Validation message, or nil if OK to run a conversion.

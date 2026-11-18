@@ -128,4 +128,27 @@ final class SigningAccountTests: XCTestCase {
         XCTAssertNil(SigningAccount.signingTeam(from: []),
                      "no team at all → ad-hoc")
     }
+
+    // What a conversion hands the CLI. "auto" whenever the CLI's own detection
+    // lands on the team the app would pick, because only an auto-detected team
+    // falls back to ad-hoc when it can't sign (Viaduct-CLI #19); the id only
+    // when the app's paid-first pick overrides the CLI's.
+    func testUseTeamArgs() {
+        func teamArg(_ teams: [Team]) -> String {
+            var options = ConvertOptions()
+            options.inputPath = "/tmp/ext.zip"
+            options.useTeam(from: teams)
+            let args = options.conversionArgs()
+            guard let flag = args.firstIndex(of: "--team"), flag + 1 < args.count else { return "" }
+            return args[flag + 1]
+        }
+        XCTAssertEqual(teamArg([certDev]), "auto",
+                       "the only team there is → the CLI detects it and may still fall back to ad-hoc")
+        XCTAssertEqual(teamArg([certPaid, cachedFree]), "auto",
+                       "the team the CLI would pick is the one the app picks → leave it to the CLI")
+        XCTAssertEqual(teamArg([cachedFree, certPaid]), certPaid.id,
+                       "the paid membership listed second is named, or the CLI would take the personal team")
+        XCTAssertEqual(teamArg([]), "auto",
+                       "no team at all → the CLI finds none and builds ad-hoc")
+    }
 }

@@ -196,7 +196,7 @@ final class ExtensionUpdater {
         var opts = ConvertOptions()
         opts.inputPath = sourcePath
         opts.appName = appName
-        opts.useTeam(SigningAccount.signingTeam()?.id)
+        opts.useTeam(from: SigningAccount.availableTeams())
         opts.force = true          // never block a rebuild on advisory issues
         return await Self.runCLI(opts.conversionArgs())
     }
