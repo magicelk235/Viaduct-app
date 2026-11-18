@@ -1,40 +1,53 @@
 import Foundation
 
-/// GitHub issue-form links with the fields already filled in. Issue forms take
-/// each field's `id` as a query parameter, so the reporter lands on a form that
-/// only needs a sentence from them.
+/// Builds the reports the app sends: the extension, the browser, every version
+/// that matters and the log, so the reporter only adds a sentence. Each one
+/// also carries a GitHub issue-form link with the same fields filled in, for
+/// when the relay can't be reached. Issue forms take each field's `id` as a
+/// query parameter.
 enum IssueReport {
     private static let repo = "https://github.com/magicelk235/Viaduct-CLI/issues/new"
     /// GitHub turns away URLs much past 8 KB, and the log is what gives.
     private static let urlBudget = 7_500
 
-    /// The CLI's `conversion-failure.yml` form: extension, browser, error output,
-    /// and the OS with Xcode for Safari or with Firefox for Firefox.
+    /// A conversion that failed, or that the won't-work check stopped. Matches
+    /// the CLI's `conversion-failure.yml` form.
     static func conversionFailure(extensionName: String, version: String?, storeId: String?, summary: String?,
-                                  log: [String], cliVersion: String, browser: Browser, persistVersion: String?) -> URL {
+                                  log: [String], cliVersion: String, browser: Browser, persistVersion: String?) -> ProblemReport {
         let versions = engines(cliVersion: cliVersion, browser: browser, persistVersion: persistVersion, separator: " · ")
         let header = [
             summary.map { "Viaduct said: \($0)" },
             "Viaduct \(appVersion) · \(versions) · \(browser.displayName)",
         ].compactMap { $0 }.joined(separator: "\n")
+        let ext = describe(extensionName, version: version, storeId: storeId)
+        let os = systemLine(for: browser)
+        let title = "Conversion failed: \(extensionName)"
 
-        // Most recent lines carry the failure; drop older ones until it fits.
-        var tail = Array(log.suffix(80))
-        while true {
-            let error = header + "\n\n" + tail.joined(separator: "\n")
-            let url = build(template: "conversion-failure.yml",
-                            title: "Conversion failed: \(extensionName)",
-                            fields: ["extension": describe(extensionName, version: version, storeId: storeId),
-                                     "browser": browser.displayName, "error": error, "os": systemLine(for: browser)])
-            if url.absoluteString.count <= urlBudget || tail.isEmpty { return url }
-            tail.removeFirst(max(1, tail.count / 5))
+        // Most recent lines carry the failure; the link drops older ones until it fits.
+        let linkLog = log.suffix(80).map { ProblemReport.scrub($0) }
+        return ProblemReport(
+            kind: .conversionFailure, title: title,
+            sections: [.init(heading: "Extension", text: ext),
+                       .init(heading: "Browser", text: browser.displayName),
+                       .init(heading: "Versions", text: header),
+                       .init(heading: "OS & Xcode/Firefox version", text: os)],
+            log: log) { description in
+            let lead = ProblemReport.scrub(description.isEmpty ? header : "What happened: \(description)\n\(header)")
+            var tail = linkLog
+            while true {
+                let error = lead + "\n\n" + tail.joined(separator: "\n")
+                let url = build(template: "conversion-failure.yml", title: title,
+                                fields: ["extension": ext, "browser": browser.displayName, "error": error, "os": os])
+                if url.absoluteString.count <= urlBudget || tail.isEmpty { return url }
+                tail.removeFirst(max(1, tail.count / 5))
+            }
         }
     }
 
-    /// The CLI's `converted-but-broken.yml` form, for an extension that
-    /// installed but misbehaves.
+    /// An extension that installed but misbehaves. Matches the CLI's
+    /// `converted-but-broken.yml` form.
     static func convertedButBroken(extensionName: String, version: String?, storeId: String?,
-                                   browser: Browser, cliVersion: String, persistVersion: String?) -> URL {
+                                   browser: Browser, cliVersion: String, persistVersion: String?) -> ProblemReport {
         let turnedOn: String
         let browserLine: String
         switch browser {
@@ -46,13 +59,37 @@ enum IssueReport {
             browserLine = "Firefox \(firefoxVersion), macOS \(osVersion)"
         }
         let versions = engines(cliVersion: cliVersion, browser: browser, persistVersion: persistVersion, separator: ", ")
-        return build(template: "converted-but-broken.yml",
-                     title: "\(extensionName) doesn't work in \(browser.displayName)",
-                     fields: ["extension": describe(extensionName, version: version, storeId: storeId),
-                              "browser": browser.displayName,
-                              "steps": "1. Converted it with the Viaduct app \(appVersion) (\(versions))\n2. \(turnedOn)\n3. ",
-                              // The form's id predates Firefox; it holds whichever browser's version.
-                              "safari-version": browserLine])
+        let ext = describe(extensionName, version: version, storeId: storeId)
+        let steps = "1. Converted it with the Viaduct app \(appVersion) (\(versions))\n2. \(turnedOn)"
+        let title = "\(extensionName) doesn't work in \(browser.displayName)"
+        return ProblemReport(
+            kind: .convertedButBroken, title: title,
+            sections: [.init(heading: "Extension", text: ext),
+                       .init(heading: "Browser", text: browser.displayName),
+                       .init(heading: "Steps to reproduce", text: steps),
+                       .init(heading: "Browser & OS version", text: browserLine)]) { description in
+            build(template: "converted-but-broken.yml", title: title,
+                  fields: ["extension": ext, "browser": browser.displayName, "actual": description,
+                           "steps": steps + "\n3. ",
+                           // The form's id predates Firefox; it holds whichever browser's version.
+                           "safari-version": browserLine])
+        }
+    }
+
+    /// Anything else, from Settings: the versions and the last error, if any.
+    static func general(cliVersion: String, persistVersion: String?, lastError: String?) -> ProblemReport {
+        var versions = "Viaduct \(appVersion) · CLI \(cliVersion)"
+        if let persistVersion { versions += " · persist \(persistVersion)" }
+        versions += "\nmacOS \(osVersion)"
+        var sections = [ProblemReport.Section(heading: "Versions", text: versions)]
+        if let lastError { sections.append(.init(heading: "Last error", text: lastError)) }
+        return ProblemReport(kind: .general, title: nil, sections: sections) { description in
+            var body = description.isEmpty ? "" : description + "\n\n"
+            body += sections.map { "**\($0.heading):**\n\(ProblemReport.scrub($0.text))" }.joined(separator: "\n\n")
+            var c = URLComponents(string: repo)!
+            c.queryItems = [.init(name: "body", value: body)]
+            return encodePlus(c).url!
+        }
     }
 
     private static func describe(_ name: String, version: String?, storeId: String?) -> String {
@@ -74,10 +111,15 @@ enum IssueReport {
         var c = URLComponents(string: repo)!
         c.queryItems = [.init(name: "template", value: template), .init(name: "title", value: title)]
             + fields.sorted { $0.key < $1.key }.map { .init(name: $0.key, value: $0.value) }
-        // URLComponents leaves "+" alone, but GitHub reads it as a space, so
-        // "C++" would arrive as "C  ".
+        return encodePlus(c).url!
+    }
+
+    /// URLComponents leaves "+" alone, but GitHub reads it as a space, so
+    /// "C++" would arrive as "C  ".
+    private static func encodePlus(_ components: URLComponents) -> URLComponents {
+        var c = components
         c.percentEncodedQuery = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        return c.url!
+        return c
     }
 
     // MARK: - Versions

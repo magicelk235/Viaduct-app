@@ -56,6 +56,7 @@ struct SettingsView: View {
     @State private var visited: [SettingsTab] = [.general]
     @State private var visitedIndex = 0
     @State private var steppingThroughHistory = false
+    @State private var report: ProblemReport?
 
     init(vm: ConverterViewModel) {
         self.vm = vm
@@ -90,6 +91,9 @@ struct SettingsView: View {
         // shows, so the store-button state can't rely on the launch hook.
         .task { vm.refreshStoreButton() }
         .removalFailureAlert($removalFailure) { remove($0, restartingFirefox: true) }
+        .sheet(item: $report) { report in
+            ReportSheet(report: report) { self.report = nil }
+        }
     }
 
     private var sidebar: some View {
@@ -161,31 +165,6 @@ struct SettingsView: View {
     }
 
     // MARK: - Cards
-
-    /// GitHub new-issue URL with the app version, CLI version, macOS version and
-    /// last error filled in, so a report arrives with enough to reproduce it.
-    private var bugReportURL: URL {
-        let app = Bundle.main
-            .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        var body = """
-        **What happened:**
-
-        **What I expected:**
-
-        ---
-        Viaduct \(app) · CLI \(vm.installedVersion)\(vm.persistVersion.map { " · persist \($0)" } ?? "")
-        \(ProcessInfo.processInfo.operatingSystemVersionString)
-        """
-        if let fail = vm.failureSummary {
-            body += "\n**Last error:** \(fail)"
-        }
-        var c = URLComponents(string: "https://github.com/magicelk235/viaduct-app/issues/new")!
-        c.queryItems = [
-            .init(name: "title", value: "Bug: "),
-            .init(name: "body", value: body),
-        ]
-        return c.url!
-    }
 
     private var cliCard: some View {
         SettingsSection(title: "Command-line tool", symbol: "terminal") {
@@ -401,8 +380,11 @@ struct SettingsView: View {
 
     private var supportCard: some View {
         SettingsSection(title: "Support", symbol: "ladybug") {
-            Button("Report a Bug") { NSWorkspace.shared.open(bugReportURL) }
-                .buttonStyle(.raycastTertiary)
+            Button("Report a Problem") {
+                report = IssueReport.general(cliVersion: vm.installedVersion, persistVersion: vm.persistVersion,
+                                             lastError: vm.failureSummary)
+            }
+            .buttonStyle(.raycastTertiary)
         }
     }
 

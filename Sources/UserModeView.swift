@@ -18,6 +18,7 @@ struct UserModeView: View {
     /// bundled extension off. `seen` persists so it never nags twice.
     @AppStorage("storeButtonPromptSeen") private var storePromptSeen = false
     @State private var showStorePrompt = false
+    @State private var report: ProblemReport?
 
     /// Show the recent list only on the calm idle/done screens, never mid-convert.
     private var showsHistory: Bool {
@@ -78,6 +79,9 @@ struct UserModeView: View {
                 storePromptSeen = true
                 showStorePrompt = false
             }
+        }
+        .sheet(item: $report) { report in
+            ReportSheet(report: report) { self.report = nil }
         }
     }
 
@@ -359,7 +363,7 @@ struct UserModeView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.raycastPrimary)
-                Button("Think this is wrong? Report it") { NSWorkspace.shared.open(failureReportURL) }
+                Button("Think this is wrong? Report it") { report = failureReport }
                     .buttonStyle(.raycastTertiary)
             }
 
@@ -479,7 +483,7 @@ struct UserModeView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.raycastPrimary)
-                Button("Report this issue") { NSWorkspace.shared.open(failureReportURL) }
+                Button("Report this issue") { report = failureReport }
                 .buttonStyle(.raycastTertiary)
                 .frame(maxWidth: .infinity)
             }
@@ -538,8 +542,8 @@ struct UserModeView: View {
         return info.name
     }
 
-    /// The CLI's failure form, filled in when that's switched on.
-    private var failureReportURL: URL {
+    /// What a failed or blocked conversion's report carries.
+    private var failureReport: ProblemReport {
         let name = vm.extInfo.map(displayName)
             ?? URL(fileURLWithPath: vm.options.inputPath).deletingPathExtension().lastPathComponent
         // A verdict from the check alone has no log; the analyzer's findings
@@ -656,6 +660,7 @@ struct HistoryDetailSheet: View {
     /// Remove is waiting on the uninstall, which for Firefox takes a moment.
     @State private var removing = false
     @State private var removalFailure: RemovalFailure?
+    @State private var report: ProblemReport?
 
     private var sourceExists: Bool {
         FileManager.default.fileExists(atPath: record.sourcePath)
@@ -739,9 +744,9 @@ struct HistoryDetailSheet: View {
                     .buttonStyle(.raycastGhost)
                     .disabled(removing)
                     Button("Report a Problem") {
-                        NSWorkspace.shared.open(IssueReport.convertedButBroken(
+                        report = IssueReport.convertedButBroken(
                             extensionName: record.name, version: record.version, storeId: record.storeId,
-                            browser: record.browser, cliVersion: vm.installedVersion, persistVersion: vm.persistVersion))
+                            browser: record.browser, cliVersion: vm.installedVersion, persistVersion: vm.persistVersion)
                     }
                     .buttonStyle(.raycastGhost)
                     .help("It installed but doesn't work right in \(record.browser.displayName)")
@@ -760,6 +765,9 @@ struct HistoryDetailSheet: View {
         .background(AmbientBackground())
         .interactiveDismissDisabled(removing)
         .removalFailureAlert($removalFailure) { _ in remove(restartingFirefox: true) }
+        .sheet(item: $report) { report in
+            ReportSheet(report: report) { self.report = nil }
+        }
     }
 
     private func remove(restartingFirefox: Bool = false) {
