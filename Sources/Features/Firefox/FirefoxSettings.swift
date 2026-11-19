@@ -119,7 +119,16 @@ struct FirefoxAgentSection: View {
                     profileRow(profile)
                 }
             }
-            .task { await load() }
+            .task {
+                await load()
+                // Firefox loads the add-ons each time it starts, so keep the
+                // rows current while Settings stays open.
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    guard !Task.isCancelled else { break }
+                    await refreshStatus()
+                }
+            }
             .alert("Couldn't restart the Firefox agent",
                    isPresented: Binding(get: { restartError != nil }, set: { if !$0 { restartError = nil } }),
                    presenting: restartError) { _ in
@@ -199,6 +208,13 @@ struct FirefoxAgentSection: View {
         status = newStatus
         profiles = newProfiles
         loaded = true
+    }
+
+    /// The agent and the profiles' last loads; the profile names stay as loaded.
+    private func refreshStatus() async {
+        let newStatus = try? await FirefoxAddons.shared.persist.status()
+        agentStatus = FirefoxAddons.shared.agentStatus
+        if let newStatus { status = newStatus }
     }
 
     /// The profile's name in Firefox, else its folder name.
