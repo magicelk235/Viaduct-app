@@ -780,6 +780,10 @@ final class ConverterViewModel: ObservableObject {
         // the next, unrelated conversion.
         pendingStoreId = nil
         pendingChromeId = nil
+        // The failure card's title, its report and the won't-work check read
+        // these, so a new flow must not inherit the last extension's.
+        logLines.removeAll()
+        lastReachedTrackPhase = nil
     }
 
     /// Clear what the last run left on the card, and start this one at
