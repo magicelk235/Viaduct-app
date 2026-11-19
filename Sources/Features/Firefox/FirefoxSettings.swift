@@ -155,8 +155,7 @@ struct FirefoxAgentSection: View {
     }
 
     private func profileRow(_ profile: PersistStatus.Profile) -> some View {
-        let state = Self.loadState(of: profile, firefox: firefox)
-        return FirefoxValueRow {
+        FirefoxValueRow {
             Image(systemName: "person.crop.circle")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.Colors.primary)
@@ -165,12 +164,16 @@ struct FirefoxAgentSection: View {
                 .foregroundColor(Theme.Colors.ink)
                 .lineLimit(1).truncationMode(.middle)
         } trailing: {
-            Text(state.text)
-                .tracked()
-                .font(Theme.Font.caption())
-                .foregroundStyle(state.error == nil ? Theme.Colors.mute : Theme.Colors.accentRed)
-                .fixedSize()
-                .help(state.error ?? "")
+            // "Loaded 5 seconds ago" goes stale while Settings stays open.
+            TimelineView(.periodic(from: .now, by: 15)) { context in
+                let state = Self.loadState(of: profile, firefox: firefox, now: context.date)
+                Text(state.text)
+                    .tracked()
+                    .font(Theme.Font.caption())
+                    .foregroundStyle(state.error == nil ? Theme.Colors.mute : Theme.Colors.accentRed)
+                    .fixedSize()
+                    .help(state.error ?? "")
+            }
         }
     }
 
