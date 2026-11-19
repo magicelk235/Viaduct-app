@@ -34,7 +34,7 @@ struct UserModeView: View {
                 header
                 // Held while a run is going, the finishing animation included:
                 // the run keeps its browser through to the done card.
-                BrowserPicker(selection: $vm.targetBrowser)
+                BrowserPicker(selection: Binding(get: { vm.pickedBrowser }, set: { vm.pickBrowser($0) }))
                     .disabled(vm.isRunning || vm.phase.isFinishing)
                 dropCard
                 ctaBlock
@@ -544,16 +544,17 @@ struct UserModeView: View {
 
     /// What a failed or blocked conversion's report carries.
     private var failureReport: ProblemReport {
-        let name = vm.extInfo.map(displayName)
-            ?? URL(fileURLWithPath: vm.options.inputPath).deletingPathExtension().lastPathComponent
+        let name = IssueReport.extensionName(manifestName: vm.extInfo.map(displayName),
+                                             appName: vm.options.appName, inputPath: vm.options.inputPath)
         // A verdict from the check alone has no log; the analyzer's findings
         // are what someone needs to tell whether it was right.
         let log = vm.phase == .failed ? vm.logLines : (vm.compatibility?.details ?? vm.logLines)
+        let browser = vm.options.browser
         return IssueReport.conversionFailure(
             extensionName: name, version: vm.extInfo?.version,
             storeId: vm.pendingStoreId ?? ExtensionIdentity.chromeId(forSource: vm.options.inputPath),
             summary: vm.compatibility?.title ?? vm.failureSummary, log: log, cliVersion: vm.installedVersion,
-            browser: vm.options.browser, persistVersion: vm.persistVersion)
+            engineVersion: vm.engineVersion(for: browser), browser: browser, persistVersion: vm.persistVersion)
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -746,7 +747,8 @@ struct HistoryDetailSheet: View {
                     Button("Report a Problem") {
                         report = IssueReport.convertedButBroken(
                             extensionName: record.name, version: record.version, storeId: record.storeId,
-                            browser: record.browser, cliVersion: vm.installedVersion, persistVersion: vm.persistVersion)
+                            browser: record.browser, cliVersion: vm.installedVersion,
+                            engineVersion: vm.engineVersion(for: record.browser), persistVersion: vm.persistVersion)
                     }
                     .buttonStyle(.raycastGhost)
                     .help("It installed but doesn't work right in \(record.browser.displayName)")

@@ -14,4 +14,12 @@ enum Browser: String, Codable, CaseIterable, Identifiable {
         case .firefox: return "Firefox"
         }
     }
+
+    /// The npm engine the CLI converts with for this browser.
+    var engine: String {
+        switch self {
+        case .safari: return "aqueduct"
+        case .firefox: return "lavaduct"
+        }
+    }
 }

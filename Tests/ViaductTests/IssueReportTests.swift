@@ -13,37 +13,58 @@ final class IssueReportTests: XCTestCase {
         report.sections.first { $0.heading == heading }?.text
     }
 
-    func test_firefoxFailureReportCarriesBrowserAndPersist() {
+    func test_firefoxFailureReportCarriesBrowserEngineAndPersist() {
         let report = IssueReport.conversionFailure(extensionName: "Dark Reader", version: "4.9", storeId: nil, summary: nil,
-                                                   log: ["✗ boom"], cliVersion: "2.0.0", browser: .firefox, persistVersion: "0.2.0 (lavaduct 0.1.0)")
+                                                   log: ["✗ boom"], cliVersion: "2.0.0", engineVersion: "0.1.5",
+                                                   browser: .firefox, persistVersion: "0.2.0 (lavaduct 0.1.0)")
         XCTAssertEqual(report.kind, .conversionFailure)
         XCTAssertEqual(report.log, ["✗ boom"])
-        XCTAssertTrue(section(report, "Versions")!.contains("CLI 2.0.0 · persist 0.2.0 (lavaduct 0.1.0) · Firefox"))
+        XCTAssertTrue(section(report, "Versions")!.contains("CLI 2.0.0 · lavaduct 0.1.5 · persist 0.2.0 (lavaduct 0.1.0) · Firefox"))
         let os = section(report, "OS & Xcode/Firefox version")!
         XCTAssertTrue(os.hasPrefix("macOS ")); XCTAssertTrue(os.contains("Firefox")); XCTAssertFalse(os.contains("Xcode"))
     }
 
-    func test_safariFailureReportKeepsXcodeAndLeavesPersistOut() {
+    func test_safariFailureReportNamesAqueductKeepsXcodeAndLeavesPersistOut() {
         let report = IssueReport.conversionFailure(extensionName: "Dark Reader", version: "4.9", storeId: nil, summary: nil,
-                                                   log: ["✗ boom"], cliVersion: "2.0.0", browser: .safari, persistVersion: "0.2.0 (lavaduct 0.1.0)")
+                                                   log: ["✗ boom"], cliVersion: "2.0.0", engineVersion: "1.18.3",
+                                                   browser: .safari, persistVersion: "0.2.0 (lavaduct 0.1.0)")
         let versions = section(report, "Versions")!
-        XCTAssertTrue(versions.contains("CLI 2.0.0 · Safari"))
+        XCTAssertTrue(versions.contains("CLI 2.0.0 · aqueduct 1.18.3 · Safari"))
         XCTAssertFalse(versions.contains("persist"))
         let os = section(report, "OS & Xcode/Firefox version")!
         XCTAssertTrue(os.contains("Xcode") || os.contains("no Xcode found"))
         XCTAssertFalse(os.contains("Firefox"))
     }
 
-    func test_firefoxFailureReportWithoutAPersistVersionSaysSo() {
+    func test_firefoxFailureReportWithoutVersionsSaysSo() {
         let report = IssueReport.conversionFailure(extensionName: "Dark Reader", version: nil, storeId: nil, summary: nil,
-                                                   log: [], cliVersion: "2.0.0", browser: .firefox, persistVersion: nil)
-        XCTAssertTrue(section(report, "Versions")!.contains("CLI 2.0.0 · persist ? · Firefox"))
+                                                   log: [], cliVersion: "2.0.0", engineVersion: nil,
+                                                   browser: .firefox, persistVersion: nil)
+        XCTAssertTrue(section(report, "Versions")!.contains("CLI 2.0.0 · lavaduct ? · persist ? · Firefox"))
+    }
+
+    func test_whatViaductSaidIsItsOwnSection() {
+        let report = IssueReport.conversionFailure(extensionName: "Nope", version: nil, storeId: "abc", summary: "Couldn't download it.",
+                                                   log: [], cliVersion: "2.0.0", engineVersion: "1.18.3",
+                                                   browser: .safari, persistVersion: nil)
+        XCTAssertEqual(section(report, "Viaduct said"), "Couldn't download it.")
+        XCTAssertFalse(section(report, "Versions")!.contains("Couldn't download"))
+        XCTAssertEqual(report.sections.map(\.heading),
+                       ["Extension", "Browser", "Viaduct said", "Versions", "OS & Xcode/Firefox version"])
+    }
+
+    func test_reportNamesTheExtensionEvenBeforeAnythingWasDownloaded() {
+        XCTAssertEqual(IssueReport.extensionName(manifestName: "Dark Reader", appName: "dark", inputPath: "/x/y.crx"), "Dark Reader")
+        XCTAssertEqual(IssueReport.extensionName(manifestName: nil, appName: "Nope", inputPath: ""), "Nope")
+        XCTAssertEqual(IssueReport.extensionName(manifestName: nil, appName: "", inputPath: "/tmp/JSON Formatter.crx"), "JSON Formatter")
+        XCTAssertEqual(IssueReport.extensionName(manifestName: nil, appName: "", inputPath: ""), "Unknown extension")
     }
 
     func test_fallbackLinkOpensAViaductAppIssueThatFitsGitHub() {
         let log = (0..<500).map { "line \($0) " + String(repeating: "x", count: 100) }
         let report = IssueReport.conversionFailure(extensionName: "Dark Reader", version: nil, storeId: nil, summary: nil,
-                                                   log: log, cliVersion: "2.0.0", browser: .safari, persistVersion: nil)
+                                                   log: log, cliVersion: "2.0.0", engineVersion: "1.18.3",
+                                                   browser: .safari, persistVersion: nil)
         let url = report.fallbackURL(description: "It hangs at signing")
         XCTAssertTrue(url.absoluteString.hasPrefix("https://github.com/magicelk235/viaduct-app/issues/new?"))
         XCTAssertLessThanOrEqual(url.absoluteString.count, ProblemReport.urlBudget)
@@ -54,33 +75,37 @@ final class IssueReportTests: XCTestCase {
     }
 
     func test_fallbackLinkKeepsPlusSigns() {
-        let report = IssueReport.general(browser: .safari, cliVersion: "2.0.0", persistVersion: nil, lastError: nil)
+        let report = IssueReport.general(browser: .safari, cliVersion: "2.0.0", engineVersion: "1.18.3",
+                                         persistVersion: nil, lastError: nil)
         XCTAssertEqual(items(report.fallbackURL(description: "C++ page"))["title"], "C++ page")
     }
 
     func test_brokenFirefoxExtensionReport() {
         let report = IssueReport.convertedButBroken(extensionName: "Dark Reader", version: nil, storeId: nil, browser: .firefox,
-                                                    cliVersion: "2.0.0", persistVersion: "0.2.0 (lavaduct 0.1.0)")
+                                                    cliVersion: "2.0.0", engineVersion: "0.1.5",
+                                                    persistVersion: "0.2.0 (lavaduct 0.1.0)")
         XCTAssertEqual(report.title, "Dark Reader doesn't work in Firefox")
         XCTAssertTrue(report.needsDescription)
         let steps = section(report, "Steps to reproduce")!
         XCTAssertTrue(steps.contains("Opened it in Firefox"))
-        XCTAssertTrue(steps.contains("(CLI 2.0.0, persist 0.2.0 (lavaduct 0.1.0))"))
+        XCTAssertTrue(steps.contains("(CLI 2.0.0, lavaduct 0.1.5, persist 0.2.0 (lavaduct 0.1.0))"))
         XCTAssertTrue(section(report, "Browser & OS version")!.hasPrefix("Firefox "))
     }
 
     func test_brokenSafariExtensionReport() {
         let report = IssueReport.convertedButBroken(extensionName: "Dark Reader", version: "4.9", storeId: nil, browser: .safari,
-                                                    cliVersion: "2.0.0", persistVersion: "0.2.0 (lavaduct 0.1.0)")
+                                                    cliVersion: "2.0.0", engineVersion: "1.18.3",
+                                                    persistVersion: "0.2.0 (lavaduct 0.1.0)")
         XCTAssertEqual(report.title, "Dark Reader doesn't work in Safari")
         let steps = section(report, "Steps to reproduce")!
-        XCTAssertTrue(steps.contains("(CLI 2.0.0)\n2. Turned it on in Safari"))
+        XCTAssertTrue(steps.contains("(CLI 2.0.0, aqueduct 1.18.3)\n2. Turned it on in Safari"))
         XCTAssertFalse(steps.contains("persist"))
         XCTAssertTrue(section(report, "Browser & OS version")!.hasPrefix("Safari "))
     }
 
     func test_generalReportIsTitledByWhatTheUserWrote() {
-        let report = IssueReport.general(browser: .safari, cliVersion: "2.0.0", persistVersion: nil, lastError: "Signing failed")
+        let report = IssueReport.general(browser: .safari, cliVersion: "2.0.0", engineVersion: "1.18.3",
+                                         persistVersion: nil, lastError: "Signing failed")
         XCTAssertEqual(report.title(describing: "  Settings won't open\nmore detail"), "Settings won't open")
         XCTAssertEqual(report.title(describing: ""), "Problem report")
         XCTAssertEqual(section(report, "Last error"), "Signing failed")
@@ -89,14 +114,17 @@ final class IssueReportTests: XCTestCase {
     }
 
     func test_generalReportCarriesThePickedBrowser() {
-        let safari = IssueReport.general(browser: .safari, cliVersion: "2.0.0", persistVersion: "0.2.0", lastError: nil)
+        let safari = IssueReport.general(browser: .safari, cliVersion: "2.0.0", engineVersion: "1.18.3",
+                                         persistVersion: "0.2.0", lastError: nil)
         XCTAssertEqual(section(safari, "Browser"), "Safari")
+        XCTAssertTrue(section(safari, "Versions")!.contains("CLI 2.0.0 · aqueduct 1.18.3"))
         XCTAssertTrue(section(safari, "Versions")!.contains(", Safari "))
         XCTAssertFalse(section(safari, "Versions")!.contains("persist"))
 
-        let firefox = IssueReport.general(browser: .firefox, cliVersion: "2.0.0", persistVersion: "0.2.0", lastError: nil)
+        let firefox = IssueReport.general(browser: .firefox, cliVersion: "2.0.0", engineVersion: "0.1.5",
+                                          persistVersion: "0.2.0", lastError: nil)
         XCTAssertEqual(section(firefox, "Browser"), "Firefox")
-        XCTAssertTrue(section(firefox, "Versions")!.contains("CLI 2.0.0 · persist 0.2.0"))
+        XCTAssertTrue(section(firefox, "Versions")!.contains("CLI 2.0.0 · lavaduct 0.1.5 · persist 0.2.0"))
         XCTAssertTrue(section(firefox, "Versions")!.contains(", Firefox "))
     }
 
@@ -107,7 +135,7 @@ final class IssueReportTests: XCTestCase {
         let report = IssueReport.conversionFailure(
             extensionName: "Dark Reader", version: nil, storeId: nil, summary: "Couldn't read \(home)/Downloads/x.zip",
             log: ["✗ \(home)/Library/Viaduct/out failed", "other user /Users/alice/x", "shared /Users/Shared/y"],
-            cliVersion: "2.0.0", browser: .safari, persistVersion: nil)
+            cliVersion: "2.0.0", engineVersion: "1.18.3", browser: .safari, persistVersion: nil)
         let everything = report.preview + items(report.fallbackURL(description: "")).values.joined()
         XCTAssertFalse(everything.contains(home))
         XCTAssertFalse(everything.contains("alice"))

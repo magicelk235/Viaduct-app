@@ -798,6 +798,21 @@ final class ConverterViewModel: ObservableObject {
         phase = .extracting
     }
 
+    /// What the picker shows: the card's browser, which a store install or
+    /// Convert Again can set to the one the window didn't pick.
+    var pickedBrowser: Browser { options.browser }
+
+    /// The picker moved. Choosing the window's saved browser still moves a
+    /// card that was set to the other one.
+    func pickBrowser(_ browser: Browser) {
+        if browser == targetBrowser { browserChanged() } else { targetBrowser = browser }
+    }
+
+    /// The engine version the CLI converts with for `browser`, for reports.
+    func engineVersion(for browser: Browser) -> String? {
+        updater.engineVersion(browser.engine)
+    }
+
     /// The picker moved. The choice is saved for next launch, and the card
     /// follows it, except while a run is going: that one keeps its browser
     /// through to the done card.

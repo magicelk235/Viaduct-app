@@ -415,6 +415,12 @@ struct ViaductApp: App {
             } catch {
                 await MainActor.run {
                     InstallProgressBridge.shared.downloading = false
+                    // What the card and its report go by: nothing downloaded,
+                    // so the request is all there is to say which extension
+                    // and browser this was.
+                    vm.options.browser = browser
+                    vm.options.appName = displayName ?? ""
+                    vm.pendingStoreId = extensionId
                     vm.failureSummary = (error as? ChromeStore.DownloadError)?.errorDescription
                         ?? "Failed to download extension: \(error.localizedDescription)"
                     vm.phase = .failed

@@ -5,28 +5,36 @@ import Foundation
 enum IssueReport {
     /// A conversion that failed, or that the won't-work check stopped.
     static func conversionFailure(extensionName: String, version: String?, storeId: String?, summary: String?,
-                                  log: [String], cliVersion: String, browser: Browser, persistVersion: String?) -> ProblemReport {
-        let versions = engines(cliVersion: cliVersion, browser: browser, persistVersion: persistVersion, separator: " · ")
-        let header = [
-            summary.map { "Viaduct said: \($0)" },
-            "Viaduct \(appVersion) · \(versions) · \(browser.displayName)",
-        ].compactMap { $0 }.joined(separator: "\n")
+                                  log: [String], cliVersion: String, engineVersion: String?,
+                                  browser: Browser, persistVersion: String?) -> ProblemReport {
+        let versions = engines(cliVersion: cliVersion, engineVersion: engineVersion, browser: browser,
+                               persistVersion: persistVersion, separator: " · ")
         let ext = describe(extensionName, version: version, storeId: storeId)
         let os = systemLine(for: browser)
         let title = "Conversion failed: \(extensionName)"
 
-        return ProblemReport(
-            kind: .conversionFailure, title: title,
-            sections: [.init(heading: "Extension", text: ext),
-                       .init(heading: "Browser", text: browser.displayName),
-                       .init(heading: "Versions", text: header),
-                       .init(heading: "OS & Xcode/Firefox version", text: os)],
-            log: log)
+        var sections: [ProblemReport.Section] = [.init(heading: "Extension", text: ext),
+                                                 .init(heading: "Browser", text: browser.displayName)]
+        if let summary { sections.append(.init(heading: "Viaduct said", text: summary)) }
+        sections += [.init(heading: "Versions", text: "Viaduct \(appVersion) · \(versions) · \(browser.displayName)"),
+                     .init(heading: "OS & Xcode/Firefox version", text: os)]
+        return ProblemReport(kind: .conversionFailure, title: title, sections: sections, log: log)
+    }
+
+    /// What a report calls the extension: its manifest name, else the name the
+    /// app was given (a store install that failed before anything downloaded
+    /// has only that), else the file's name.
+    static func extensionName(manifestName: String?, appName: String, inputPath: String) -> String {
+        if let manifestName, !manifestName.isEmpty { return manifestName }
+        if !appName.isEmpty { return appName }
+        if !inputPath.isEmpty { return URL(fileURLWithPath: inputPath).deletingPathExtension().lastPathComponent }
+        return "Unknown extension"
     }
 
     /// An extension that installed but misbehaves.
     static func convertedButBroken(extensionName: String, version: String?, storeId: String?,
-                                   browser: Browser, cliVersion: String, persistVersion: String?) -> ProblemReport {
+                                   browser: Browser, cliVersion: String, engineVersion: String?,
+                                   persistVersion: String?) -> ProblemReport {
         let turnedOn: String
         let browserLine: String
         switch browser {
@@ -37,7 +45,8 @@ enum IssueReport {
             turnedOn = "Opened it in Firefox"
             browserLine = "Firefox \(firefoxVersion), macOS \(osVersion)"
         }
-        let versions = engines(cliVersion: cliVersion, browser: browser, persistVersion: persistVersion, separator: ", ")
+        let versions = engines(cliVersion: cliVersion, engineVersion: engineVersion, browser: browser,
+                               persistVersion: persistVersion, separator: ", ")
         let ext = describe(extensionName, version: version, storeId: storeId)
         let steps = "1. Converted it with the Viaduct app \(appVersion) (\(versions))\n2. \(turnedOn)"
         let title = "\(extensionName) doesn't work in \(browser.displayName)"
@@ -51,8 +60,10 @@ enum IssueReport {
 
     /// Anything else, from Settings: the browser the user picks, the versions
     /// that matter for it, and the last error, if any.
-    static func general(browser: Browser, cliVersion: String, persistVersion: String?, lastError: String?) -> ProblemReport {
-        let versions = engines(cliVersion: cliVersion, browser: browser, persistVersion: persistVersion, separator: " · ")
+    static func general(browser: Browser, cliVersion: String, engineVersion: String?, persistVersion: String?,
+                        lastError: String?) -> ProblemReport {
+        let versions = engines(cliVersion: cliVersion, engineVersion: engineVersion, browser: browser,
+                               persistVersion: persistVersion, separator: " · ")
         let browserLine: String
         switch browser {
         case .safari: browserLine = "Safari \(safariVersion)"
@@ -71,11 +82,14 @@ enum IssueReport {
         return ext
     }
 
-    /// "CLI 2.0.0", plus persist's version for Firefox, which installs through it.
-    private static func engines(cliVersion: String, browser: Browser, persistVersion: String?, separator: String) -> String {
+    /// "CLI 2.0.0 · aqueduct 1.18.3": the CLI and the engine it converted
+    /// with, plus persist's version for Firefox, which installs through it.
+    private static func engines(cliVersion: String, engineVersion: String?, browser: Browser,
+                                persistVersion: String?, separator: String) -> String {
+        let converter = "CLI \(cliVersion)\(separator)\(browser.engine) \(engineVersion ?? "?")"
         switch browser {
-        case .safari: return "CLI \(cliVersion)"
-        case .firefox: return "CLI \(cliVersion)\(separator)persist \(persistVersion ?? "?")"
+        case .safari: return converter
+        case .firefox: return "\(converter)\(separator)persist \(persistVersion ?? "?")"
         }
     }
 

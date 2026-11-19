@@ -94,6 +94,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showsReport) {
             ReportSheet(browser: vm.targetBrowser, makeReport: { browser in
                 IssueReport.general(browser: browser, cliVersion: vm.installedVersion,
+                                    engineVersion: vm.engineVersion(for: browser),
                                     persistVersion: vm.persistVersion, lastError: vm.failureSummary)
             }) { showsReport = false }
         }

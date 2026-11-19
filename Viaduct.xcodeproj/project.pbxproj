@@ -93,6 +93,7 @@
 		A3B5D15BFCC02C4FCF93C5A0 /* CompatibilityCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69A3660E251D8D05219E55FB /* CompatibilityCheck.swift */; };
 		AE237E508B9A4ADA6790A15E /* ChromiumBrowsers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799B3B59BD4186C14CED6F4B /* ChromiumBrowsers.swift */; };
 		AF20AA727A6862DBB90104B0 /* IssueReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 949941983A97023BD3198B70 /* IssueReport.swift */; };
+		AF8011AD67046917D26C332F /* BrowserPickerFollowsCardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1EDDFEC178FE1B70450FB52 /* BrowserPickerFollowsCardTests.swift */; };
 		B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */; };
 		B553D1EED34752D8F031C0A5 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = 46A0D6A732F9ADA35FA28A8D /* content.js */; };
 		B878ADE702EB943E794C4965 /* LicenseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57EF2AA67C8160B7269036B6 /* LicenseManager.swift */; };
@@ -318,6 +319,7 @@
 		DC79B758FA67D5738A6F2DC8 /* CLIUpdaterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CLIUpdaterTests.swift; sourceTree = "<group>"; };
 		DC84FA4723A0433A0B7361E0 /* NativeHostProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHostProtocol.swift; sourceTree = "<group>"; };
 		DF2B7969794EF0B93CC897FE /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E1EDDFEC178FE1B70450FB52 /* BrowserPickerFollowsCardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPickerFollowsCardTests.swift; sourceTree = "<group>"; };
 		E25265A1FBFF2AA8DC08962C /* ReportClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportClient.swift; sourceTree = "<group>"; };
 		E33438DBA1FB5A3A88E8EBA8 /* FreePlanBookkeepingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlanBookkeepingTests.swift; sourceTree = "<group>"; };
 		E64830EE88379F454793DD06 /* FreePlanFirefoxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlanFirefoxTests.swift; sourceTree = "<group>"; };
@@ -385,6 +387,7 @@
 		2A62BE7B490229F57B098F37 /* ViaductTests */ = {
 			isa = PBXGroup;
 			children = (
+				E1EDDFEC178FE1B70450FB52 /* BrowserPickerFollowsCardTests.swift */,
 				85ADF15D08DF5CE82D8915E2 /* BrowserTests.swift */,
 				DC79B758FA67D5738A6F2DC8 /* CLIUpdaterTests.swift */,
 				10E98F8FC7BC3BA1B2B9E87D /* CompatibilityCheckTests.swift */,
@@ -919,6 +922,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				51D4D9CB507BD8995E8C28E5 /* AsyncAssertions.swift in Sources */,
+				AF8011AD67046917D26C332F /* BrowserPickerFollowsCardTests.swift in Sources */,
 				B13A49355701C6C01D9DF87E /* BrowserTests.swift in Sources */,
 				118476D4A4B37BBE128207D3 /* CLIUpdaterTests.swift in Sources */,
 				9CF4B739156F47352BEB7345 /* CompatibilityCheckTests.swift in Sources */,
