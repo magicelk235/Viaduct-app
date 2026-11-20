@@ -331,6 +331,8 @@ struct Keycap: View {
 
 /// The universal primary action — a white-tinted interactive Liquid Glass pill.
 struct RaycastPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.Font.button())
