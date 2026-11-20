@@ -85,7 +85,6 @@ final class IssueReportTests: XCTestCase {
                                                     cliVersion: "2.0.0", engineVersion: "0.1.5",
                                                     persistVersion: "0.2.0 (lavaduct 0.1.0)")
         XCTAssertEqual(report.title, "Dark Reader doesn't work in Firefox")
-        XCTAssertTrue(report.needsDescription)
         let steps = section(report, "Steps to reproduce")!
         XCTAssertTrue(steps.contains("Opened it in Firefox"))
         XCTAssertTrue(steps.contains("(CLI 2.0.0, lavaduct 0.1.5, persist 0.2.0 (lavaduct 0.1.0))"))

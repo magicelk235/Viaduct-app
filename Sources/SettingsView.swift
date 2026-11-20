@@ -231,30 +231,33 @@ struct SettingsView: View {
 
             if !license.keys.isEmpty {
                 ForEach(license.keys) { keyRow($0) }
-                Divider().overlay(Theme.Colors.hairlineSoft)
             }
 
-            // Key entry lives here so a user who already bought can activate
-            // WITHOUT first spending their free conversions to trigger the
-            // paywall sheet.
-            TextField("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX", text: $keyEntry.text)
-                .textFieldStyle(.glass)
-                .disabled(license.isAddingKey)
-                .accessibilityLabel("License key")
-                .onSubmit { Task { await keyEntry.submit(to: license) } }
-            KeyErrorText(error: keyEntry.error)
-            Button {
-                Task { await keyEntry.submit(to: license) }
-            } label: {
-                HStack(spacing: 6) {
-                    if license.isAddingKey { ProgressView().controlSize(.small) }
-                    Text(license.isAddingKey ? "Activating…" : "Activate")
-                }
-            }
-            .buttonStyle(.raycastPrimary)
-            .disabled(!keyEntry.hasText || license.isAddingKey)
-
+            // With every tier owned there's nothing left to activate or buy.
             if !upgrades.isEmpty {
+                if !license.keys.isEmpty {
+                    Divider().overlay(Theme.Colors.hairlineSoft)
+                }
+                // Key entry lives here so a user who already bought can activate
+                // WITHOUT first spending their free conversions to trigger the
+                // paywall sheet.
+                TextField("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX", text: $keyEntry.text)
+                    .textFieldStyle(.glass)
+                    .disabled(license.isAddingKey)
+                    .accessibilityLabel("License key")
+                    .onSubmit { Task { await keyEntry.submit(to: license) } }
+                KeyErrorText(error: keyEntry.error)
+                Button {
+                    Task { await keyEntry.submit(to: license) }
+                } label: {
+                    HStack(spacing: 6) {
+                        if license.isAddingKey { ProgressView().controlSize(.small) }
+                        Text(license.isAddingKey ? "Activating…" : "Activate")
+                    }
+                }
+                .buttonStyle(.raycastPrimary)
+                .disabled(!keyEntry.hasText || license.isAddingKey)
+
                 Divider().overlay(Theme.Colors.hairlineSoft)
                 VStack(spacing: Theme.Space.sm) {
                     ForEach(upgrades) { tier in

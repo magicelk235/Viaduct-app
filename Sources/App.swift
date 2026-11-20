@@ -176,23 +176,16 @@ struct ViaductApp: App {
                 // Two different failures wear the same symptom. Telling someone who
                 // already signed in to go sign in is the fastest way to lose them.
                 Text(vm.adhocDespiteAccount ? """
-                Your Apple ID is in Xcode, but Xcode hasn't issued a signing \
-                certificate yet. Without one, Safari turns this extension off \
-                every time it quits and you have to re-enable it from the \
-                Develop menu.
+                Without a signing certificate, Safari turns this extension off \
+                every time it quits.
 
-                Xcode only issues the certificate when you ask for it. In Xcode: \
-                Settings → Accounts, select your Apple ID, click Manage \
-                Certificates at the bottom right, click + at the bottom left, \
-                and choose Apple Development. Then convert again.
+                In Xcode: Settings → Accounts → Manage Certificates → + → \
+                Apple Development. Then convert again.
                 """ : """
-                Viaduct couldn't find an Apple account in Xcode. Without one, \
-                Safari turns this extension off every time it quits and you have \
-                to re-enable it from the Develop menu.
+                Without one, Safari turns this extension off every time it quits.
 
-                Sign into Xcode with any free Apple ID (Xcode → Settings → \
-                Accounts), then convert again. Signing in under System Settings \
-                → Apple Account is a different thing and won't work.
+                Sign into Xcode → Settings → Accounts with any free Apple ID, \
+                then convert again.
                 """)
             }
             // The Firefox disclosure and restart notice, on the main window for

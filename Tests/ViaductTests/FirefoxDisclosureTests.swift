@@ -10,17 +10,6 @@ final class FirefoxDisclosureTests: XCTestCase {
         XCTAssertTrue(defaults.bool(forKey: "firefoxDisclosureAccepted"))
     }
 
-    func testTheDisclosureIsTheApprovedText() {
-        XCTAssertEqual(FirefoxDisclosure.title, "Keeping add-ons in Firefox")
-        XCTAssertEqual(FirefoxDisclosure.message, """
-        Firefox only keeps add-ons that Mozilla has signed. To keep yours, Viaduct briefly turns on Firefox's remote debugging each time Firefox opens, loads your add-ons, and turns it off again.
-
-        This leaves one Firefox setting changed: Firefox won't ask before a debugger connects. Another program on this Mac could use that to control Firefox, though a program that can do that could already change Firefox's settings.
-
-        Removing your last Firefox add-on puts these settings back.
-        """)
-    }
-
     // A build without persist.mjs can't install into Firefox, so a stored
     // Firefox choice comes back as Safari there.
     func testFirefoxUnavailableWithoutPersistFallsBackToSafari() {

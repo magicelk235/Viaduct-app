@@ -478,13 +478,9 @@ private struct SetupWelcome: View {
                         title: "Drop one on the window",
                         detail: "A .zip, .crx or an unpacked folder.")]
         if storeButtonOn {
-            ways.append(flow.browser == .safari
-                ? Way(symbol: "safari.fill",
-                      title: "Add to Safari on the Chrome Web Store",
-                      detail: "The button sits on every extension's page.")
-                : Way(symbol: "puzzlepiece.extension.fill",
-                      title: "Add to Firefox on the Chrome Web Store",
-                      detail: "The button sits on every extension's page."))
+            ways.append(Way(symbol: "puzzlepiece.extension.fill",
+                            title: "Use the button on the Chrome Web Store",
+                            detail: "It sits on every extension's page."))
         }
         if flow.canImport {
             ways.append(Way(symbol: "square.and.arrow.down.on.square.fill",

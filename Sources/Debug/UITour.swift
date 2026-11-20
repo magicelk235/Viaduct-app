@@ -387,6 +387,11 @@ enum UITour {
             await pause(tab == .extensions ? 1500 : 700)
             try await shoot("settings", tab.rawValue, tab.title, [settings])
         }
+        SettingsNavigation.shared.selectedTab = .license
+        LicenseManager.shared.useEverythingUnlockedForUITour()
+        await pause(700)
+        try await shoot("settings", "license-unlocked", "License, everything unlocked", [settings])
+        LicenseManager.shared.useFreePlanForUITour()
         settings.close()
     }
 

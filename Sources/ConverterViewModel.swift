@@ -633,15 +633,6 @@ final class ConverterViewModel: ObservableObject {
         }
     }
 
-    /// Apple's developer downloads, filtered to Xcode. The route for anyone the
-    /// App Store can't serve: a macOS beta (where the released Xcode won't run)
-    /// or a Mac that needs an older Xcode. Free Apple ID, same as signing.
-    func openXcodeDeveloperDownloads() {
-        if let url = URL(string: "https://developer.apple.com/download/all/?q=xcode") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     /// One-click recovery for the "Xcode installed but not selected" trap: point
     /// macOS at Xcode (admin prompt), then, if that clears the gate, resume the
     /// conversion the user was trying to run.

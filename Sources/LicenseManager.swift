@@ -333,5 +333,10 @@ extension LicenseManager {
         problem = nil
         hasLaunchAnswer = true
     }
+
+    /// Every tier owned, for the tour's unlocked License tab. In memory only.
+    func useEverythingUnlockedForUITour() {
+        entitlements = .mixed
+    }
 }
 #endif

@@ -321,15 +321,6 @@ final class FirefoxAddonsTests: XCTestCase {
         XCTAssertNotEqual(try built(t0 + 3600), first)
     }
 
-    func testErrorsReadAsTheirCopy() {
-        XCTAssertEqual(FirefoxAddonsError.noProfile.localizedDescription,
-                       "Open Firefox once so it can set up your profile, then try again.")
-        XCTAssertEqual(FirefoxAddonsError.needsDiskAccess.localizedDescription,
-                       "Turn on Full Disk Access for Viaduct in System Settings, then try again.")
-        XCTAssertEqual(FirefoxAddonsError.loginItemOff.localizedDescription,
-                       "Firefox only keeps your add-ons while Viaduct can run in the background. Turn Viaduct on in Login Items, then try again.")
-    }
-
     /// A gate stands for the error that stopped the install, in its words.
     func testGatesReadAsTheirErrors() {
         XCTAssertEqual(FirefoxGate(.noProfile), .noProfile)

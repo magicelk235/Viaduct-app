@@ -429,9 +429,6 @@ struct UserModeView: View {
                     }
                     .buttonStyle(.raycastPrimary)
                     .disabled(vm.xcodeFixing)
-                    Button("Install a different Xcode") { vm.openXcodeInstall() }
-                        .buttonStyle(.raycastGhost)
-                        .disabled(vm.xcodeFixing)
                 case let .setupIncomplete(dev):
                     Button {
                         Feedback.haptic(.generic)
@@ -462,15 +459,10 @@ struct UserModeView: View {
                         Feedback.haptic(.generic)
                         vm.openXcodeInstall()
                     } label: {
-                        Label("Install Xcode (free)", systemImage: "arrow.down.app")
+                        Label("Install Xcode", systemImage: "arrow.down.app")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.raycastPrimary)
-                    // The App Store is a dead end on a prerelease macOS: it only
-                    // offers the released Xcode, which won't launch there. Apple's
-                    // developer downloads carry the matching beta.
-                    Button("Get Xcode from Apple instead") { vm.openXcodeDeveloperDownloads() }
-                        .buttonStyle(.raycastGhost)
                     Button("I installed it, try again") { vm.recheckXcode() }
                         .buttonStyle(.raycastTertiary)
                 }

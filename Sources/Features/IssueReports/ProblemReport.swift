@@ -23,9 +23,6 @@ struct ProblemReport: Identifiable {
     let sections: [Section]
     let log: [String]
 
-    /// A failed conversion's log already says what went wrong.
-    var needsDescription: Bool { kind != .conversionFailure }
-
     // The relay's limits; anything past them is cut here rather than rejected there.
     static let maxTitle = 200
     static let maxDescription = 5_000

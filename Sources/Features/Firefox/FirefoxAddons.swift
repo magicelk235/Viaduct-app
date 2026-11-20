@@ -12,7 +12,7 @@ enum FirefoxAddonsError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .noProfile:
-            return "Open Firefox once so it can set up your profile, then try again."
+            return "Click Open Firefox, wait for its window to appear, then come back and try again."
         case .needsDiskAccess:
             return "Turn on Full Disk Access for Viaduct in System Settings, then try again."
         case .loginItemOff:

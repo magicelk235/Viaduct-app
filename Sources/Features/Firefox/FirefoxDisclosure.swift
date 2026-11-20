@@ -7,11 +7,9 @@ enum FirefoxDisclosure {
 
     static let title = "Keeping add-ons in Firefox"
     static let message = """
-    Firefox only keeps add-ons that Mozilla has signed. To keep yours, Viaduct briefly turns on Firefox's remote debugging each time Firefox opens, loads your add-ons, and turns it off again.
+    Viaduct loads your add-ons each time Firefox opens. To do that, Firefox stops asking before a debugger connects.
 
-    This leaves one Firefox setting changed: Firefox won't ask before a debugger connects. Another program on this Mac could use that to control Firefox, though a program that can do that could already change Firefox's settings.
-
-    Removing your last Firefox add-on puts these settings back.
+    Removing your last Firefox add-on turns this back on.
     """
 
     static func isAccepted(_ defaults: UserDefaults = .standard) -> Bool {

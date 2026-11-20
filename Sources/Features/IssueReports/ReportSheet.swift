@@ -42,7 +42,7 @@ struct ReportSheet: View {
     private var trimmedEmail: String { email.trimmingCharacters(in: .whitespaces) }
     private var emailIsValid: Bool { trimmedEmail.isEmpty || ReportClient.isPlausibleEmail(trimmedEmail) }
     private var canSend: Bool {
-        phase != .sending && emailIsValid && (!report.needsDescription || !trimmedDescription.isEmpty)
+        phase != .sending && emailIsValid && !trimmedDescription.isEmpty
     }
 
     var body: some View {
@@ -77,7 +77,7 @@ struct ReportSheet: View {
 
             ZStack(alignment: .topLeading) {
                 if description.isEmpty {
-                    Text(report.needsDescription ? "What happened?" : "What happened? (optional)")
+                    Text("What happened?")
                         .font(Theme.Font.body())
                         .foregroundStyle(Theme.Colors.ash)
                         .padding(.horizontal, 5).padding(.vertical, 1)
@@ -94,7 +94,7 @@ struct ReportSheet: View {
             .background(Color.clear.liquidGlass(radius: Theme.Radius.md))
             .disabled(phase == .sending)
 
-            TextField("Email (optional, stays private)", text: $email)
+            TextField("Email", text: $email)
                 .textFieldStyle(.glass)
                 .disabled(phase == .sending)
                 .accessibilityLabel("Email")
@@ -119,10 +119,6 @@ struct ReportSheet: View {
             }
             .font(Theme.Font.caption())
             .foregroundStyle(Theme.Colors.mute)
-
-            Text("Reports are posted publicly on GitHub. Your email isn't.")
-                .font(Theme.Font.caption())
-                .foregroundStyle(Theme.Colors.mute)
 
             if case let .failed(error) = phase {
                 failure(error)

@@ -334,12 +334,15 @@ struct RaycastPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.Font.button())
-            .foregroundStyle(Theme.Colors.onPrimary)
+            .foregroundStyle(isEnabled ? Theme.Colors.onPrimary : Theme.Colors.ash)
             .padding(.horizontal, Theme.Space.lg)
             .frame(height: 36)
             .background {
                 let shape = RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                if #available(macOS 26.0, *) {
+                if !isEnabled {
+                    // Gray, not dimmed teal: a faded primary still reads as clickable.
+                    shape.fill(Theme.Colors.hairline)
+                } else if #available(macOS 26.0, *) {
                     Color.clear.liquidGlass(radius: Theme.Radius.md,
                                             tint: Theme.Colors.primary, interactive: true)
                 } else {
