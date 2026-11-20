@@ -25,8 +25,11 @@ open a terminal to do it.
 - The CLI isn't baked into the app. Viaduct downloads
   `@magicelk235/viaduct` from npm the first time you open it, keeps it in
   Application Support, and checks on every later launch whether a newer one has
-  shipped. An app build from six months ago still converts with today's engine,
-  and you never press anything to make that happen.
+  shipped. The Safari and Firefox engines inside it (`@magicelk235/aqueduct`
+  and `@magicelk235/lavaduct`) update on their own too, so an engine fix
+  reaches you without waiting for a new CLI or a new app. An app build from six
+  months ago still converts with today's engines, and you never press anything
+  to make that happen.
 
 ## Also in the app
 
@@ -86,9 +89,9 @@ Node.js is not a requirement. The app carries its own self-contained `node` in
 `Contents/Resources/bin/`, and falls back to a system `node` only if that one has
 somehow gone missing.
 
-The first launch needs a network connection, since that's when the conversion
-engine is fetched from npm. It takes a couple of seconds, and after that the
-only thing Viaduct goes online for is checking whether a newer engine has
+The first launch needs a network connection, since that's when the CLI and its
+engines are fetched from npm. It takes a couple of seconds, and after that the
+only thing Viaduct goes online for is checking whether newer versions have
 shipped.
 
 One thing worth knowing: the app isn't sandboxed. It shells out to `node`,

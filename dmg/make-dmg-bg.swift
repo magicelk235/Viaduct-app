@@ -107,7 +107,7 @@ for (i, name) in ["plus", "square.on.square"].enumerated() {
 let hl = NSFont.systemFont(ofSize: 25, weight: .bold)
 let h1 = NSAttributedString(string: "Your Chrome extensions, ",
     attributes: [.font: hl, .foregroundColor: NSColor(white: 0.92, alpha: 0.92)])
-let h2 = NSAttributedString(string: "native in Safari.",
+let h2 = NSAttributedString(string: "in your browser.",
     attributes: [.font: hl, .foregroundColor: MINT])
 let hw = h1.size().width + h2.size().width
 let hx = (W - hw)/2, hy = H - TB - 62
