@@ -321,3 +321,17 @@ final class LicenseManager: ObservableObject {
         return name
     }
 }
+
+#if DEBUG
+extension LicenseManager {
+    /// Where the debug UI tour starts: a Mac on the free plan with the launch
+    /// check answered. Only in memory, so the real keys stay on disk unread by
+    /// any store and never show up in a screenshot.
+    func useFreePlanForUITour() {
+        keys = []
+        entitlements = .none
+        problem = nil
+        hasLaunchAnswer = true
+    }
+}
+#endif

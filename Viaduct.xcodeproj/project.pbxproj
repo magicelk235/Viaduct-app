@@ -89,6 +89,7 @@
 		9EFD60C517B591262245A7B9 /* ReportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F72A1E39CA94DEEEF5AF99 /* ReportSheet.swift */; };
 		A063620048EB32269B27CFF7 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4BBDE50D6EB0F2D7309CE9 /* SetupView.swift */; };
 		A1AE1D69D35417B1BF648D63 /* ConversionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B821C2B773F3666C36EAF5E3 /* ConversionQueue.swift */; };
+		A2450232A7CB276412401FF1 /* UITour.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB136F76F954DD04C309D559 /* UITour.swift */; };
 		A26DAD8E42D40137C1D2A80A /* TempDir.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7F56E305526E4B35D84338 /* TempDir.swift */; };
 		A3B5D15BFCC02C4FCF93C5A0 /* CompatibilityCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69A3660E251D8D05219E55FB /* CompatibilityCheck.swift */; };
 		AE237E508B9A4ADA6790A15E /* ChromiumBrowsers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799B3B59BD4186C14CED6F4B /* ChromiumBrowsers.swift */; };
@@ -303,6 +304,7 @@
 		C04F5CF4A44792559DE09FB0 /* PaywallTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallTests.swift; sourceTree = "<group>"; };
 		C7E0BBB8EEE9DC5F0962C0F7 /* ExtensionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionInfo.swift; sourceTree = "<group>"; };
 		C8E8C813EE69850CABF1BD4C /* PersistClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistClientTests.swift; sourceTree = "<group>"; };
+		CB136F76F954DD04C309D559 /* UITour.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITour.swift; sourceTree = "<group>"; };
 		CBA59D7B65A758FCE5E2BC03 /* firefox */ = {isa = PBXFileReference; lastKnownFileType = folder; name = firefox; path = Resources/firefox; sourceTree = SOURCE_ROOT; };
 		CBE2D807D2A345EC253E0160 /* com.magicelk235.viaduct.firefox-agent.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "com.magicelk235.viaduct.firefox-agent.plist"; sourceTree = "<group>"; };
 		CD1A9AF75C432F6ED0056157 /* ConversionQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionQueueView.swift; sourceTree = "<group>"; };
@@ -358,6 +360,14 @@
 				4BF736DE8B74C6B15FCE4C7B /* Tests */,
 				7C0E8ABABEAAC589DEB809EA /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		202DEB03CDE044BC42B68C6B /* Debug */ = {
+			isa = PBXGroup;
+			children = (
+				CB136F76F954DD04C309D559 /* UITour.swift */,
+			);
+			path = Debug;
 			sourceTree = "<group>";
 		};
 		24B1F1D8E6CFBD5488C20405 /* Firefox */ = {
@@ -622,6 +632,7 @@
 				67C81E124A88D934C226864B /* UpdatePolicy.swift */,
 				FC67CD1790FCD1A2DBD5B113 /* Updater.swift */,
 				D6A5AD59DEEF416F7494A43E /* UserModeView.swift */,
+				202DEB03CDE044BC42B68C6B /* Debug */,
 				A9ABF65AE22490B89E006550 /* Features */,
 				64B3D60DA9BCEDE03FB64535 /* Licensing */,
 			);
@@ -1048,6 +1059,7 @@
 				F315EA79EDAD1B804861FE08 /* StoreButton.swift in Sources */,
 				5B77CDB7C8F98E5E79AED120 /* StoreRequest.swift in Sources */,
 				D498F700B216CEF067756D6A /* Theme.swift in Sources */,
+				A2450232A7CB276412401FF1 /* UITour.swift in Sources */,
 				36D01BBC4EC9233BE32D6B68 /* UpdatePolicy.swift in Sources */,
 				08E0DFD9849BA5B53CBEB3BA /* Updater.swift in Sources */,
 				64A64A03445710FDDC87DF8C /* UserModeView.swift in Sources */,

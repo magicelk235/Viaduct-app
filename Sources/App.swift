@@ -33,6 +33,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // item, reaching the network and changing the real app's settings.
         // With no launch answer the window just shows LaunchGateView.
         guard !Self.isHostingTests else { return }
+        #if DEBUG
+        // A screenshot tour (VIADUCT_UI_TOUR) stands in for the launch work.
+        if UITour.start() { return }
+        #endif
         ViaductApp.bootstrap()
     }
 
@@ -92,6 +96,14 @@ struct ViaductApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var vm = ConverterViewModel.shared
     @StateObject private var license = LicenseManager.shared
+
+    #if DEBUG
+    init() {
+        // A screenshot tour's made-up state has to be in place before the
+        // view model above first reads its history from defaults.
+        UITour.prepare()
+    }
+    #endif
 
     /// Menu-bar glyph: the bundled brand mark (icon.png), rendered as a template
     /// so macOS tints it to the menu-bar's adaptive light/dark color. Falls back
